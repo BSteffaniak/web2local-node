@@ -24,6 +24,12 @@ importers:
         specifier: ^8.0.1
         version: 8.2.0
     devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3.3.3
+        version: 3.3.3
+      '@eslint/js':
+        specifier: ^9.39.1
+        version: 9.39.1
       '@swc/types':
         specifier: ^0.1.25
         version: 0.1.25
@@ -45,6 +51,9 @@ importers:
       eslint-plugin-diff:
         specifier: ^2.0.3
         version: 2.0.3(eslint@9.39.1)
+      globals:
+        specifier: ^15.15.0
+        version: 15.15.0
       msw:
         specifier: ^2.4.0
         version: 2.12.3(@types/node@20.19.25)(typescript@5.9.3)
@@ -869,6 +878,10 @@ packages:
 
   globals@14.0.0:
     resolution: {integrity: sha512-oahGvuMGQlPw/ivIYBjVSrWAfWLBeku5tpPE2fOPLi+WHffIWbuh2tCjhyQhTBPMf5E9jDEH4FOmTYgYwbKwtQ==}
+    engines: {node: '>=18'}
+
+  globals@15.15.0:
+    resolution: {integrity: sha512-7ACyT3wmyp3I61S4fG682L0VA2RGD9otkqGJIwNUMF1SWUombIIk+af1unuDYgMm082aHYwD+mzJvv9Iu8dsgg==}
     engines: {node: '>=18'}
 
   graphemer@1.4.0:
@@ -2056,6 +2069,8 @@ snapshots:
       is-glob: 4.0.3
 
   globals@14.0.0: {}
+
+  globals@15.15.0: {}
 
   graphemer@1.4.0: {}
 
