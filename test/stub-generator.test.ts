@@ -165,6 +165,88 @@ describe('extractExports', () => {
       expect(exports.named).toContain('renamed');
       expect(exports.named).not.toContain('original');
     });
+
+    test('should extract destructured object exports (RTK Query pattern)', async () => {
+      // This is the pattern used by RTK Query for generated hooks
+      const filePath = await createFile(tempDir, 'api-slice.ts', `
+        import { createApi } from '@reduxjs/toolkit/query/react';
+        
+        export const articlesApiSlice = createApi({
+          reducerPath: 'articlesApi',
+          endpoints: (builder) => ({
+            fetchAllArticles: builder.query({}),
+            fetchArticleById: builder.query({}),
+            fetchFeaturedArticles: builder.query({}),
+          }),
+        });
+        
+        export const {
+          useFetchAllArticlesQuery,
+          useFetchArticleByIdQuery,
+          useFetchFeaturedArticlesQuery,
+          usePrefetch,
+        } = articlesApiSlice;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('articlesApiSlice');
+      expect(exports.named).toContain('useFetchAllArticlesQuery');
+      expect(exports.named).toContain('useFetchArticleByIdQuery');
+      expect(exports.named).toContain('useFetchFeaturedArticlesQuery');
+      expect(exports.named).toContain('usePrefetch');
+    });
+
+    test('should extract destructured exports from Redux slice actions', async () => {
+      // This is the pattern used by Redux Toolkit for slice actions
+      const filePath = await createFile(tempDir, 'articles-slice.ts', `
+        import { createSlice } from '@reduxjs/toolkit';
+        
+        const articlesSlice = createSlice({
+          name: 'articles',
+          initialState: { pageIndex: 0 },
+          reducers: {
+            incrementPageIndex: (state) => { state.pageIndex += 1; },
+            resetPageIndex: (state) => { state.pageIndex = 0; },
+          },
+        });
+        
+        export const { incrementPageIndex, resetPageIndex } = articlesSlice.actions;
+        export default articlesSlice.reducer;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('incrementPageIndex');
+      expect(exports.named).toContain('resetPageIndex');
+      expect(exports.hasDefault).toBe(true);
+    });
+
+    test('should extract destructured array exports', async () => {
+      const filePath = await createFile(tempDir, 'array-destructure.ts', `
+        const tuple = [1, 'two', true] as const;
+        export const [first, second, third] = tuple;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('first');
+      expect(exports.named).toContain('second');
+      expect(exports.named).toContain('third');
+    });
+
+    test('should extract renamed destructured exports', async () => {
+      const filePath = await createFile(tempDir, 'renamed-destructure.ts', `
+        const obj = { originalName: 1, anotherProp: 2 };
+        export const { originalName: renamedExport, anotherProp } = obj;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('renamedExport');
+      expect(exports.named).toContain('anotherProp');
+      expect(exports.named).not.toContain('originalName');
+    });
   });
 
   describe('type exports', () => {

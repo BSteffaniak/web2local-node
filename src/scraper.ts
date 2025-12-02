@@ -167,9 +167,19 @@ export async function findSourceMapUrl(bundleUrl: string): Promise<SourceMapChec
     const mapUrl = bundleUrl + '.map';
     const mapResponse = await fetch(mapUrl, { method: 'HEAD', headers: BROWSER_HEADERS });
     if (mapResponse.ok) {
-      sourceMapUrl = mapUrl;
-      await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
-      return { sourceMapUrl };
+      // Validate Content-Type to avoid false positives from SPAs that return HTML for all routes
+      const contentType = mapResponse.headers.get('Content-Type') || '';
+      const isValidSourceMap = contentType.includes('application/json') || 
+                               contentType.includes('application/octet-stream') ||
+                               contentType.includes('text/plain') ||
+                               // Some servers don't set Content-Type for .map files
+                               contentType === '';
+      
+      if (isValidSourceMap && !contentType.includes('text/html')) {
+        sourceMapUrl = mapUrl;
+        await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+        return { sourceMapUrl };
+      }
     }
 
     // Cache negative result

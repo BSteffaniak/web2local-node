@@ -1,5 +1,5 @@
 import { readFile, readdir, writeFile } from "fs/promises";
-import { join, extname } from "path";
+import { join, extname, normalize } from "path";
 import { 
   detectVersions, 
   getPackageFiles,
@@ -1371,6 +1371,53 @@ export interface WorkspacePackageMapping {
 }
 
 /**
+ * Sanitizes a source map path to match how files are actually written by the reconstructor.
+ * 
+ * Source map paths often contain relative sequences like "../../" which need to be resolved
+ * in a way that matches the reconstructor's sanitizePath behavior.
+ * 
+ * For paths like "bundleName/../../package/file.ts":
+ * - The first segment (bundleName) is always preserved (it's the output directory)
+ * - The remaining path is sanitized: ".." pops the stack, but can't escape the bundle root
+ * - Result: "bundleName/package/file.ts"
+ * 
+ * @param relativePath - Path like "./bundleName/../../package" or "./bundleName/package"
+ * @returns Normalized path like "./bundleName/package"
+ */
+function sanitizeSourceMapPath(relativePath: string): string {
+  // Remove leading ./ if present
+  let path = relativePath.replace(/^\.[\\/]+/, '');
+  
+  // Split into segments
+  const segments = path.split(/[/\\]/);
+  if (segments.length === 0) return './' + path;
+  
+  // First segment is the bundle name - always preserved
+  const bundleName = segments[0];
+  const restSegments = segments.slice(1);
+  
+  // Apply sanitization logic to the rest (same as reconstructor's sanitizePath)
+  // This resolves ".." by popping, but doesn't allow escaping the bundle root
+  const resolved: string[] = [];
+  for (const segment of restSegments) {
+    if (segment === '..') {
+      if (resolved.length > 0) {
+        resolved.pop();
+      }
+      // If resolved is empty, we can't go higher - just ignore the ..
+    } else if (segment && segment !== '.') {
+      resolved.push(segment);
+    }
+  }
+  
+  // Combine bundle name with resolved path
+  if (resolved.length > 0) {
+    return './' + bundleName + '/' + resolved.join('/');
+  }
+  return './' + bundleName;
+}
+
+/**
  * Generates a tsconfig.json object based on detected project configuration
  */
 export function generateTsConfig(
@@ -1385,10 +1432,14 @@ export function generateTsConfig(
   // Point to src/ subdirectory if it exists (common package structure)
   if (aliasPathMappings && aliasPathMappings.length > 0) {
     for (const mapping of aliasPathMappings) {
+      // Sanitize the path to match actual output structure
+      // e.g., "./navigation/../../shared-ui" -> "./navigation/shared-ui"
+      const normalizedPath = sanitizeSourceMapPath(mapping.relativePath);
+      
       // Try src subdirectory first (where index.ts is typically generated)
-      const srcPath = `${mapping.relativePath}/src`;
-      paths[mapping.alias] = [srcPath, mapping.relativePath];
-      paths[`${mapping.alias}/*`] = [`${srcPath}/*`, `${mapping.relativePath}/*`];
+      const srcPath = `${normalizedPath}/src`;
+      paths[mapping.alias] = [srcPath, normalizedPath];
+      paths[`${mapping.alias}/*`] = [`${srcPath}/*`, `${normalizedPath}/*`];
     }
   }
   
@@ -1397,10 +1448,13 @@ export function generateTsConfig(
     for (const pkg of workspacePackages) {
       if (paths[pkg.name]) continue; // Don't override alias mappings
       
+      // Sanitize the path to match actual output structure
+      const normalizedPath = sanitizeSourceMapPath(pkg.relativePath);
+      
       // Try common entry points
-      const srcPath = `${pkg.relativePath}/src`;
-      paths[pkg.name] = [srcPath, pkg.relativePath];
-      paths[`${pkg.name}/*`] = [`${srcPath}/*`, `${pkg.relativePath}/*`];
+      const srcPath = `${normalizedPath}/src`;
+      paths[pkg.name] = [srcPath, normalizedPath];
+      paths[`${pkg.name}/*`] = [`${srcPath}/*`, `${normalizedPath}/*`];
     }
   }
 

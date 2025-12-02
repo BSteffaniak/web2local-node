@@ -1,5 +1,7 @@
 import { readdir, writeFile, stat, readFile, mkdir } from "fs/promises";
-import { join, dirname, basename, relative, extname, resolve, isAbsolute } from "path";
+import { join, dirname, basename, relative, extname, resolve } from "path";
+import { extractExportsFromSource } from "./export-extractor.js";
+import type { FileExports } from "./export-extractor.js";
 
 /**
  * Information about a package that needs stub files
@@ -53,101 +55,20 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-/**
- * Export information from a file
- */
-export interface FileExports {
-  /** Named exports (export const X, export { X }) */
-  named: string[];
-  /** Type-only exports (export type X, export interface X) */
-  types: string[];
-  /** Whether file has a default export */
-  hasDefault: boolean;
-  /** Name of default export if identifiable */
-  defaultName?: string;
-}
+
 
 /**
- * Extracts exported identifiers from a TypeScript/JavaScript file
+ * Extracts exported identifiers from a TypeScript/JavaScript file.
+ * Uses SWC for robust AST-based parsing that handles all export patterns correctly,
+ * including destructured exports like RTK Query hooks.
  */
 export async function extractExports(filePath: string): Promise<FileExports> {
-  const result: FileExports = {
-    named: [],
-    types: [],
-    hasDefault: false,
-  };
-  
   try {
     const content = await readFile(filePath, 'utf-8');
-    
-    // Match: export const/let/var/function/class Name (named value exports)
-    const namedValuePattern = /export\s+(?:const|let|var|function|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
-    let match;
-    while ((match = namedValuePattern.exec(content)) !== null) {
-      result.named.push(match[1]);
-    }
-    
-    // Match: export type/interface Name (type exports)
-    const typeExportPattern = /export\s+(?:type|interface)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
-    while ((match = typeExportPattern.exec(content)) !== null) {
-      result.types.push(match[1]);
-    }
-    
-    // Match: export enum Name
-    const enumPattern = /export\s+enum\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
-    while ((match = enumPattern.exec(content)) !== null) {
-      result.named.push(match[1]);
-    }
-    
-    // Match: export { Name, Name2 } (local value exports, NOT re-exports)
-    // We need to exclude re-exports like: export { X } from './other'
-    const bracketExportPattern = /export\s+\{([^}]+)\}(?!\s*from\s)/g;
-    while ((match = bracketExportPattern.exec(content)) !== null) {
-      const names = match[1].split(',').map(n => {
-        const parts = n.trim().split(/\s+as\s+/);
-        return parts[parts.length - 1].trim();
-      }).filter(n => n && n !== 'type');
-      
-      result.named.push(...names);
-    }
-    
-    // Match: export type { Name, Name2 } (local type exports, NOT re-exports)
-    const bracketTypeExportPattern = /export\s+type\s+\{([^}]+)\}(?!\s*from\s)/g;
-    while ((match = bracketTypeExportPattern.exec(content)) !== null) {
-      const names = match[1].split(',').map(n => {
-        const parts = n.trim().split(/\s+as\s+/);
-        return parts[parts.length - 1].trim();
-      }).filter(n => n && n !== 'type');
-      
-      result.types.push(...names);
-    }
-    
-    // Match: export default - detect if it has a name
-    if (/export\s+default\s/.test(content)) {
-      result.hasDefault = true;
-      
-      // Try to get the name: export default function Name / export default class Name
-      const defaultNamedPattern = /export\s+default\s+(?:function|class)\s+([A-Za-z_$][A-Za-z0-9_$]*)/;
-      const defaultNamedMatch = content.match(defaultNamedPattern);
-      if (defaultNamedMatch) {
-        result.defaultName = defaultNamedMatch[1];
-      } else {
-        // Try: export default Name (where Name is defined elsewhere)
-        const defaultRefPattern = /export\s+default\s+([A-Z][A-Za-z0-9_$]*)\s*[;\n]/;
-        const defaultRefMatch = content.match(defaultRefPattern);
-        if (defaultRefMatch) {
-          result.defaultName = defaultRefMatch[1];
-        }
-      }
-    }
-    
-    // Dedupe
-    result.named = [...new Set(result.named)];
-    result.types = [...new Set(result.types)];
-    
-    return result;
+    const filename = basename(filePath);
+    return extractExportsFromSource(content, filename);
   } catch {
-    return result;
+    return { named: [], types: [], hasDefault: false };
   }
 }
 
