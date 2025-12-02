@@ -247,6 +247,139 @@ describe('extractExports', () => {
       expect(exports.named).toContain('anotherProp');
       expect(exports.named).not.toContain('originalName');
     });
+
+    test('should extract rest spread in destructured exports', async () => {
+      const filePath = await createFile(tempDir, 'rest-spread.ts', `
+        const obj = { a: 1, b: 2, c: 3, d: 4 };
+        export const { a, ...rest } = obj;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('a');
+      expect(exports.named).toContain('rest');
+    });
+
+    test('should extract destructured exports with default values', async () => {
+      const filePath = await createFile(tempDir, 'default-values.ts', `
+        const obj = { a: 1 };
+        export const { a, b = 2, c = 'default' } = obj;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('a');
+      expect(exports.named).toContain('b');
+      expect(exports.named).toContain('c');
+    });
+
+    test('should extract nested destructured exports', async () => {
+      const filePath = await createFile(tempDir, 'nested-destructure.ts', `
+        const obj = { outer: { inner: 1, deep: { value: 2 } } };
+        export const { outer: { inner, deep: { value: deepValue } } } = obj;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('inner');
+      expect(exports.named).toContain('deepValue');
+      expect(exports.named).not.toContain('outer');
+      expect(exports.named).not.toContain('deep');
+      expect(exports.named).not.toContain('value');
+    });
+
+    test('should extract mixed array and object destructured exports', async () => {
+      const filePath = await createFile(tempDir, 'mixed-destructure.ts', `
+        const arr = [{ name: 'first' }, { name: 'second' }];
+        export const [{ name: firstName }, { name: secondName }] = arr;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('firstName');
+      expect(exports.named).toContain('secondName');
+      expect(exports.named).not.toContain('name');
+    });
+
+    test('should extract rest spread in array destructured exports', async () => {
+      const filePath = await createFile(tempDir, 'array-rest.ts', `
+        const arr = [1, 2, 3, 4, 5];
+        export const [first, second, ...remaining] = arr;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('first');
+      expect(exports.named).toContain('second');
+      expect(exports.named).toContain('remaining');
+    });
+
+    test('should handle multiple destructured export statements', async () => {
+      // Real-world pattern: multiple slices or APIs in one file
+      const filePath = await createFile(tempDir, 'multiple-destructure.ts', `
+        const usersApi = { useGetUsersQuery: () => {}, useGetUserByIdQuery: () => {} };
+        const postsApi = { useGetPostsQuery: () => {}, useCreatePostMutation: () => {} };
+        
+        export const { useGetUsersQuery, useGetUserByIdQuery } = usersApi;
+        export const { useGetPostsQuery, useCreatePostMutation } = postsApi;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      expect(exports.named).toContain('useGetUsersQuery');
+      expect(exports.named).toContain('useGetUserByIdQuery');
+      expect(exports.named).toContain('useGetPostsQuery');
+      expect(exports.named).toContain('useCreatePostMutation');
+    });
+
+    test('should handle complex RTK Query file with all export types', async () => {
+      // Mirrors a real-world RTK Query API slice file structure
+      const filePath = await createFile(tempDir, 'complete-api-slice.ts', `
+        import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+        
+        export interface Article {
+          id: string;
+          title: string;
+        }
+        
+        export type ArticleResponse = Article[];
+        
+        export const articlesApi = createApi({
+          reducerPath: 'articlesApi',
+          baseQuery: fetchBaseQuery({ baseUrl: '/api' }),
+          endpoints: (builder) => ({
+            getArticles: builder.query<ArticleResponse, void>({}),
+            getArticleById: builder.query<Article, string>({}),
+            createArticle: builder.mutation<Article, Partial<Article>>({}),
+          }),
+        });
+        
+        export const {
+          useGetArticlesQuery,
+          useGetArticleByIdQuery,
+          useCreateArticleMutation,
+          usePrefetch,
+        } = articlesApi;
+        
+        export default articlesApi.reducer;
+      `);
+
+      const exports = await extractExports(filePath);
+
+      // Type exports
+      expect(exports.types).toContain('Article');
+      expect(exports.types).toContain('ArticleResponse');
+      
+      // Named value exports
+      expect(exports.named).toContain('articlesApi');
+      expect(exports.named).toContain('useGetArticlesQuery');
+      expect(exports.named).toContain('useGetArticleByIdQuery');
+      expect(exports.named).toContain('useCreateArticleMutation');
+      expect(exports.named).toContain('usePrefetch');
+      
+      // Default export
+      expect(exports.hasDefault).toBe(true);
+    });
   });
 
   describe('type exports', () => {
