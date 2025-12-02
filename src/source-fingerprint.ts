@@ -19,8 +19,11 @@ import {
   extractCodeSignature,
   type PackageMetadataCache,
   type ContentFingerprintCache,
-  type MatchResultCache,
+  type PackageFileListCache,
 } from './fingerprint-cache.js';
+
+// Re-export for external use
+export { computeNormalizedHash, extractCodeSignature };
 
 export interface FingerprintResult extends VersionResult {
   similarity: number;
@@ -255,6 +258,422 @@ function resolveEntryPoints(
 }
 
 /**
+ * Gets minified/production entry point paths for a package
+ * Derived dynamically from the package name - no hardcoding
+ */
+function getMinifiedEntryPaths(packageName: string): string[] {
+  const baseName = packageName.split('/').pop() || packageName;
+  const scopelessName = packageName.replace(/^@[^/]+\//, '');
+  
+  // Generate common minified patterns from package name
+  return [
+    // Standard minified builds
+    `dist/${baseName}.min.js`,
+    `dist/${scopelessName}.min.js`,
+    `dist/${baseName}.umd.min.js`,
+    `dist/${baseName}.cjs.min.js`,
+    `dist/${baseName}.esm.min.js`,
+    `dist/${baseName}.production.min.js`,
+    // UMD builds
+    `umd/${baseName}.min.js`,
+    `umd/${baseName}.production.min.js`,
+    // CJS production builds (React-style)
+    `cjs/${baseName}.production.min.js`,
+    // Root level minified
+    `${baseName}.min.js`,
+    `${scopelessName}.min.js`,
+    // Generic minified index
+    `dist/index.min.js`,
+    `bundle.min.js`,
+    // Non-minified dist (some packages don't have .min versions)
+    `dist/${baseName}.js`,
+    `dist/${baseName}.umd.js`,
+    `dist/${baseName}.cjs.js`,
+    `dist/${baseName}.esm.js`,
+    `dist/${baseName}.bundle.js`,
+    `dist/${scopelessName}.js`,
+    // Browser builds
+    `browser/${baseName}.js`,
+    `browser/index.js`,
+    // Build output
+    `build/${baseName}.js`,
+    `build/index.js`,
+  ];
+}
+
+/**
+ * Detects if code content is minified using generic heuristics
+ * No hardcoded package names - purely content-based analysis
+ */
+function detectIfMinified(content: string): boolean {
+  const lines = content.split('\n').filter(l => l.trim());
+  if (lines.length === 0) return false;
+  
+  // Heuristic 1: Average line length (minified = very long lines)
+  const avgLineLength = content.length / Math.max(lines.length, 1);
+  
+  // Heuristic 2: Whitespace ratio (minified = low whitespace)
+  const whitespaceCount = (content.match(/\s/g) || []).length;
+  const whitespaceRatio = whitespaceCount / content.length;
+  
+  // Heuristic 3: Single-character variable density
+  // Minified code has many single-char vars like: function(a,b,c){...}
+  const singleCharVars = (content.match(/[\(,]\s*[a-z]\s*[,\)]/gi) || []).length;
+  const singleCharDensity = singleCharVars / (content.length / 1000);
+  
+  // Heuristic 4: Semicolon density per line (minified has many statements per line)
+  const semicolons = (content.match(/;/g) || []).length;
+  const semicolonDensity = lines.length > 0 ? semicolons / lines.length : 0;
+  
+  // Heuristic 5: Lack of comments (minified code strips comments)
+  const hasComments = /\/\*[\s\S]*?\*\/|\/\/.*$/m.test(content.slice(0, 5000));
+  const commentRatio = hasComments ? 0.5 : 0;
+  
+  // Combined score - if any strong signal, consider it minified
+  return (
+    avgLineLength > 200 ||
+    whitespaceRatio < 0.08 ||
+    singleCharDensity > 3 ||
+    (semicolonDensity > 8 && !hasComments) ||
+    (avgLineLength > 100 && whitespaceRatio < 0.15 && commentRatio < 0.3)
+  );
+}
+
+/**
+ * Extracts string literals from code (survives minification)
+ */
+function extractStringLiterals(content: string): Set<string> {
+  const strings = new Set<string>();
+  // Match strings longer than 5 chars (skip short variable names)
+  const regex = /(['"`])(?:(?!\1)[^\\]|\\.){5,}?\1/g;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    // Store the string content without quotes, normalized
+    const str = match[0].slice(1, -1).trim();
+    if (str.length > 5) {
+      strings.add(str);
+    }
+  }
+  return strings;
+}
+
+/**
+ * Extracts function call patterns (survives minification with name mangling)
+ * Returns patterns like "functionName:argCount"
+ */
+function extractFunctionCallPatterns(content: string): Set<string> {
+  const calls = new Set<string>();
+  // Match function calls - name followed by parentheses
+  const regex = /\b([a-zA-Z_$][a-zA-Z0-9_$]{2,})\s*\(\s*([^)]*)\)/g;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    const name = match[1];
+    const args = match[2].trim();
+    // Count arguments by splitting on commas (rough approximation)
+    const arity = args ? args.split(',').length : 0;
+    // Store pattern as "name:arity" - even if names are mangled, arity survives
+    calls.add(`${name}:${arity}`);
+  }
+  return calls;
+}
+
+/**
+ * Extracts numeric constants from code (survives minification)
+ */
+function extractNumericConstants(content: string): Set<string> {
+  const numbers = new Set<string>();
+  // Match numbers that look like constants (not simple 0, 1, 2)
+  const regex = /\b(\d{3,}|\d+\.\d+)\b/g;
+  let match;
+  while ((match = regex.exec(content)) !== null) {
+    numbers.add(match[1]);
+  }
+  return numbers;
+}
+
+/**
+ * Computes Jaccard similarity between two sets
+ */
+function computeJaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  if (a.size === 0 || b.size === 0) return 0;
+  
+  const intersection = new Set([...a].filter(x => b.has(x)));
+  const union = new Set([...a, ...b]);
+  return intersection.size / union.size;
+}
+
+/**
+ * Enhanced similarity computation for minified code comparison
+ * Uses features that survive minification
+ */
+function computeMinifiedSimilarity(
+  extractedContent: string,
+  extractedFingerprint: { contentHash: string; normalizedHash: string; contentLength: number },
+  npmFingerprint: ContentFingerprintCache,
+  npmContent?: string
+): number {
+  // Strategy 1: Exact hash matches (ideal case)
+  if (extractedFingerprint.contentHash === npmFingerprint.contentHash) return 1.0;
+  if (extractedFingerprint.normalizedHash === npmFingerprint.normalizedHash) return 0.99;
+  
+  // If we don't have npm content to compare, fall back to length-based heuristic
+  if (!npmContent) {
+    const lenRatio = Math.min(extractedFingerprint.contentLength, npmFingerprint.contentLength) /
+                     Math.max(extractedFingerprint.contentLength, npmFingerprint.contentLength);
+    return lenRatio * 0.5;
+  }
+  
+  // Strategy 2: String literals matching (survives minification)
+  const extractedStrings = extractStringLiterals(extractedContent);
+  const npmStrings = extractStringLiterals(npmContent);
+  const stringSim = computeJaccardSimilarity(extractedStrings, npmStrings);
+  
+  // Strategy 3: Function call patterns
+  const extractedCalls = extractFunctionCallPatterns(extractedContent);
+  const npmCalls = extractFunctionCallPatterns(npmContent);
+  const callSim = computeJaccardSimilarity(extractedCalls, npmCalls);
+  
+  // Strategy 4: Numeric constants
+  const extractedNums = extractNumericConstants(extractedContent);
+  const npmNums = extractNumericConstants(npmContent);
+  const numSim = computeJaccardSimilarity(extractedNums, npmNums);
+  
+  // Strategy 5: Length ratio (minified versions should be similar length)
+  const lenRatio = Math.min(extractedFingerprint.contentLength, npmFingerprint.contentLength) /
+                   Math.max(extractedFingerprint.contentLength, npmFingerprint.contentLength);
+  
+  // Weighted combination - strings and function patterns are most reliable
+  const similarity = (stringSim * 0.35) + (callSim * 0.35) + (numSim * 0.15) + (lenRatio * 0.15);
+  
+  // Boost score if multiple signals agree
+  const agreementBonus = (stringSim > 0.5 && callSim > 0.5) ? 0.1 : 0;
+  
+  return Math.min(similarity + agreementBonus, 1.0);
+}
+
+// ============================================================================
+// STRUCTURAL FINGERPRINTING
+// For packages with many small files, compare file structure instead of content
+// ============================================================================
+
+/**
+ * Extracts structural fingerprint from extracted package files.
+ * Returns a set of normalized filenames that represent the package structure.
+ */
+function extractStructuralFingerprint(files: SourceFile[]): Set<string> {
+  const filenames = new Set<string>();
+  
+  for (const file of files) {
+    // Extract the filename without extension
+    const parts = file.path.split(/[/\\]/);
+    const basename = parts[parts.length - 1];
+    
+    // Remove extension
+    const nameWithoutExt = basename.replace(/\.(m?[jt]sx?|json)$/i, '');
+    
+    if (nameWithoutExt && nameWithoutExt.length > 0) {
+      // Normalize: lowercase, but preserve underscore prefix for internal files
+      filenames.add(nameWithoutExt.toLowerCase());
+    }
+  }
+  
+  return filenames;
+}
+
+/**
+ * Fetches the file list for a package version from unpkg ?meta API.
+ * Results are cached.
+ */
+async function fetchPackageFileList(
+  packageName: string,
+  version: string,
+  cache: FingerprintCache
+): Promise<Set<string> | null> {
+  // Check cache first
+  const cached = await cache.getFileList(packageName, version);
+  if (cached) {
+    return new Set(cached.files);
+  }
+
+  try {
+    const url = `https://unpkg.com/${packageName}@${version}/?meta`;
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    
+    if (!data.files || !Array.isArray(data.files)) {
+      return null;
+    }
+
+    // Extract filenames from the file list
+    const filenames: string[] = [];
+    for (const file of data.files) {
+      if (file.path && typeof file.path === 'string') {
+        // Only include JS files
+        if (/\.(m?js|json)$/i.test(file.path)) {
+          const parts = file.path.split('/');
+          const basename = parts[parts.length - 1];
+          const nameWithoutExt = basename.replace(/\.(m?js|json)$/i, '');
+          if (nameWithoutExt && nameWithoutExt.length > 0) {
+            filenames.push(nameWithoutExt.toLowerCase());
+          }
+        }
+      }
+    }
+
+    // Cache the result
+    const fileListCache: PackageFileListCache = {
+      packageName,
+      version,
+      files: filenames,
+      fetchedAt: Date.now(),
+    };
+    await cache.setFileList(fileListCache);
+
+    return new Set(filenames);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Computes structural similarity between extracted files and npm package file list.
+ * Uses Jaccard similarity with weighting for public vs internal files.
+ */
+function computeStructuralSimilarity(
+  extractedFiles: Set<string>,
+  npmFiles: Set<string>
+): number {
+  if (extractedFiles.size === 0 || npmFiles.size === 0) {
+    return 0;
+  }
+
+  // Separate public and internal files (internal files start with _)
+  const extractedPublic = new Set([...extractedFiles].filter(f => !f.startsWith('_')));
+  const extractedInternal = new Set([...extractedFiles].filter(f => f.startsWith('_')));
+  const npmPublic = new Set([...npmFiles].filter(f => !f.startsWith('_')));
+  const npmInternal = new Set([...npmFiles].filter(f => f.startsWith('_')));
+
+  // Compute Jaccard similarity for public files (weighted higher)
+  const publicIntersection = new Set([...extractedPublic].filter(x => npmPublic.has(x)));
+  const publicUnion = new Set([...extractedPublic, ...npmPublic]);
+  const publicSimilarity = publicUnion.size > 0 ? publicIntersection.size / publicUnion.size : 0;
+
+  // Compute Jaccard similarity for internal files
+  const internalIntersection = new Set([...extractedInternal].filter(x => npmInternal.has(x)));
+  const internalUnion = new Set([...extractedInternal, ...npmInternal]);
+  const internalSimilarity = internalUnion.size > 0 ? internalIntersection.size / internalUnion.size : 0;
+
+  // Weighted combination: public files are more important (they're the API)
+  // But internal files provide strong confirmation when they match
+  const publicWeight = 0.6;
+  const internalWeight = 0.4;
+  
+  let similarity = publicSimilarity * publicWeight + internalSimilarity * internalWeight;
+  
+  // Boost if both public AND internal files match well
+  if (publicSimilarity > 0.5 && internalSimilarity > 0.5) {
+    similarity = Math.min(similarity + 0.1, 1.0);
+  }
+  
+  // Also check overall match rate - if most extracted files are in npm, that's good
+  const allIntersection = new Set([...extractedFiles].filter(x => npmFiles.has(x)));
+  const extractedMatchRate = allIntersection.size / extractedFiles.size;
+  
+  // If extracted files mostly match npm files, boost similarity
+  if (extractedMatchRate > 0.7) {
+    similarity = Math.min(similarity + 0.15, 1.0);
+  }
+  
+  return similarity;
+}
+
+/**
+ * Finds the best matching version using structural fingerprinting.
+ * This is a fallback for packages with many small files where content fingerprinting fails.
+ */
+async function findMatchingVersionByStructure(
+  packageName: string,
+  extractedFiles: SourceFile[],
+  versions: string[],
+  options: {
+    minSimilarity?: number;
+    cache?: FingerprintCache;
+    onVersionCheck?: (version: string, index: number, total: number) => void;
+  } = {}
+): Promise<FingerprintResult | null> {
+  const {
+    minSimilarity = 0.5, // Lower threshold for structural matching
+    cache = getCache(),
+    onVersionCheck,
+  } = options;
+
+  // Extract structural fingerprint from extracted files
+  const extractedStructure = extractStructuralFingerprint(extractedFiles);
+  
+  if (extractedStructure.size < 5) {
+    // Too few files for reliable structural matching
+    return null;
+  }
+
+  let bestMatch: FingerprintResult | null = null;
+
+  for (let i = 0; i < versions.length; i++) {
+    const version = versions[i];
+    onVersionCheck?.(version, i + 1, versions.length);
+
+    // Fetch npm package file list
+    const npmStructure = await fetchPackageFileList(packageName, version, cache);
+    if (!npmStructure || npmStructure.size === 0) {
+      continue;
+    }
+
+    const similarity = computeStructuralSimilarity(extractedStructure, npmStructure);
+
+    // Exact structural match
+    if (similarity >= 0.95) {
+      return {
+        version,
+        confidence: 'high',
+        source: 'fingerprint',
+        similarity,
+        matchedFiles: extractedFiles.length,
+        totalFiles: extractedFiles.length,
+      };
+    }
+
+    // Track best match
+    if (similarity >= minSimilarity && (!bestMatch || similarity > bestMatch.similarity)) {
+      bestMatch = {
+        version,
+        confidence: similarity >= 0.8 ? 'high' : similarity >= 0.65 ? 'medium' : 'low',
+        source: 'fingerprint',
+        similarity,
+        matchedFiles: extractedFiles.length,
+        totalFiles: extractedFiles.length,
+      };
+    }
+
+    // Good enough match - stop early
+    if (bestMatch && bestMatch.similarity >= 0.85) {
+      break;
+    }
+  }
+
+  return bestMatch;
+}
+
+/**
  * Fetches a file from unpkg CDN with caching
  */
 async function fetchFileFromUnpkg(
@@ -300,6 +719,67 @@ async function fetchFileFromUnpkg(
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetches a minified/production file from unpkg CDN with caching
+ * Tries multiple minified entry paths derived from package name
+ */
+async function fetchMinifiedFromUnpkg(
+  packageName: string,
+  version: string,
+  cache: FingerprintCache
+): Promise<{ fingerprint: ContentFingerprintCache; content: string } | null> {
+  // Check cache first
+  const cached = await cache.getMinifiedFingerprint(packageName, version);
+  if (cached) {
+    // For cached results, we don't have the content, but that's okay for hash matching
+    return { fingerprint: cached, content: '' };
+  }
+
+  const minifiedPaths = getMinifiedEntryPaths(packageName);
+  
+  for (const entryPath of minifiedPaths) {
+    try {
+      const url = `https://unpkg.com/${packageName}@${version}/${entryPath}`;
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'Accept': 'text/plain,application/javascript,*/*',
+        },
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const content = await response.text();
+      
+      // Verify this looks like actual JS content (not error page)
+      if (content.length < 100 || content.includes('<!DOCTYPE') || content.includes('<html')) {
+        continue;
+      }
+
+      const fingerprint: ContentFingerprintCache = {
+        packageName,
+        version,
+        entryPath,
+        contentHash: createHash('md5').update(content).digest('hex'),
+        normalizedHash: computeNormalizedHash(content),
+        signature: extractCodeSignature(content),
+        contentLength: content.length,
+        isMinified: detectIfMinified(content),
+        fetchedAt: Date.now(),
+      };
+
+      await cache.setMinifiedFingerprint(fingerprint);
+      return { fingerprint, content };
+    } catch {
+      continue;
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -410,7 +890,86 @@ function findExtractedEntryPoint(files: SourceFile[]): SourceFile | null {
 }
 
 /**
+ * Collects combined features from all package files for multi-file fingerprinting.
+ * This is useful for packages split into many small files (like lodash, date-fns).
+ */
+function collectPackageFeatures(files: SourceFile[]): {
+  strings: Set<string>;
+  functionCalls: Set<string>;
+  numbers: Set<string>;
+  totalLength: number;
+  fileCount: number;
+} {
+  const strings = new Set<string>();
+  const functionCalls = new Set<string>();
+  const numbers = new Set<string>();
+  let totalLength = 0;
+
+  for (const file of files) {
+    // Skip non-JS files
+    if (!/\.(m?[jt]sx?)$/.test(file.path)) continue;
+    if (file.path.includes('.d.ts')) continue;
+
+    totalLength += file.content.length;
+
+    // Collect string literals
+    for (const str of extractStringLiterals(file.content)) {
+      strings.add(str);
+    }
+
+    // Collect function call patterns
+    for (const call of extractFunctionCallPatterns(file.content)) {
+      functionCalls.add(call);
+    }
+
+    // Collect numeric constants
+    for (const num of extractNumericConstants(file.content)) {
+      numbers.add(num);
+    }
+  }
+
+  return {
+    strings,
+    functionCalls,
+    numbers,
+    totalLength,
+    fileCount: files.filter(f => /\.(m?[jt]sx?)$/.test(f.path) && !f.path.includes('.d.ts')).length,
+  };
+}
+
+/**
+ * Computes similarity between collected package features and npm content.
+ * Used for multi-file packages without clear entry points.
+ */
+function computeMultiFileSimilarity(
+  features: ReturnType<typeof collectPackageFeatures>,
+  npmContent: string
+): number {
+  if (features.fileCount === 0) return 0;
+
+  // Extract features from npm content
+  const npmStrings = extractStringLiterals(npmContent);
+  const npmCalls = extractFunctionCallPatterns(npmContent);
+  const npmNums = extractNumericConstants(npmContent);
+
+  // Compute similarities
+  const stringSim = computeJaccardSimilarity(features.strings, npmStrings);
+  const callSim = computeJaccardSimilarity(features.functionCalls, npmCalls);
+  const numSim = computeJaccardSimilarity(features.numbers, npmNums);
+
+  // Weighted combination
+  const similarity = (stringSim * 0.4) + (callSim * 0.4) + (numSim * 0.2);
+
+  // Boost if multiple signals agree
+  const agreementBonus = (stringSim > 0.4 && callSim > 0.4) ? 0.1 : 0;
+
+  return Math.min(similarity + agreementBonus, 1.0);
+}
+
+/**
  * Finds the best matching version for a package
+ * Uses dual fingerprinting strategy: tries clean source first, then minified versions
+ * For packages with many small files, uses multi-file fingerprinting
  */
 export async function findMatchingVersion(
   packageName: string,
@@ -442,6 +1001,24 @@ export async function findMatchingVersion(
   }
 
   const extractedFingerprint = computeExtractedFingerprint(entryPoint);
+  const isExtractedMinified = detectIfMinified(entryPoint.content);
+  
+  // Determine if this is a multi-file package (like lodash, date-fns)
+  // that needs aggregate/structural fingerprinting
+  // Conditions:
+  // 1. Many files (>20) - typical of modular packages
+  // 2. No clear index.js entry point found (entry point is just the largest file)
+  // 3. OR entry point is small (<10KB) relative to total files
+  const hasStandardEntryPoint = /(?:index|main)\.(m?[jt]sx?)$/.test(entryPoint.path);
+  const isMultiFilePackage = extractedFiles.length > 20 && (
+    !hasStandardEntryPoint || 
+    entryPoint.content.length < 10000
+  );
+  let packageFeatures: ReturnType<typeof collectPackageFeatures> | null = null;
+  
+  if (isMultiFilePackage) {
+    packageFeatures = collectPackageFeatures(extractedFiles);
+  }
   
   // Check for cached match result first
   const cachedMatch = await cache.getMatchResult(packageName, extractedFingerprint.normalizedHash);
@@ -482,7 +1059,10 @@ export async function findMatchingVersion(
     const versionDetails = metadata.versionDetails[version];
     const entryPaths = resolveEntryPoints(packageName, versionDetails);
 
-    // Try to fetch and compare entry point
+    let bestSimilarityForVersion = 0;
+    let matchSource: 'fingerprint' | 'fingerprint-minified' = 'fingerprint';
+
+    // Strategy 1: Try clean source fingerprint (existing approach)
     let npmFingerprint: ContentFingerprintCache | null = null;
 
     for (const entryPath of entryPaths) {
@@ -492,21 +1072,56 @@ export async function findMatchingVersion(
       }
     }
 
-    if (!npmFingerprint) {
+    if (npmFingerprint) {
+      const similarity = computeSimilarity(extractedFingerprint, npmFingerprint);
+      if (similarity > bestSimilarityForVersion) {
+        bestSimilarityForVersion = similarity;
+        matchSource = 'fingerprint';
+      }
+    }
+
+    // Strategy 2: If extracted is minified OR clean match wasn't great, try minified versions
+    if (isExtractedMinified || bestSimilarityForVersion < 0.9) {
+      const minifiedResult = await fetchMinifiedFromUnpkg(packageName, version, cache);
+      if (minifiedResult) {
+        // Use enhanced minified similarity algorithm
+        const minifiedSimilarity = computeMinifiedSimilarity(
+          entryPoint.content,
+          extractedFingerprint,
+          minifiedResult.fingerprint,
+          minifiedResult.content
+        );
+        
+        if (minifiedSimilarity > bestSimilarityForVersion) {
+          bestSimilarityForVersion = minifiedSimilarity;
+          matchSource = 'fingerprint-minified';
+        }
+        
+        // Strategy 3: Multi-file fingerprinting for packages split into many files
+        // Compare collected features against minified npm bundle
+        if (packageFeatures && minifiedResult.content && bestSimilarityForVersion < 0.8) {
+          const multiFileSimilarity = computeMultiFileSimilarity(packageFeatures, minifiedResult.content);
+          if (multiFileSimilarity > bestSimilarityForVersion) {
+            bestSimilarityForVersion = multiFileSimilarity;
+            matchSource = 'fingerprint-minified';
+          }
+        }
+      }
+    }
+
+    // Skip if no fingerprint found at all
+    if (bestSimilarityForVersion === 0) {
       continue;
     }
 
-    // Compare fingerprints
-    const similarity = computeSimilarity(extractedFingerprint, npmFingerprint);
-
     // Exact match - cache and return immediately
-    if (similarity >= 0.99) {
+    if (bestSimilarityForVersion >= 0.99) {
       const result: FingerprintResult = {
         version,
         confidence: 'exact',
-        source: 'fingerprint',
-        similarity,
-        matchedFiles: 1,
+        source: matchSource,
+        similarity: bestSimilarityForVersion,
+        matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
         totalFiles: extractedFiles.length,
       };
       
@@ -515,7 +1130,7 @@ export async function findMatchingVersion(
         packageName,
         extractedContentHash: extractedFingerprint.normalizedHash,
         matchedVersion: version,
-        similarity,
+        similarity: bestSimilarityForVersion,
         confidence: 'exact',
         fetchedAt: Date.now(),
       });
@@ -524,13 +1139,13 @@ export async function findMatchingVersion(
     }
 
     // Track best match
-    if (similarity >= minSimilarity && (!bestMatch || similarity > bestMatch.similarity)) {
+    if (bestSimilarityForVersion >= minSimilarity && (!bestMatch || bestSimilarityForVersion > bestMatch.similarity)) {
       bestMatch = {
         version,
-        confidence: similarity >= 0.9 ? 'high' : similarity >= 0.8 ? 'medium' : 'low',
-        source: 'fingerprint',
-        similarity,
-        matchedFiles: 1,
+        confidence: bestSimilarityForVersion >= 0.9 ? 'high' : bestSimilarityForVersion >= 0.8 ? 'medium' : 'low',
+        source: matchSource,
+        similarity: bestSimilarityForVersion,
+        matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
         totalFiles: extractedFiles.length,
       };
     }
@@ -538,6 +1153,25 @@ export async function findMatchingVersion(
     // If we found a very good match, we can stop early
     if (bestMatch && bestMatch.similarity >= 0.95) {
       break;
+    }
+  }
+
+  // Strategy 4: If no good match found and this is a multi-file package,
+  // try structural fingerprinting (comparing file names instead of content)
+  if ((!bestMatch || bestMatch.similarity < minSimilarity) && isMultiFilePackage) {
+    const structuralMatch = await findMatchingVersionByStructure(
+      packageName,
+      extractedFiles,
+      versions,
+      {
+        minSimilarity: 0.5, // Lower threshold for structural matching
+        cache,
+        onVersionCheck,
+      }
+    );
+    
+    if (structuralMatch && (!bestMatch || structuralMatch.similarity > bestMatch.similarity)) {
+      bestMatch = structuralMatch;
     }
   }
 
@@ -611,4 +1245,195 @@ export async function getPackageMetadata(
 ): Promise<PackageMetadataCache | null> {
   const cache = getCache();
   return fetchPackageMetadata(packageName, cache);
+}
+
+/**
+ * Represents a minified vendor bundle for fingerprinting
+ */
+export interface VendorBundleInput {
+  /** The minified bundle content */
+  content: string;
+  /** Inferred package name from filename (optional) */
+  inferredPackage?: string;
+  /** Bundle filename (for context) */
+  filename?: string;
+}
+
+/**
+ * Attempts to identify a package from a minified vendor bundle by fingerprinting
+ * against npm's minified versions.
+ * 
+ * This is specifically for vendor bundles WITHOUT source maps.
+ */
+export async function fingerprintVendorBundle(
+  vendorBundle: VendorBundleInput,
+  candidatePackages: string[],
+  options: {
+    maxVersionsToCheck?: number;
+    minSimilarity?: number;
+    includePrereleases?: boolean;
+    onProgress?: (packageName: string, version: string, result: FingerprintResult | null) => void;
+  } = {}
+): Promise<FingerprintResult & { packageName: string } | null> {
+  const {
+    maxVersionsToCheck = 0,
+    minSimilarity = 0.6, // Lower threshold for minified comparison
+    includePrereleases = false,
+    onProgress,
+  } = options;
+
+  const cache = getCache();
+  const extractedContent = vendorBundle.content;
+  
+  // Pre-compute fingerprint features for the extracted bundle
+  const extractedFingerprint = {
+    contentHash: createHash('sha256').update(extractedContent).digest('hex'),
+    normalizedHash: computeNormalizedHash(extractedContent),
+    contentLength: extractedContent.length,
+  };
+  
+  // Pre-extract features that survive minification
+  const extractedStrings = extractStringLiterals(extractedContent);
+  const extractedCalls = extractFunctionCallPatterns(extractedContent);
+  const extractedNums = extractNumericConstants(extractedContent);
+  
+  let bestMatch: (FingerprintResult & { packageName: string }) | null = null;
+
+  // Try inferred package first if available
+  const packagesToTry = vendorBundle.inferredPackage 
+    ? [vendorBundle.inferredPackage, ...candidatePackages.filter(p => p !== vendorBundle.inferredPackage)]
+    : candidatePackages;
+
+  for (const packageName of packagesToTry) {
+    // Get versions to check
+    const versions = await getAllVersions(packageName, cache, maxVersionsToCheck, includePrereleases);
+    if (versions.length === 0) {
+      continue;
+    }
+
+    for (const version of versions) {
+      onProgress?.(packageName, version, null);
+      
+      // Fetch minified version from CDN
+      const minifiedResult = await fetchMinifiedFromUnpkg(packageName, version, cache);
+      if (!minifiedResult || !minifiedResult.content) {
+        continue;
+      }
+
+      // Compare using minified-specific similarity
+      const npmStrings = extractStringLiterals(minifiedResult.content);
+      const npmCalls = extractFunctionCallPatterns(minifiedResult.content);
+      const npmNums = extractNumericConstants(minifiedResult.content);
+      
+      // Compute similarities for each feature type
+      const stringSim = computeJaccardSimilarity(extractedStrings, npmStrings);
+      const callSim = computeJaccardSimilarity(extractedCalls, npmCalls);
+      const numSim = computeJaccardSimilarity(extractedNums, npmNums);
+      
+      // Length ratio
+      const lenRatio = Math.min(extractedContent.length, minifiedResult.content.length) /
+                       Math.max(extractedContent.length, minifiedResult.content.length);
+      
+      // Weighted combination
+      const similarity = (stringSim * 0.35) + (callSim * 0.35) + (numSim * 0.15) + (lenRatio * 0.15);
+      
+      // Boost if multiple signals agree
+      const agreementBonus = (stringSim > 0.5 && callSim > 0.5) ? 0.1 : 0;
+      const finalSimilarity = Math.min(similarity + agreementBonus, 1.0);
+
+      // Exact match - return immediately
+      if (finalSimilarity >= 0.95) {
+        const result = {
+          packageName,
+          version,
+          confidence: 'high' as const,
+          source: 'fingerprint-minified' as const,
+          similarity: finalSimilarity,
+          matchedFiles: 1,
+          totalFiles: 1,
+        };
+        onProgress?.(packageName, version, result);
+        return result;
+      }
+
+      // Track best match
+      if (finalSimilarity >= minSimilarity && (!bestMatch || finalSimilarity > bestMatch.similarity)) {
+        bestMatch = {
+          packageName,
+          version,
+          confidence: finalSimilarity >= 0.8 ? 'high' : finalSimilarity >= 0.7 ? 'medium' : 'low',
+          source: 'fingerprint-minified',
+          similarity: finalSimilarity,
+          matchedFiles: 1,
+          totalFiles: 1,
+        };
+      }
+    }
+  }
+
+  if (bestMatch) {
+    onProgress?.(bestMatch.packageName, bestMatch.version, bestMatch);
+  }
+  
+  return bestMatch;
+}
+
+/**
+ * Batch fingerprint vendor bundles against a set of candidate packages
+ */
+export async function fingerprintVendorBundles(
+  vendorBundles: VendorBundleInput[],
+  candidatePackages: string[],
+  options: {
+    maxVersionsToCheck?: number;
+    minSimilarity?: number;
+    includePrereleases?: boolean;
+    concurrency?: number;
+    onProgress?: (bundleFilename: string, packageName: string | null, result: FingerprintResult | null) => void;
+  } = {}
+): Promise<Map<string, FingerprintResult & { packageName: string }>> {
+  const {
+    maxVersionsToCheck = 0,
+    minSimilarity = 0.6,
+    includePrereleases = false,
+    concurrency = 2,
+    onProgress,
+  } = options;
+
+  const results = new Map<string, FingerprintResult & { packageName: string }>();
+
+  // Process in batches
+  for (let i = 0; i < vendorBundles.length; i += concurrency) {
+    const batch = vendorBundles.slice(i, i + concurrency);
+    
+    const batchResults = await Promise.all(
+      batch.map(async (bundle) => {
+        const filename = bundle.filename || 'unknown';
+        
+        // For each bundle, prioritize the inferred package if available
+        const candidates = bundle.inferredPackage
+          ? [bundle.inferredPackage, ...candidatePackages.filter(p => p !== bundle.inferredPackage)]
+          : candidatePackages;
+        
+        const result = await fingerprintVendorBundle(bundle, candidates, {
+          maxVersionsToCheck,
+          minSimilarity,
+          includePrereleases,
+          onProgress: (pkg, ver, res) => {
+            onProgress?.(filename, pkg, res);
+          },
+        });
+        
+        return { filename, result };
+      })
+    );
+
+    for (const { filename, result } of batchResults) {
+      if (result) {
+        results.set(filename, result);
+      }
+    }
+  }
+
+  return results;
 }

@@ -35,6 +35,8 @@ export interface ContentFingerprintCache {
   normalizedHash: string;
   signature: string;
   contentLength: number;
+  /** Whether this fingerprint is from a minified/production build */
+  isMinified?: boolean;
   fetchedAt: number;
 }
 
@@ -151,6 +153,28 @@ export interface DependencyManifestCache {
   fetchedAt: number;
 }
 
+/**
+ * Cache for package file structure (list of files from unpkg ?meta)
+ */
+export interface PackageFileListCache {
+  packageName: string;
+  version: string;
+  /** List of file paths (relative to package root) */
+  files: string[];
+  fetchedAt: number;
+}
+
+/**
+ * Cache for npm package existence checks
+ * Used to determine if a package is public (on npm) or internal/private
+ */
+export interface NpmPackageExistenceCache {
+  packageName: string;
+  /** true = package exists on npm (public), false = not found (internal/private) */
+  exists: boolean;
+  fetchedAt: number;
+}
+
 export interface CacheOptions {
   cacheDir?: string;
   ttl?: number;
@@ -161,7 +185,7 @@ export class FingerprintCache {
   private cacheDir: string;
   private ttl: number;
   private disabled: boolean;
-  private memoryCache: Map<string, PackageMetadataCache | ContentFingerprintCache | MatchResultCache | SourceMapCache | ExtractionResultCache | PageScrapingCache | SourceMapDiscoveryCache | DependencyAnalysisCache | DependencyManifestCache> = new Map();
+  private memoryCache: Map<string, PackageMetadataCache | ContentFingerprintCache | MatchResultCache | SourceMapCache | ExtractionResultCache | PageScrapingCache | SourceMapDiscoveryCache | DependencyAnalysisCache | DependencyManifestCache | PackageFileListCache | NpmPackageExistenceCache> = new Map();
 
   constructor(options: CacheOptions = {}) {
     this.cacheDir = options.cacheDir || join(homedir(), '.cache', 'source-reverse-engineerer');
@@ -178,6 +202,7 @@ export class FingerprintCache {
     try {
       await mkdir(join(this.cacheDir, 'metadata'), { recursive: true });
       await mkdir(join(this.cacheDir, 'fingerprints'), { recursive: true });
+      await mkdir(join(this.cacheDir, 'minified-fingerprints'), { recursive: true });
       await mkdir(join(this.cacheDir, 'matches'), { recursive: true });
       await mkdir(join(this.cacheDir, 'sourcemaps'), { recursive: true });
       await mkdir(join(this.cacheDir, 'extractions'), { recursive: true });
@@ -185,6 +210,8 @@ export class FingerprintCache {
       await mkdir(join(this.cacheDir, 'discovery'), { recursive: true });
       await mkdir(join(this.cacheDir, 'analysis'), { recursive: true });
       await mkdir(join(this.cacheDir, 'manifests'), { recursive: true });
+      await mkdir(join(this.cacheDir, 'file-lists'), { recursive: true });
+      await mkdir(join(this.cacheDir, 'npm-existence'), { recursive: true });
     } catch {
       // Ignore errors - cache is optional
     }
@@ -205,6 +232,15 @@ export class FingerprintCache {
   private getFingerprintPath(packageName: string, version: string): string {
     const safeName = packageName.replace(/\//g, '__');
     const dir = join(this.cacheDir, 'fingerprints', safeName);
+    return join(dir, `${version}.json`);
+  }
+
+  /**
+   * Gets the cache file path for a minified content fingerprint
+   */
+  private getMinifiedFingerprintPath(packageName: string, version: string): string {
+    const safeName = packageName.replace(/\//g, '__');
+    const dir = join(this.cacheDir, 'minified-fingerprints', safeName);
     return join(dir, `${version}.json`);
   }
 
@@ -362,6 +398,58 @@ export class FingerprintCache {
     try {
       const filePath = this.getFingerprintPath(fingerprint.packageName, fingerprint.version);
       const dir = join(this.cacheDir, 'fingerprints', fingerprint.packageName.replace(/\//g, '__'));
+      await mkdir(dir, { recursive: true });
+      await writeFile(filePath, JSON.stringify(fingerprint, null, 2), 'utf-8');
+    } catch {
+      // Ignore write errors
+    }
+  }
+
+  /**
+   * Gets cached minified content fingerprint
+   */
+  async getMinifiedFingerprint(packageName: string, version: string): Promise<ContentFingerprintCache | null> {
+    if (this.disabled) return null;
+
+    const memKey = `mfp:${packageName}@${version}`;
+    if (this.memoryCache.has(memKey)) {
+      const cached = this.memoryCache.get(memKey) as ContentFingerprintCache;
+      if (this.isValid(cached.fetchedAt)) {
+        return cached;
+      }
+      this.memoryCache.delete(memKey);
+    }
+
+    try {
+      const filePath = this.getMinifiedFingerprintPath(packageName, version);
+      const content = await readFile(filePath, 'utf-8');
+      const cached: ContentFingerprintCache = JSON.parse(content);
+      
+      if (this.isValid(cached.fetchedAt)) {
+        this.memoryCache.set(memKey, cached);
+        return cached;
+      }
+      
+      await unlink(filePath).catch(() => {});
+    } catch {
+      // Cache miss
+    }
+    
+    return null;
+  }
+
+  /**
+   * Saves minified content fingerprint to cache
+   */
+  async setMinifiedFingerprint(fingerprint: ContentFingerprintCache): Promise<void> {
+    if (this.disabled) return;
+
+    const memKey = `mfp:${fingerprint.packageName}@${fingerprint.version}`;
+    this.memoryCache.set(memKey, fingerprint);
+
+    try {
+      const filePath = this.getMinifiedFingerprintPath(fingerprint.packageName, fingerprint.version);
+      const dir = join(this.cacheDir, 'minified-fingerprints', fingerprint.packageName.replace(/\//g, '__'));
       await mkdir(dir, { recursive: true });
       await writeFile(filePath, JSON.stringify(fingerprint, null, 2), 'utf-8');
     } catch {
@@ -891,6 +979,127 @@ export class FingerprintCache {
       await this.init();
     } catch {
       // Ignore errors
+    }
+  }
+
+  /**
+   * Gets the file path for package file list cache
+   */
+  private getFileListPath(packageName: string, version: string): string {
+    const safeName = packageName.replace(/\//g, '__');
+    return join(this.cacheDir, 'file-lists', `${safeName}@${version}.json`);
+  }
+
+  /**
+   * Gets cached package file list
+   */
+  async getFileList(packageName: string, version: string): Promise<PackageFileListCache | null> {
+    if (this.disabled) return null;
+
+    const memKey = `fl:${packageName}@${version}`;
+    if (this.memoryCache.has(memKey)) {
+      const cached = this.memoryCache.get(memKey) as PackageFileListCache;
+      if (this.isValid(cached.fetchedAt)) {
+        return cached;
+      }
+      this.memoryCache.delete(memKey);
+    }
+
+    try {
+      const filePath = this.getFileListPath(packageName, version);
+      const content = await readFile(filePath, 'utf-8');
+      const cached: PackageFileListCache = JSON.parse(content);
+      
+      if (this.isValid(cached.fetchedAt)) {
+        this.memoryCache.set(memKey, cached);
+        return cached;
+      }
+      
+      await unlink(filePath).catch(() => {});
+    } catch {
+      // Cache miss
+    }
+    
+    return null;
+  }
+
+  /**
+   * Saves package file list to cache
+   */
+  async setFileList(fileList: PackageFileListCache): Promise<void> {
+    if (this.disabled) return;
+
+    const memKey = `fl:${fileList.packageName}@${fileList.version}`;
+    this.memoryCache.set(memKey, fileList);
+
+    try {
+      const filePath = this.getFileListPath(fileList.packageName, fileList.version);
+      await writeFile(filePath, JSON.stringify(fileList, null, 2), 'utf-8');
+    } catch {
+      // Ignore write errors
+    }
+  }
+
+  /**
+   * Gets the cache file path for npm package existence check
+   */
+  private getNpmExistencePath(packageName: string): string {
+    const safeName = packageName.replace(/\//g, '__');
+    return join(this.cacheDir, 'npm-existence', `${safeName}.json`);
+  }
+
+  /**
+   * Gets cached npm package existence check result
+   * Uses longer TTL (30 days) since package existence rarely changes
+   */
+  async getNpmPackageExistence(packageName: string): Promise<NpmPackageExistenceCache | null> {
+    if (this.disabled) return null;
+
+    const memKey = `npm:${packageName}`;
+    if (this.memoryCache.has(memKey)) {
+      const cached = this.memoryCache.get(memKey) as NpmPackageExistenceCache;
+      // Use 30 day TTL for npm existence checks
+      const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
+      if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
+        return cached;
+      }
+      this.memoryCache.delete(memKey);
+    }
+
+    try {
+      const filePath = this.getNpmExistencePath(packageName);
+      const content = await readFile(filePath, 'utf-8');
+      const cached: NpmPackageExistenceCache = JSON.parse(content);
+      
+      // Use 30 day TTL for npm existence checks
+      const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
+      if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
+        this.memoryCache.set(memKey, cached);
+        return cached;
+      }
+      
+      await unlink(filePath).catch(() => {});
+    } catch {
+      // Cache miss
+    }
+    
+    return null;
+  }
+
+  /**
+   * Saves npm package existence check result to cache
+   */
+  async setNpmPackageExistence(cache: NpmPackageExistenceCache): Promise<void> {
+    if (this.disabled) return;
+
+    const memKey = `npm:${cache.packageName}`;
+    this.memoryCache.set(memKey, cache);
+
+    try {
+      const filePath = this.getNpmExistencePath(cache.packageName);
+      await writeFile(filePath, JSON.stringify(cache, null, 2), 'utf-8');
+    } catch {
+      // Ignore write errors
     }
   }
 }

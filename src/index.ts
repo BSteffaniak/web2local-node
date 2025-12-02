@@ -3,7 +3,7 @@
 import chalk from "chalk";
 import ora from "ora";
 import { parseArgs } from "./cli.js";
-import { extractBundleUrls, findAllSourceMaps, type BundleInfo } from "./scraper.js";
+import { extractBundleUrls, findAllSourceMaps, type BundleInfo, type VendorBundle } from "./scraper.js";
 import { extractSourcesFromMap, type SourceFile } from "./sourcemap.js";
 import {
   reconstructSources,
@@ -14,7 +14,11 @@ import {
 import {
   generateDependencyManifest,
   writePackageJson,
+  writeTsConfig,
+  extractNodeModulesPackages,
+  identifyInternalPackages,
 } from "./dependency-analyzer.js";
+import { generateStubFiles } from "./stub-generator.js";
 import { initCache } from "./fingerprint-cache.js";
 import { join } from "path";
 
@@ -68,7 +72,7 @@ async function main() {
     color: "cyan",
   }).start();
 
-  const bundlesWithMaps = await findAllSourceMaps(
+  const { bundlesWithMaps, vendorBundles } = await findAllSourceMaps(
     bundles,
     options.concurrency,
     (completed, total) => {
@@ -86,14 +90,23 @@ async function main() {
     process.exit(0);
   }
 
-  mapSpinner.succeed(
-    `Found ${chalk.bold(bundlesWithMaps.length)} source maps`
-  );
+  let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
+  if (vendorBundles.length > 0) {
+    mapStatusMsg += chalk.gray(` + ${vendorBundles.length} vendor bundles`);
+  }
+  mapSpinner.succeed(mapStatusMsg);
 
   if (options.verbose) {
     console.log(chalk.gray("\nSource maps found:"));
     for (const bundle of bundlesWithMaps) {
       console.log(chalk.gray(`  - ${bundle.sourceMapUrl}`));
+    }
+    if (vendorBundles.length > 0) {
+      console.log(chalk.gray("\nVendor bundles (no source maps):"));
+      for (const vb of vendorBundles) {
+        const pkg = vb.inferredPackage ? ` -> ${vb.inferredPackage}` : '';
+        console.log(chalk.gray(`  - ${vb.filename}${pkg}`));
+      }
     }
     console.log();
   }
@@ -106,14 +119,23 @@ async function main() {
   
   // Collect all source files for version extraction (includes node_modules files)
   const allExtractedFiles: SourceFile[] = [];
+  
+  // Store extraction results per bundle for later reconstruction
+  const bundleExtractions: Array<{
+    bundle: BundleInfo;
+    bundleName: string;
+    files: SourceFile[];
+    errors: string[];
+  }> = [];
 
   console.log(chalk.bold("\nExtracting source files:"));
   console.log();
 
+  // Phase 1: Extract all source maps
   for (const bundle of bundlesWithMaps) {
     const bundleName = getBundleName(bundle.url);
     const extractSpinner = ora({
-      text: `Processing ${chalk.cyan(bundleName)}...`,
+      text: `Extracting ${chalk.cyan(bundleName)}...`,
       indent: 2,
     }).start();
 
@@ -141,12 +163,76 @@ async function main() {
 
       // Collect ALL files for version extraction (before filtering)
       // This includes node_modules/*/package.json files
-      allExtractedFiles.push(...result.files);
+      // Prefix paths with bundle name to match the actual output structure
+      const filesWithBundlePrefix = result.files.map(f => ({
+        ...f,
+        path: `${bundleName}/${f.path}`,
+      }));
+      allExtractedFiles.push(...filesWithBundlePrefix);
+      
+      // Store for reconstruction phase (original paths, bundleName is added during reconstruction)
+      bundleExtractions.push({
+        bundle,
+        bundleName,
+        files: result.files,
+        errors: result.errors,
+      });
 
+      extractSpinner.succeed(
+        `${chalk.cyan(bundleName)}: ${chalk.green(result.files.length)} files found`
+      );
+    } catch (error) {
+      extractSpinner.fail(`${bundleName}: ${error}`);
+    }
+  }
+
+  // Phase 2: Identify internal packages (not on npm) that should always be extracted
+  let internalPackages: Set<string> = new Set();
+  
+  if (!options.includeNodeModules && allExtractedFiles.length > 0) {
+    // Extract unique package names from node_modules paths
+    const nodeModulesPackages = extractNodeModulesPackages(allExtractedFiles);
+    
+    if (nodeModulesPackages.length > 0) {
+      const internalSpinner = ora({
+        text: `Checking ${nodeModulesPackages.length} packages against npm registry...`,
+        indent: 2,
+      }).start();
+
+      internalPackages = await identifyInternalPackages(
+        nodeModulesPackages,
+        (checked, total, packageName, isInternal) => {
+          internalSpinner.text = `Checking packages... (${checked}/${total})${isInternal ? ` - found internal: ${packageName}` : ''}`;
+        }
+      );
+
+      if (internalPackages.size > 0) {
+        internalSpinner.succeed(
+          `Found ${chalk.bold(internalPackages.size)} internal packages (not on npm): ${Array.from(internalPackages).slice(0, 5).join(', ')}${internalPackages.size > 5 ? '...' : ''}`
+        );
+      } else {
+        internalSpinner.succeed('All node_modules packages are public npm packages');
+      }
+    }
+  }
+
+  // Phase 3: Reconstruct files with internal packages knowledge
+  console.log();
+  console.log(chalk.bold("Reconstructing files:"));
+  console.log();
+
+  for (const { bundle, bundleName, files, errors } of bundleExtractions) {
+    const reconstructSpinner = ora({
+      text: `Writing ${chalk.cyan(bundleName)}...`,
+      indent: 2,
+    }).start();
+
+    try {
       // Reconstruct the files on disk
-      const reconstructResult = await reconstructSources(result.files, {
+      const reconstructResult = await reconstructSources(files, {
         outputDir: options.output,
         includeNodeModules: options.includeNodeModules,
+        internalPackages,
         siteHostname: hostname,
         bundleName,
       });
@@ -159,7 +245,7 @@ async function main() {
         bundleUrl: bundle.url,
         sourceMapUrl: bundle.sourceMapUrl!,
         filesExtracted: reconstructResult.filesWritten,
-        files: result.files
+        files: files
           .filter((f) =>
             reconstructResult.filesWritten > 0 ? true : false
           )
@@ -167,8 +253,8 @@ async function main() {
           .slice(0, 100), // Limit manifest size
       });
 
-      extractSpinner.succeed(
-        `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files extracted` +
+      reconstructSpinner.succeed(
+        `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
           (reconstructResult.filesSkipped > 0
             ? chalk.gray(` (${reconstructResult.filesSkipped} skipped)`)
             : "")
@@ -180,7 +266,7 @@ async function main() {
         }
       }
     } catch (error) {
-      extractSpinner.fail(`${bundleName}: ${error}`);
+      reconstructSpinner.fail(`${bundleName}: ${error}`);
     }
   }
 
@@ -214,7 +300,7 @@ async function main() {
       const manifestPath = join(options.output, "manifest.json");
       const projectName = `${hostname}-reconstructed`;
 
-      const { packageJson, stats } = await generateDependencyManifest(
+      const { packageJson, tsconfig, stats } = await generateDependencyManifest(
         sourceDir,
         manifestPath,
         projectName,
@@ -242,6 +328,12 @@ async function main() {
                 if (result) {
                   depSpinner.text = chalk.green(`Matched ${packageName}@${result.version} (${((result as any).similarity * 100).toFixed(0)}%)`);
                 }
+                break;
+              case 'vendor-bundle':
+                depSpinner.text = `Fingerprinting vendor bundles...`;
+                break;
+              case 'vendor-bundle-matched':
+                depSpinner.text = chalk.magenta(`Vendor match: ${packageName}`);
                 break;
               case 'peer-dep':
                 depSpinner.text = `Inferring from peer dependencies...`;
@@ -274,10 +366,31 @@ async function main() {
             depSpinner.text = `Peer dep inference... (${completed}/${total}) ${pkg}`;
             depSpinner.render();
           },
+          onVendorBundleProgress: (completed, total, bundleFilename) => {
+            depSpinner.text = `Vendor bundle fingerprinting... (${completed}/${total}) ${bundleFilename}`;
+            depSpinner.render();
+          },
+          onClassificationProgress: (checked, total, packageName, classification) => {
+            if (classification === 'workspace') {
+              depSpinner.text = chalk.cyan(`Found workspace package: ${packageName}`);
+            } else if (classification === 'internal') {
+              depSpinner.text = chalk.cyan(`Found internal package: ${packageName}`);
+            } else {
+              depSpinner.text = `Classifying packages... (${checked}/${total}) ${packageName}`;
+            }
+            depSpinner.render();
+          },
           // Pass all extracted files for version extraction
           extractedSourceFiles: allExtractedFiles,
           // Pass page URL for cache keying
           pageUrl: options.url,
+          // Pass vendor bundles for minified fingerprinting
+          vendorBundles: vendorBundles.map(vb => ({
+            url: vb.url,
+            filename: vb.filename,
+            content: vb.content,
+            inferredPackage: vb.inferredPackage,
+          })),
         }
       );
 
@@ -286,6 +399,38 @@ async function main() {
       // Write package.json to the site's output directory
       const packageJsonPath = join(sourceDir, "package.json");
       await writePackageJson(packageJsonPath, packageJson);
+
+      // Write tsconfig.json with alias paths configured
+      const tsconfigPath = join(sourceDir, "tsconfig.json");
+      await writeTsConfig(tsconfigPath, tsconfig);
+
+      depSpinner.succeed(`Generated package.json and tsconfig.json`);
+
+      // Generate stub files for internal packages (index.ts files, SCSS declarations)
+      const stubSpinner = ora({
+        text: "Generating stub files for internal packages...",
+        color: "cyan",
+      }).start();
+
+      try {
+        const stubResult = await generateStubFiles(sourceDir, {
+          internalPackages,
+          generateScssDeclarations: true,
+          onProgress: (msg) => {
+            stubSpinner.text = msg;
+          },
+        });
+
+        if (stubResult.indexFilesGenerated > 0 || stubResult.scssDeclarationsGenerated > 0) {
+          stubSpinner.succeed(
+            `Generated ${chalk.bold(stubResult.indexFilesGenerated)} index files, ${chalk.bold(stubResult.scssDeclarationsGenerated)} SCSS declarations`
+          );
+        } else {
+          stubSpinner.info('No stub files needed');
+        }
+      } catch (error) {
+        stubSpinner.warn(`Stub generation had issues: ${error}`);
+      }
 
       // Build detailed status message
       let statusMsg = `Generated package.json with ${chalk.bold(stats.totalDependencies)} dependencies`;
@@ -297,6 +442,7 @@ async function main() {
       if (stats.bySource.versionConstant > 0) sourceCounts.push(`${stats.bySource.versionConstant} constant`);
       if (stats.bySource.packageJson > 0) sourceCounts.push(`${stats.bySource.packageJson} pkg.json`);
       if (stats.bySource.fingerprint > 0) sourceCounts.push(`${stats.bySource.fingerprint} fingerprint`);
+      if (stats.bySource.fingerprintMinified > 0) sourceCounts.push(`${chalk.magenta(stats.bySource.fingerprintMinified)} vendor-bundle`);
       if (stats.bySource.peerDep > 0) sourceCounts.push(`${stats.bySource.peerDep} peer-dep`);
       if (stats.bySource.npmLatest > 0) sourceCounts.push(`${chalk.yellow(stats.bySource.npmLatest)} npm-latest`);
       

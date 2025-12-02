@@ -6,6 +6,8 @@ import { SourceFile, shouldIncludePath } from "./sourcemap.js";
 export interface ReconstructionOptions {
   outputDir: string;
   includeNodeModules: boolean;
+  /** Internal packages (not on npm) that should always be extracted from node_modules */
+  internalPackages?: Set<string>;
   siteHostname: string;
   bundleName: string;
 }
@@ -80,7 +82,7 @@ export async function reconstructSources(
   for (const file of files) {
     try {
       // Check if we should include this file
-      if (!shouldIncludePath(file.path, options.includeNodeModules)) {
+      if (!shouldIncludePath(file.path, options.includeNodeModules, options.internalPackages)) {
         result.filesSkipped++;
         continue;
       }

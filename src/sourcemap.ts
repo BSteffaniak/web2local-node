@@ -168,19 +168,36 @@ export function normalizePath(sourcePath: string, sourceRoot: string = ''): stri
 
 /**
  * Checks if a path should be included based on filters
+ * @param path - The source file path to check
+ * @param includeNodeModules - Whether to include all node_modules
+ * @param internalPackages - Set of package names that are internal (not on npm) and should always be included
  */
 export function shouldIncludePath(
   path: string,
-  includeNodeModules: boolean
+  includeNodeModules: boolean,
+  internalPackages?: Set<string>
 ): boolean {
   // Always exclude some paths
   if (path.includes('\u0000')) {
     return false;
   }
 
-  // Filter node_modules if not included
-  if (!includeNodeModules && path.includes('node_modules')) {
-    return false;
+  // Handle node_modules filtering
+  if (path.includes('node_modules')) {
+    if (includeNodeModules) {
+      return true; // Include all node_modules when flag is set
+    }
+    
+    // Check if this is an internal package that should always be included
+    if (internalPackages && internalPackages.size > 0) {
+      // Extract package name from path: node_modules/@scope/pkg/... or node_modules/pkg/...
+      const match = path.match(/node_modules\/(@[^/]+\/[^/]+|[^/]+)/);
+      if (match && internalPackages.has(match[1])) {
+        return true; // Always include internal packages
+      }
+    }
+    
+    return false; // Skip other node_modules
   }
 
   // Exclude common virtual/internal paths

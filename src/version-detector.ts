@@ -13,6 +13,8 @@ export type VersionSource =
   | 'sourcemap-path'
   | 'peer-dep'
   | 'fingerprint'
+  | 'fingerprint-minified'
+  | 'custom-build'
   | 'npm-latest';
 
 export interface VersionResult {
@@ -85,6 +87,53 @@ const VERSION_CONSTANT_PATTERNS = [
   // "version": "1.2.3" in JSON-like structures
   /["']version["']\s*:\s*["'](\d+\.\d+\.\d+(?:-[\w.]+)?)['"]/,
 ];
+
+/**
+ * Strips URL-like content and JSDoc parameter defaults from text to avoid false positive version matches
+ * (e.g., matching "version=1.1.1" in a WMS URL query string or @param {String} [options.version='1.1.1'])
+ */
+function stripUrlContent(content: string): string {
+  return content
+    // Remove full URLs (http:// and https://)
+    .replace(/https?:\/\/[^\s'"<>]+/g, '')
+    // Remove URL query parameters that might contain version-like strings
+    .replace(/[?&][\w-]+=[\w.-]+/g, '')
+    // Remove data URIs
+    .replace(/data:[^;]+;[^\s'"]+/g, '')
+    // Remove JSDoc @param default values like [options.version='1.1.1']
+    .replace(/\[[\w.]+=['"][^'"]*['"]\]/g, '')
+    // Remove JSDoc @param tags entirely to avoid false matches
+    .replace(/@param\s+\{[^}]*\}\s+\[[^\]]*\]/g, '');
+}
+
+/**
+ * Checks if a match at the given position appears to be inside a URL or other non-version context
+ * Returns true if the context looks valid for a version declaration
+ */
+function isValidVersionContext(content: string, matchIndex: number): boolean {
+  // Get surrounding context (100 chars before and after)
+  const start = Math.max(0, matchIndex - 100);
+  const end = Math.min(content.length, matchIndex + 100);
+  const contextBefore = content.slice(start, matchIndex);
+  const contextAround = content.slice(start, end);
+  
+  // Reject if we're likely inside a URL
+  if (/https?:\/\/[^\s]*$/.test(contextBefore)) return false;
+  
+  // Reject if preceded by URL query param indicators (? or &) without closing
+  if (/[?&][\w-]*=?\s*$/.test(contextBefore)) return false;
+  
+  // Reject if inside what looks like a URL path
+  if (/\/[\w.-]+\/[\w.-]+$/.test(contextBefore) && contextBefore.includes('://')) return false;
+  
+  // Reject if inside a JSDoc @param with default value like [options.version='1.1.1']
+  if (/\[[\w.]*version/.test(contextBefore) || /\[options\./.test(contextBefore)) return false;
+  
+  // Reject if we see @param nearby (likely a JSDoc comment)
+  if (/@param\s+\{/.test(contextAround)) return false;
+  
+  return true;
+}
 
 /**
  * License banner patterns (already in dependency-analyzer but duplicated for completeness)
@@ -184,10 +233,19 @@ export function detectVersionFromConstants(
 ): VersionResult | null {
   // Only check the first 5000 chars and last 1000 chars where version constants usually are
   const searchContent = content.slice(0, 5000) + content.slice(-1000);
+  // Strip URL content to avoid false positives
+  const cleanedContent = stripUrlContent(searchContent);
   
   for (const pattern of VERSION_CONSTANT_PATTERNS) {
-    const match = searchContent.match(pattern);
-    if (match) {
+    const match = cleanedContent.match(pattern);
+    if (match && match.index !== undefined) {
+      // Validate context in original content
+      const originalMatch = searchContent.match(pattern);
+      if (originalMatch && originalMatch.index !== undefined) {
+        if (!isValidVersionContext(searchContent, originalMatch.index)) {
+          continue; // Skip this match, likely inside a URL
+        }
+      }
       return {
         version: match[1],
         confidence: 'medium',
@@ -207,10 +265,20 @@ export function detectVersionFromBanner(
 ): VersionResult | null {
   // Only check the first 1500 chars where banners usually are
   const header = content.slice(0, 1500);
+  // Strip URL content to avoid false positives
+  const cleanedHeader = stripUrlContent(header);
   
   for (const pattern of BANNER_PATTERNS) {
-    const match = header.match(pattern);
-    if (match) {
+    const match = cleanedHeader.match(pattern);
+    if (match && match.index !== undefined) {
+      // Validate context in original content
+      const originalMatch = header.match(pattern);
+      if (originalMatch && originalMatch.index !== undefined) {
+        if (!isValidVersionContext(header, originalMatch.index)) {
+          continue; // Skip this match, likely inside a URL
+        }
+      }
+      
       // Pattern with package name
       if (match.length === 3) {
         const bannerName = match[1].toLowerCase();
@@ -244,6 +312,7 @@ export function detectVersionFromBanner(
 
 /**
  * Get all files belonging to a specific package from extracted sources
+ * Enhanced to detect vendor bundles and custom build directories generically
  */
 export function getPackageFiles(
   files: SourceFile[],
@@ -251,20 +320,116 @@ export function getPackageFiles(
 ): SourceFile[] {
   const packageFiles: SourceFile[] = [];
   const normalizedName = packageName.toLowerCase();
+  const baseName = packageName.replace(/^@[^/]+\//, '').toLowerCase();
+  
+  // Escape special regex chars in package name for pattern matching
+  const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  // Generic patterns for vendor bundles (derived from package name)
+  const vendorPatterns = [
+    // Package name followed by hash: "lodash-Abc123.js", "react-dom-AbC1d2.js"
+    new RegExp(`[/\\\\]${escapedBaseName}-[a-zA-Z0-9]{4,}\\.(m?js)$`, 'i'),
+    // Package name with version in directory: "package-1.2.3/"
+    new RegExp(`[/\\\\]${escapedBaseName}-\\d+\\.\\d+\\.\\d+[^/\\\\]*[/\\\\]`, 'i'),
+    // Package name as standalone directory with source
+    new RegExp(`[/\\\\]${escapedBaseName}[/\\\\](?:src|lib|dist|es|esm)[/\\\\]`, 'i'),
+  ];
   
   for (const file of files) {
     const pathLower = file.path.toLowerCase();
     
-    // Check if this file is from the target package's node_modules
+    // Strategy 1: Check node_modules/ paths (existing logic)
     if (pathLower.includes('node_modules/')) {
       const extractedPkgName = extractPackageNameFromPath(file.path);
       if (extractedPkgName && extractedPkgName.toLowerCase() === normalizedName) {
         packageFiles.push(file);
+        continue;
+      }
+    }
+    
+    // Strategy 2: Check for vendor bundle patterns derived from package name
+    for (const pattern of vendorPatterns) {
+      if (pattern.test(file.path)) {
+        packageFiles.push(file);
+        break;
       }
     }
   }
   
   return packageFiles;
+}
+
+/**
+ * Detects custom build version from directory structure or file headers
+ * Generic approach - derives patterns from package name
+ */
+export function detectCustomBuild(
+  packageName: string,
+  packageFiles: SourceFile[]
+): VersionResult | null {
+  const baseName = packageName.replace(/^@[^/]+\//, '');
+  const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  // Pattern: package-name-X.Y.Z/ or package-name-X.Y.Z-something/ in path
+  const versionInPathPattern = new RegExp(
+    `${escapedBaseName}-(\\d+\\.\\d+\\.\\d+[^/\\\\]*)`,
+    'i'
+  );
+  
+  // Check file paths for version in directory structure
+  for (const file of packageFiles) {
+    const match = file.path.match(versionInPathPattern);
+    if (match) {
+      return {
+        version: match[1],
+        confidence: 'high',
+        source: 'custom-build',
+      };
+    }
+  }
+  
+  // Generic patterns: Look for version in file headers (comments)
+  // These are generic patterns that work across packages
+  const headerPatterns = [
+    // @version X.Y.Z
+    /@version\s+v?(\d+\.\d+\.\d+(?:-[\w.]+)?)/i,
+    // * vX.Y.Z or * X.Y.Z (JSDoc style)
+    /\*\s+v?(\d+\.\d+\.\d+(?:-[\w.]+)?)\s/,
+    // version: "X.Y.Z" or version = "X.Y.Z"
+    /version\s*[:=]\s*['"]v?(\d+\.\d+\.\d+(?:-[\w.]+)?)['"]/i,
+    // PackageName vX.Y.Z (generic banner)
+    new RegExp(`${escapedBaseName}\\s+v?(\\d+\\.\\d+\\.\\d+(?:-[\\w.]+)?)`, 'i'),
+  ];
+  
+  for (const file of packageFiles) {
+    // Only check the first 2000 chars where version info usually is
+    const header = file.content.slice(0, 2000);
+    // Strip URL content to avoid false positives like "version=1.1.1" in query strings
+    const cleanedHeader = stripUrlContent(header);
+    
+    for (const pattern of headerPatterns) {
+      const match = cleanedHeader.match(pattern);
+      if (match && match.index !== undefined) {
+        // Additional validation: check the original content context
+        // Find where this match would be in the original header
+        const originalMatch = header.match(pattern);
+        if (originalMatch && originalMatch.index !== undefined) {
+          // Validate context in original content
+          if (!isValidVersionContext(header, originalMatch.index)) {
+            continue; // Skip this match, likely inside a URL
+          }
+        }
+        
+        return {
+          version: match[1],
+          confidence: 'medium',
+          source: 'custom-build',
+        };
+      }
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -289,13 +454,17 @@ export function detectVersion(
     if (result) return result;
   }
   
-  // 3. Check for license banners (high confidence)
+  // 3. Check for custom build version in directory/path (high confidence)
+  const customBuildResult = detectCustomBuild(packageName, packageFiles);
+  if (customBuildResult) return customBuildResult;
+  
+  // 4. Check for license banners (high confidence)
   for (const file of packageFiles) {
     const result = detectVersionFromBanner(file.content, packageName);
     if (result) return result;
   }
   
-  // 4. Check for VERSION constants (medium confidence)
+  // 5. Check for VERSION constants (medium confidence)
   for (const file of packageFiles) {
     const result = detectVersionFromConstants(file.content, packageName);
     if (result) return result;
