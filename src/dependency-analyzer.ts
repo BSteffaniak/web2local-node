@@ -1489,6 +1489,9 @@ export function generateTsConfig(
   compilerOptions.noUnusedLocals = false;
   compilerOptions.noUnusedParameters = false;
   
+  // Include @types folder for stub declarations of missing packages
+  compilerOptions.typeRoots = ["./node_modules/@types", "./@types"];
+  
   // Interop
   compilerOptions.esModuleInterop = true;
   compilerOptions.allowSyntheticDefaultImports = true;

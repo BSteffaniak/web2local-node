@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "file": "index.css",
+  "sources": [
+    "../../src/styles/_variables.scss",
+    "../../src/components/Button/Button.module.scss",
+    "../../src/components/Header/Header.module.scss"
+  ],
+  "sourcesContent": [
+    "$primary-color: #007bff;\n$border-radius: 4px;\n$spacing-unit: 8px;",
+    ".container {\n  padding: $spacing-unit * 2;\n  border-radius: $border-radius;\n}\n\n.btn-text {\n  font-weight: 600;\n  color: $primary-color;\n}",
+    ".header {\n  background: linear-gradient(to right, $primary-color, darken($primary-color, 10%));\n  padding: $spacing-unit * 3;\n}"
+  ],
+  "names": [],
+  "mappings": "AAAA;AACA;AACA"
+}

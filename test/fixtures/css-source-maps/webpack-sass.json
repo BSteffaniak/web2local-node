@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "file": "styles.css",
+  "sources": [
+    "webpack://myapp/./src/components/Card.module.sass",
+    "webpack://myapp/./src/styles/mixins.sass"
+  ],
+  "sourcesContent": [
+    ".card\n  display: flex\n  flex-direction: column\n  border-radius: 8px\n\n.card-title\n  font-size: 1.25rem\n  font-weight: 700",
+    "=flex-center\n  display: flex\n  align-items: center\n  justify-content: center"
+  ],
+  "names": [],
+  "mappings": "AAAA;AACA"
+}

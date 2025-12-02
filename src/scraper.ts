@@ -1,5 +1,6 @@
 import { parse as parseHTML } from "node-html-parser";
 import { getCache } from "./fingerprint-cache.js";
+import { BROWSER_HEADERS } from "./http.js";
 
 export interface BundleInfo {
   url: string;
@@ -32,7 +33,7 @@ export async function extractBundleUrls(pageUrl: string): Promise<BundleInfo[]> 
     return cached.bundles;
   }
 
-  const response = await fetch(pageUrl);
+  const response = await fetch(pageUrl, { headers: BROWSER_HEADERS });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${pageUrl}: ${response.status} ${response.statusText}`);
   }
@@ -133,7 +134,7 @@ export async function findSourceMapUrl(bundleUrl: string): Promise<SourceMapChec
   let sourceMapUrl: string | null = null;
 
   try {
-    const response = await fetch(bundleUrl);
+    const response = await fetch(bundleUrl, { headers: BROWSER_HEADERS });
     if (!response.ok) {
       // Cache negative result
       await cache.setSourceMapDiscovery(bundleUrl, null);
@@ -164,7 +165,7 @@ export async function findSourceMapUrl(bundleUrl: string): Promise<SourceMapChec
 
     // Try appending .map as a fallback
     const mapUrl = bundleUrl + '.map';
-    const mapResponse = await fetch(mapUrl, { method: 'HEAD' });
+    const mapResponse = await fetch(mapUrl, { method: 'HEAD', headers: BROWSER_HEADERS });
     if (mapResponse.ok) {
       sourceMapUrl = mapUrl;
       await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);

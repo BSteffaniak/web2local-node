@@ -149,10 +149,8 @@ async function main() {
         extractSpinner.warn(
           `${bundleName}: ${result.errors.length} errors during extraction`
         );
-        if (options.verbose) {
-          for (const error of result.errors) {
-            console.log(chalk.red(`    ${error}`));
-          }
+        for (const error of result.errors) {
+          console.log(chalk.red(`    ${error}`));
         }
       }
 
@@ -187,9 +185,11 @@ async function main() {
   }
 
   // Phase 2: Identify internal packages (not on npm) that should always be extracted
+  // This runs regardless of --include-node-modules because we need to know which
+  // packages are internal so we can generate index.ts and package.json stubs for them
   let internalPackages: Set<string> = new Set();
   
-  if (!options.includeNodeModules && allExtractedFiles.length > 0) {
+  if (allExtractedFiles.length > 0) {
     // Extract unique package names from node_modules paths
     const nodeModulesPackages = extractNodeModulesPackages(allExtractedFiles);
     
@@ -413,18 +413,50 @@ async function main() {
       }).start();
 
       try {
+        // Extract installed package names from the generated package.json
+        // Include regular deps, dev deps, internal deps, AND import aliases
+        // This ensures aliased packages like 'sarsaparilla' -> '@fp/sarsaparilla' 
+        // don't get stub files generated for them
+        const installedPackages = new Set<string>();
+        const pkgDeps = (packageJson as any).dependencies || {};
+        const pkgDevDeps = (packageJson as any).devDependencies || {};
+        const pkgInternal = (packageJson as any)._internalDependencies || {};
+        const pkgAliases = (packageJson as any)._importAliases || {};
+        for (const pkg of [
+          ...Object.keys(pkgDeps), 
+          ...Object.keys(pkgDevDeps),
+          ...Object.keys(pkgInternal),
+          ...Object.keys(pkgAliases),
+        ]) {
+          installedPackages.add(pkg);
+        }
+
         const stubResult = await generateStubFiles(sourceDir, {
           internalPackages,
+          installedPackages,
           generateScssDeclarations: true,
+          generateDirectoryIndexes: true,
+          generateCssModuleStubs: true,
+          generateExternalStubs: true,
           onProgress: (msg) => {
             stubSpinner.text = msg;
           },
         });
 
-        if (stubResult.indexFilesGenerated > 0 || stubResult.scssDeclarationsGenerated > 0) {
-          stubSpinner.succeed(
-            `Generated ${chalk.bold(stubResult.indexFilesGenerated)} index files, ${chalk.bold(stubResult.scssDeclarationsGenerated)} SCSS declarations`
-          );
+        const totalGenerated = stubResult.indexFilesGenerated + 
+          stubResult.directoryIndexesGenerated + 
+          stubResult.scssDeclarationsGenerated + 
+          stubResult.cssModuleStubsGenerated +
+          stubResult.externalPackageStubsGenerated;
+
+        if (totalGenerated > 0) {
+          const parts = [];
+          if (stubResult.indexFilesGenerated > 0) parts.push(`${stubResult.indexFilesGenerated} package indexes`);
+          if (stubResult.directoryIndexesGenerated > 0) parts.push(`${stubResult.directoryIndexesGenerated} directory indexes`);
+          if (stubResult.scssDeclarationsGenerated > 0) parts.push(`${stubResult.scssDeclarationsGenerated} SCSS declarations`);
+          if (stubResult.cssModuleStubsGenerated > 0) parts.push(`${stubResult.cssModuleStubsGenerated} CSS module stubs`);
+          if (stubResult.externalPackageStubsGenerated > 0) parts.push(`${stubResult.externalPackageStubsGenerated} external package stubs`);
+          stubSpinner.succeed(`Generated ${parts.join(', ')}`);
         } else {
           stubSpinner.info('No stub files needed');
         }

@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "file": "bundle.css",
+  "sources": [
+    "src/available.scss",
+    "src/missing.scss",
+    "src/also-available.css"
+  ],
+  "sourcesContent": [
+    ".available { display: block; }",
+    null,
+    ".also-available { margin: 0; }"
+  ],
+  "names": [],
+  "mappings": "AAAA"
+}

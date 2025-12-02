@@ -1,4 +1,5 @@
 import { getCache } from "./fingerprint-cache.js";
+import { BROWSER_HEADERS } from "./http.js";
 
 export interface SourceFile {
   path: string;
@@ -58,9 +59,9 @@ export async function extractSourcesFromMap(
       text = cachedSourceMap.content;
     } else {
       // Fetch from network
-      const response = await fetch(sourceMapUrl);
+      const response = await fetch(sourceMapUrl, { headers: BROWSER_HEADERS });
       if (!response.ok) {
-        result.errors.push(`Failed to fetch source map: ${response.status} ${response.statusText}`);
+        result.errors.push(`Failed to fetch source map from ${sourceMapUrl}: ${response.status} ${response.statusText}`);
         return result;
       }
       text = await response.text();
@@ -80,12 +81,14 @@ export async function extractSourcesFromMap(
     try {
       sourceMap = JSON.parse(text);
     } catch (e) {
-      result.errors.push(`Failed to parse source map JSON: ${e}`);
+      // Provide helpful context about what we received instead of JSON
+      const preview = text.slice(0, 1000).replace(/\n/g, ' ');
+      result.errors.push(`Failed to parse source map JSON from ${sourceMapUrl}: ${e}\n      Response preview: "${preview}${text.length > 1000 ? '...' : ''}"`);
       return result;
     }
 
     if (!sourceMap.sources || !sourceMap.sourcesContent) {
-      result.errors.push('Source map missing sources or sourcesContent arrays');
+      result.errors.push(`Source map from ${sourceMapUrl} is missing sources or sourcesContent arrays`);
       return result;
     }
 
@@ -116,7 +119,7 @@ export async function extractSourcesFromMap(
 
     return result;
   } catch (error) {
-    result.errors.push(`Error processing source map: ${error}`);
+    result.errors.push(`Error processing source map from ${sourceMapUrl}: ${error}`);
     return result;
   }
 }

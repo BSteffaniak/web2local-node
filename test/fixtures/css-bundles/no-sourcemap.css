@@ -1,0 +1,17 @@
+/* CSS bundle without source map reference */
+.plain {
+  color: red;
+  font-size: 16px;
+}
+
+.container {
+  display: flex;
+  padding: 20px;
+}
+
+.button {
+  background: blue;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+}
