@@ -13,7 +13,13 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "pretty": "prettier --check \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
+    "pretty:write": "prettier --write \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "validate": "pnpm typecheck && pnpm lint && pnpm pretty"
   },
   "keywords": [
     "sourcemap",
@@ -25,7 +31,13 @@
   "devDependencies": {
     "@swc/types": "^0.1.25",
     "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.0",
+    "@typescript-eslint/parser": "^8.48.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-diff": "^2.0.3",
     "msw": "^2.4.0",
+    "prettier": "^3.7.3",
     "typescript": "^5.3.0",
     "vitest": "^2.1.0"
   },
