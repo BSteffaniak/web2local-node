@@ -1,4 +1,5 @@
 import { parse as parseHTML } from "node-html-parser";
+import { getCache } from "./fingerprint-cache.js";
 
 export interface BundleInfo {
   url: string;
@@ -7,9 +8,18 @@ export interface BundleInfo {
 }
 
 /**
- * Fetches HTML from a URL and extracts all JS/CSS bundle URLs
+ * Fetches HTML from a URL and extracts all JS/CSS bundle URLs.
+ * Results are cached to avoid re-fetching on subsequent runs.
  */
 export async function extractBundleUrls(pageUrl: string): Promise<BundleInfo[]> {
+  const cache = getCache();
+  
+  // Check cache first
+  const cached = await cache.getPageScraping(pageUrl);
+  if (cached) {
+    return cached.bundles;
+  }
+
   const response = await fetch(pageUrl);
   if (!response.ok) {
     throw new Error(`Failed to fetch ${pageUrl}: ${response.status} ${response.statusText}`);
@@ -62,6 +72,9 @@ export async function extractBundleUrls(pageUrl: string): Promise<BundleInfo[]> 
     }
   }
 
+  // Cache the result
+  await cache.setPageScraping(pageUrl, bundles);
+
   return bundles;
 }
 
@@ -83,21 +96,34 @@ function resolveUrl(url: string, baseUrl: URL): string {
 }
 
 /**
- * Checks if a bundle has an associated source map and returns its URL
+ * Checks if a bundle has an associated source map and returns its URL.
+ * Results are cached to avoid re-fetching on subsequent runs.
  */
 export async function findSourceMapUrl(bundleUrl: string): Promise<string | null> {
-  // First, try to fetch just the last part of the file to find sourceMappingURL
-  // We'll fetch the whole file and check the end (could optimize with Range headers)
+  const cache = getCache();
+  
+  // Check cache first
+  const cached = await cache.getSourceMapDiscovery(bundleUrl);
+  if (cached) {
+    return cached.sourceMapUrl;
+  }
+
+  let sourceMapUrl: string | null = null;
+
   try {
     const response = await fetch(bundleUrl);
     if (!response.ok) {
+      // Cache negative result
+      await cache.setSourceMapDiscovery(bundleUrl, null);
       return null;
     }
 
     // Check SourceMap header
     const sourceMapHeader = response.headers.get('SourceMap') || response.headers.get('X-SourceMap');
     if (sourceMapHeader) {
-      return resolveUrl(sourceMapHeader, new URL(bundleUrl));
+      sourceMapUrl = resolveUrl(sourceMapHeader, new URL(bundleUrl));
+      await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+      return sourceMapUrl;
     }
 
     const text = await response.text();
@@ -109,18 +135,26 @@ export async function findSourceMapUrl(bundleUrl: string): Promise<string | null
     const match = jsMatch || cssMatch;
     if (match) {
       const mapUrl = match[1];
-      return resolveUrl(mapUrl, new URL(bundleUrl));
+      sourceMapUrl = resolveUrl(mapUrl, new URL(bundleUrl));
+      await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+      return sourceMapUrl;
     }
 
     // Try appending .map as a fallback
     const mapUrl = bundleUrl + '.map';
     const mapResponse = await fetch(mapUrl, { method: 'HEAD' });
     if (mapResponse.ok) {
-      return mapUrl;
+      sourceMapUrl = mapUrl;
+      await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+      return sourceMapUrl;
     }
 
+    // Cache negative result
+    await cache.setSourceMapDiscovery(bundleUrl, null);
     return null;
   } catch (error) {
+    // Cache negative result on error
+    await cache.setSourceMapDiscovery(bundleUrl, null);
     return null;
   }
 }

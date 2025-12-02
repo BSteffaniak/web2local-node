@@ -1,5 +1,6 @@
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, readFile, stat } from "fs/promises";
 import { dirname, join } from "path";
+import { createHash } from "crypto";
 import { SourceFile, shouldIncludePath } from "./sourcemap.js";
 
 export interface ReconstructionOptions {
@@ -12,6 +13,7 @@ export interface ReconstructionOptions {
 export interface ReconstructionResult {
   filesWritten: number;
   filesSkipped: number;
+  filesUnchanged: number;
   errors: string[];
   outputPath: string;
 }
@@ -35,7 +37,33 @@ export interface BundleManifest {
 }
 
 /**
- * Reconstructs the original file structure from extracted sources
+ * Checks if a file exists and has the same content (by comparing size and hash)
+ */
+async function fileExistsWithSameContent(filePath: string, content: string): Promise<boolean> {
+  try {
+    const fileStats = await stat(filePath);
+    
+    // Quick check: if size doesn't match, content is different
+    const contentBytes = Buffer.byteLength(content, 'utf-8');
+    if (fileStats.size !== contentBytes) {
+      return false;
+    }
+    
+    // Size matches, check hash
+    const existingContent = await readFile(filePath, 'utf-8');
+    const existingHash = createHash('md5').update(existingContent).digest('hex');
+    const newHash = createHash('md5').update(content).digest('hex');
+    
+    return existingHash === newHash;
+  } catch {
+    // File doesn't exist or can't be read
+    return false;
+  }
+}
+
+/**
+ * Reconstructs the original file structure from extracted sources.
+ * Skips writing files that already exist with the same content.
  */
 export async function reconstructSources(
   files: SourceFile[],
@@ -44,6 +72,7 @@ export async function reconstructSources(
   const result: ReconstructionResult = {
     filesWritten: 0,
     filesSkipped: 0,
+    filesUnchanged: 0,
     errors: [],
     outputPath: join(options.outputDir, options.siteHostname, options.bundleName),
   };
@@ -64,6 +93,13 @@ export async function reconstructSources(
       }
 
       const fullPath = join(result.outputPath, safePath);
+      
+      // Check if file already exists with same content
+      if (await fileExistsWithSameContent(fullPath, file.content)) {
+        result.filesUnchanged++;
+        result.filesWritten++; // Count as "written" for reporting purposes
+        continue;
+      }
       
       // Create directory structure
       await mkdir(dirname(fullPath), { recursive: true });

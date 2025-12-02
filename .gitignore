@@ -1,3 +1,5 @@
 dist/
 node_modules/
 output/
+debug-output/
+test-output/

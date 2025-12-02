@@ -6,6 +6,14 @@ export interface CliOptions {
   verbose: boolean;
   includeNodeModules: boolean;
   concurrency: number;
+  generatePackageJson: boolean;
+  useFingerprinting: boolean;
+  fetchNpmVersions: boolean;
+  maxVersions: number;
+  cacheDir: string;
+  noCache: boolean;
+  includePrereleases: boolean;
+  forceRefresh: boolean;
 }
 
 export function parseArgs(): CliOptions {
@@ -30,6 +38,46 @@ export function parseArgs(): CliOptions {
       "Number of concurrent downloads",
       "5"
     )
+    .option(
+      "-p, --generate-package-json",
+      "Generate package.json with detected dependencies",
+      false
+    )
+    .option(
+      "--use-fingerprinting",
+      "Use source fingerprinting to match versions against npm (slower but more accurate)",
+      false
+    )
+    .option(
+      "--fetch-npm-versions",
+      "Fallback to latest npm versions for undetected packages (requires -p)",
+      false
+    )
+    .option(
+      "--max-versions <number>",
+      "Maximum versions to check per package during fingerprinting (0 = all)",
+      "0"
+    )
+    .option(
+      "--cache-dir <dir>",
+      "Directory for caching npm metadata and fingerprints",
+      ""
+    )
+    .option(
+      "--no-cache",
+      "Disable fingerprint caching",
+      false
+    )
+    .option(
+      "--include-prereleases",
+      "Include pre-release versions (alpha, beta, rc, nightly) when fingerprinting",
+      false
+    )
+    .option(
+      "--force-refresh",
+      "Bypass all caches and fetch fresh data",
+      false
+    )
     .parse();
 
   const options = program.opts();
@@ -41,5 +89,13 @@ export function parseArgs(): CliOptions {
     verbose: options.verbose,
     includeNodeModules: options.includeNodeModules,
     concurrency: parseInt(options.concurrency, 10),
+    generatePackageJson: options.generatePackageJson,
+    useFingerprinting: options.useFingerprinting,
+    fetchNpmVersions: options.fetchNpmVersions,
+    maxVersions: parseInt(options.maxVersions, 10),
+    cacheDir: options.cacheDir || '',
+    noCache: options.noCache || false,
+    includePrereleases: options.includePrereleases || false,
+    forceRefresh: options.forceRefresh || false,
   };
 }

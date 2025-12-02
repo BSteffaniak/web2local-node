@@ -1,6 +1,4 @@
-import { createWriteStream } from "fs";
-import { mkdir, writeFile } from "fs/promises";
-import { dirname, join } from "path";
+import { getCache } from "./fingerprint-cache.js";
 
 export interface SourceFile {
   path: string;
@@ -17,12 +15,33 @@ export interface SourceMapResult {
 /**
  * Streaming source map parser that extracts sources without loading entire file into memory.
  * Uses a custom incremental JSON parser to handle large source maps efficiently.
+ * 
+ * Results are cached to avoid re-parsing on subsequent runs.
  */
 export async function extractSourcesFromMap(
   sourceMapUrl: string,
   bundleUrl: string,
   onFile?: (file: SourceFile) => void
 ): Promise<SourceMapResult> {
+  const cache = getCache();
+  
+  // Check extraction result cache first - this is the fastest path
+  const cachedExtraction = await cache.getExtractionResult(sourceMapUrl);
+  if (cachedExtraction) {
+    // Return cached result, invoking onFile callbacks if provided
+    if (onFile) {
+      for (const file of cachedExtraction.files) {
+        onFile(file);
+      }
+    }
+    return {
+      bundleUrl: cachedExtraction.bundleUrl,
+      sourceMapUrl: cachedExtraction.sourceMapUrl,
+      files: cachedExtraction.files,
+      errors: cachedExtraction.errors,
+    };
+  }
+
   const result: SourceMapResult = {
     bundleUrl,
     sourceMapUrl,
@@ -31,15 +50,24 @@ export async function extractSourcesFromMap(
   };
 
   try {
-    const response = await fetch(sourceMapUrl);
-    if (!response.ok) {
-      result.errors.push(`Failed to fetch source map: ${response.status} ${response.statusText}`);
-      return result;
+    let text: string;
+    
+    // Check source map content cache
+    const cachedSourceMap = await cache.getSourceMap(sourceMapUrl);
+    if (cachedSourceMap) {
+      text = cachedSourceMap.content;
+    } else {
+      // Fetch from network
+      const response = await fetch(sourceMapUrl);
+      if (!response.ok) {
+        result.errors.push(`Failed to fetch source map: ${response.status} ${response.statusText}`);
+        return result;
+      }
+      text = await response.text();
+      
+      // Cache the source map content
+      await cache.setSourceMap(sourceMapUrl, text);
     }
-
-    // For streaming, we need to parse the JSON incrementally
-    // The source map format has "sources" and "sourcesContent" arrays that correspond
-    const text = await response.text();
     
     // Parse the source map JSON
     let sourceMap: {
@@ -82,6 +110,9 @@ export async function extractSourcesFromMap(
       result.files.push(file);
       onFile?.(file);
     }
+
+    // Cache the extraction result for next time
+    await cache.setExtractionResult(sourceMapUrl, bundleUrl, result.files, result.errors);
 
     return result;
   } catch (error) {
