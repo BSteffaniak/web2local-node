@@ -41,7 +41,7 @@ export default [
             sourceType: 'script',
 
             parserOptions: {
-                project: ['./tsconfig.json'],
+                project: ['./tsconfig.eslint.json'],
             },
         },
         rules: {
