@@ -30,6 +30,13 @@ export interface StaticCaptureOptions {
     captureFonts: boolean;
     /** Whether to capture other media (video, audio) */
     captureMedia: boolean;
+    /**
+     * Whether to capture the rendered HTML (after JS execution) instead of original.
+     * Set to true for SPAs where the initial HTML is mostly empty and JS renders content.
+     * Set to false (default) to capture the original HTML response, which preserves
+     * proper JS initialization (event handlers will be attached when JS runs).
+     */
+    captureRenderedHtml: boolean;
     /** Verbose logging */
     verbose: boolean;
     /** Progress callback */
@@ -47,6 +54,7 @@ const DEFAULT_OPTIONS: StaticCaptureOptions = {
     captureImages: true,
     captureFonts: true,
     captureMedia: true,
+    captureRenderedHtml: false,
     verbose: false,
 };
 
@@ -225,6 +233,10 @@ export class StaticCapturer {
     private options: StaticCaptureOptions;
     private entrypointUrl: string | null = null;
     private baseOrigin: string | null = null;
+    /** Original HTML response from the network (before JS execution) */
+    private originalDocumentHtml: string | null = null;
+    /** URL of the original document */
+    private originalDocumentUrl: string | null = null;
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -315,12 +327,47 @@ export class StaticCapturer {
                 return;
             }
 
-            // Skip the main document - we'll capture it later via captureDocument()
-            // to get the final rendered HTML (important for SPAs)
+            // For navigation documents (main HTML), capture the original response
+            // This preserves the original HTML before JS modifies it, ensuring
+            // event handlers get properly attached when JS runs on the mock server
             if (resourceType === 'document' && request.isNavigationRequest()) {
-                this.log(
-                    `[Static] Skipping navigation document (will capture rendered version later): ${url}`,
-                );
+                // Only capture the main frame document, not iframe documents
+                const frame = request.frame();
+                const isMainFrame = frame && frame.parentFrame() === null;
+
+                if (!isMainFrame) {
+                    this.log(`[Static] Skipping iframe document: ${url}`);
+                    return;
+                }
+
+                if (this.options.captureRenderedHtml) {
+                    this.log(
+                        `[Static] Skipping navigation document (will capture rendered version later): ${url}`,
+                    );
+                    return;
+                }
+
+                // Only capture if we haven't already captured the main document
+                // (avoid overwriting with redirect responses)
+                if (this.originalDocumentHtml === null) {
+                    // Capture the original HTML from the network response
+                    try {
+                        const body = await response.body();
+                        this.originalDocumentHtml = body.toString('utf-8');
+                        this.originalDocumentUrl = url;
+                        this.log(
+                            `[Static] Captured original document HTML: ${url} (${body.length} bytes)`,
+                        );
+                    } catch (error) {
+                        this.log(
+                            `[Static] Could not capture original document HTML: ${error}`,
+                        );
+                    }
+                } else {
+                    this.log(
+                        `[Static] Skipping duplicate main document: ${url}`,
+                    );
+                }
                 return;
             }
 
@@ -426,7 +473,9 @@ export class StaticCapturer {
     }
 
     /**
-     * Manually capture the main HTML document (final rendered state)
+     * Manually capture the main HTML document.
+     * By default, uses the original HTML response (before JS execution).
+     * If captureRenderedHtml is true, captures the rendered DOM (after JS execution).
      */
     async captureDocument(page: Page): Promise<CapturedAsset | null> {
         const url = page.url();
@@ -438,7 +487,27 @@ export class StaticCapturer {
 
         this.log(`[Static] Capturing document: ${url}`);
 
-        let html = await page.content();
+        let html: string;
+
+        if (this.options.captureRenderedHtml) {
+            // Capture the rendered DOM (after JS execution)
+            // Use this for SPAs where the initial HTML is empty/minimal
+            this.log(`[Static] Using rendered HTML (after JS execution)`);
+            html = await page.content();
+        } else if (this.originalDocumentHtml) {
+            // Use the original HTML response (before JS execution)
+            // This ensures event handlers get properly attached when JS runs
+            this.log(
+                `[Static] Using original HTML (before JS execution, ${this.originalDocumentHtml.length} bytes)`,
+            );
+            html = this.originalDocumentHtml;
+        } else {
+            // Fallback to rendered HTML if original wasn't captured
+            this.log(
+                `[Static] Original HTML not available, falling back to rendered HTML`,
+            );
+            html = await page.content();
+        }
 
         // Rewrite URLs in the HTML to point to local paths
         const baseUrl = this.baseOrigin || this.entrypointUrl || url;
@@ -581,6 +650,8 @@ export class StaticCapturer {
         this.pendingCaptures.clear();
         this.entrypointUrl = null;
         this.baseOrigin = null;
+        this.originalDocumentHtml = null;
+        this.originalDocumentUrl = null;
     }
 }
 

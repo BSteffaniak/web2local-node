@@ -164,6 +164,13 @@ export interface CaptureOptions {
     apiFilter: string[];
     /** Whether to capture static assets */
     captureStatic: boolean;
+    /**
+     * Whether to capture rendered HTML (after JS execution) instead of original.
+     * Set to true for SPAs where the initial HTML is mostly empty and JS renders content.
+     * Set to false (default) to capture the original HTML response, which preserves
+     * proper JS initialization (event handlers will be attached when JS runs).
+     */
+    captureRenderedHtml?: boolean;
     /** Run browser in headless mode */
     headless: boolean;
     /** Time to wait for API calls in ms */

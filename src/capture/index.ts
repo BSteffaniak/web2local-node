@@ -105,6 +105,7 @@ export async function captureWebsite(
         captureImages: opts.captureStatic,
         captureFonts: opts.captureStatic,
         captureMedia: opts.captureStatic,
+        captureRenderedHtml: opts.captureRenderedHtml ?? false,
         onCapture: (asset) => {
             opts.onProgress?.(`Static: ${asset.localPath}`);
         },

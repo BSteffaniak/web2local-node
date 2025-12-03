@@ -18,6 +18,7 @@ export interface CliOptions {
     captureApi: boolean;
     apiFilter: string[];
     captureStatic: boolean;
+    captureRenderedHtml: boolean;
     headless: boolean;
     browseTimeout: number;
     autoScroll: boolean;
@@ -111,6 +112,11 @@ export function parseArgs(): CliOptions {
             'Disable auto-scrolling to trigger lazy loading',
             false,
         )
+        .option(
+            '--capture-rendered-html',
+            'Capture rendered HTML after JS execution instead of original (use for SPAs)',
+            false,
+        )
         .parse();
 
     const options = program.opts();
@@ -142,6 +148,7 @@ export function parseArgs(): CliOptions {
         // Note: commander's --no-X flags set the option to true when NOT specified
         // and false when specified, so we need to handle this correctly
         captureStatic: options.static !== false,
+        captureRenderedHtml: options.captureRenderedHtml || false,
         headless: options.headless !== false,
         browseTimeout: parseInt(options.browseTimeout, 10),
         autoScroll: options.scroll !== false,

@@ -645,6 +645,7 @@ async function main() {
                 outputDir: options.output,
                 apiFilter: options.apiFilter,
                 captureStatic: options.captureStatic,
+                captureRenderedHtml: options.captureRenderedHtml,
                 headless: options.headless,
                 browseTimeout: options.browseTimeout,
                 autoScroll: options.autoScroll,
