@@ -1,11 +1,7 @@
 import { readdir, writeFile, stat, readFile, mkdir } from 'fs/promises';
 import { join, dirname, basename, relative, extname, resolve } from 'path';
 import { parseSync } from '@swc/core';
-import type {
-    ExportSpecifier,
-    ExportNamedDeclaration,
-    ModuleItem,
-} from '@swc/types';
+import type { ExportSpecifier, ExportNamedDeclaration } from '@swc/types';
 import { extractExportsFromSource } from './export-extractor.js';
 import type { FileExports } from './export-extractor.js';
 import {
@@ -13,6 +9,11 @@ import {
     categorizeImport,
     isNodeBuiltin,
 } from './import-extractor.js';
+import {
+    extractNamedImportsForSource,
+    extractProcessEnvAccesses,
+    extractMemberAccesses,
+} from './ast-utils.js';
 
 /**
  * Information about a package that needs stub files
@@ -1184,50 +1185,28 @@ export async function generateMissingTypeFileStubs(
 
     for (const [typePath, importers] of fileImporters) {
         // Extract type names that are imported from this file
-        // We'll analyze the importing files to see what they're trying to import
+        // We'll analyze the importing files to see what they're trying to import using AST
         const importedNames = new Set<string>();
 
         for (const importerPath of importers) {
             try {
                 const content = await readFile(importerPath, 'utf-8');
 
-                // Look for import statements that reference this type file
+                // Get the relative path to the type file (without extension)
                 const relativeTypePath = relative(
                     dirname(importerPath),
                     typePath.replace(/\.ts$/, ''),
                 );
-                const escapedPath = relativeTypePath.replace(
-                    /[.*+?^${}()|[\]\\]/g,
-                    '\\$&',
+
+                // Use AST-based extraction to find named imports from this path
+                // This properly handles multi-line imports, comments, and edge cases
+                const names = extractNamedImportsForSource(
+                    content,
+                    relativeTypePath,
+                    basename(importerPath),
                 );
 
-                // Match: import { Type1, Type2 } from './path.types'
-                // Also match: import type { Type1 } from './path.types'
-                const importPattern = new RegExp(
-                    `import\\s+(?:type\\s+)?{([^}]+)}\\s+from\\s+['"]\\.?\\/?${escapedPath}['"]`,
-                    'g',
-                );
-
-                let match;
-                while ((match = importPattern.exec(content)) !== null) {
-                    const names = match[1]
-                        .split(',')
-                        .map((n) => {
-                            // Handle 'type Name' (inline type modifier) and 'Name as Alias'
-                            let name = n.trim();
-                            // Strip leading 'type ' if present (inline type modifier in imports)
-                            // e.g., import { type ReduxStore } from './types'
-                            if (name.startsWith('type ')) {
-                                name = name.slice(5).trim();
-                            }
-                            // Handle 'Name as Alias' - we want the original name
-                            const parts = name.split(/\s+as\s+/);
-                            return parts[0].trim();
-                        })
-                        .filter((n) => n && n !== 'type');
-
-                    names.forEach((n) => importedNames.add(n));
-                }
+                names.forEach((n) => importedNames.add(n));
             } catch {
                 // File can't be read
             }
@@ -1335,34 +1314,23 @@ export async function generateEnvDeclarations(
         try {
             const content = await readFile(filePath, 'utf-8');
 
-            // Match process.env.SOMETHING or process.env["SOMETHING"] or process.env['SOMETHING']
-            // Also handle nested access like process.env.HOMEPAGE_OPTIONS.searchAcrossUS
-            const patterns = [
-                // process.env.VAR or process.env.VAR.nested.path
-                /process\.env\.([A-Z_][A-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)/g,
-                // process.env["VAR"] or process.env['VAR']
-                /process\.env\[['"]([A-Z_][A-Z0-9_]*)['"]\]/g,
-            ];
+            // Use AST-based extraction to find process.env accesses
+            // This properly ignores code inside strings/comments
+            const envVars = extractProcessEnvAccesses(
+                content,
+                basename(filePath),
+            );
 
-            for (const pattern of patterns) {
-                let match;
-                while ((match = pattern.exec(content)) !== null) {
-                    const envPath = match[1];
-
-                    // Skip common env vars that are already typed
-                    if (
-                        ['NODE_ENV', 'DEBUG', 'CI'].includes(
-                            envPath.split('.')[0],
-                        )
-                    ) {
-                        continue;
-                    }
-
-                    envAccesses.push({
-                        path: envPath,
-                        sourceFile: filePath,
-                    });
+            for (const envPath of envVars) {
+                // Skip common env vars that are already typed
+                if (['NODE_ENV', 'DEBUG', 'CI'].includes(envPath)) {
+                    continue;
                 }
+
+                envAccesses.push({
+                    path: envPath,
+                    sourceFile: filePath,
+                });
             }
         } catch {
             // File can't be read

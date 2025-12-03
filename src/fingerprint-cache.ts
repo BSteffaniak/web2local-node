@@ -8,160 +8,164 @@ import { createHash } from 'crypto';
 import { mkdir, readFile, writeFile, stat, readdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
+import { stripComments, extractDeclarationNames } from './ast-utils.js';
 
 // Cache TTL in milliseconds (7 days)
 const DEFAULT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 export interface PackageMetadataCache {
-  name: string;
-  versions: string[];
-  versionDetails: Record<string, {
-    main?: string;
-    module?: string;
-    exports?: Record<string, unknown>;
-    types?: string;
-    peerDependencies?: Record<string, string>;
-    dependencies?: Record<string, string>;
-  }>;
-  distTags: Record<string, string>;
-  fetchedAt: number;
+    name: string;
+    versions: string[];
+    versionDetails: Record<
+        string,
+        {
+            main?: string;
+            module?: string;
+            exports?: Record<string, unknown>;
+            types?: string;
+            peerDependencies?: Record<string, string>;
+            dependencies?: Record<string, string>;
+        }
+    >;
+    distTags: Record<string, string>;
+    fetchedAt: number;
 }
 
 export interface ContentFingerprintCache {
-  packageName: string;
-  version: string;
-  entryPath: string;
-  contentHash: string;
-  normalizedHash: string;
-  signature: string;
-  contentLength: number;
-  /** Whether this fingerprint is from a minified/production build */
-  isMinified?: boolean;
-  fetchedAt: number;
+    packageName: string;
+    version: string;
+    entryPath: string;
+    contentHash: string;
+    normalizedHash: string;
+    signature: string;
+    contentLength: number;
+    /** Whether this fingerprint is from a minified/production build */
+    isMinified?: boolean;
+    fetchedAt: number;
 }
 
 export interface MatchResultCache {
-  /** Package name */
-  packageName: string;
-  /** Hash of the extracted source content - used as part of cache key */
-  extractedContentHash: string;
-  /** The matched version (null if no match found) */
-  matchedVersion: string | null;
-  /** Similarity score (0-1), 0 if no match */
-  similarity: number;
-  /** Confidence level (null if no match found) */
-  confidence: 'exact' | 'high' | 'medium' | 'low' | null;
-  fetchedAt: number;
+    /** Package name */
+    packageName: string;
+    /** Hash of the extracted source content - used as part of cache key */
+    extractedContentHash: string;
+    /** The matched version (null if no match found) */
+    matchedVersion: string | null;
+    /** Similarity score (0-1), 0 if no match */
+    similarity: number;
+    /** Confidence level (null if no match found) */
+    confidence: 'exact' | 'high' | 'medium' | 'low' | null;
+    fetchedAt: number;
 }
 
 export interface SourceMapCache {
-  /** Original URL of the source map */
-  url: string;
-  /** Hash of URL (used as filename) */
-  urlHash: string;
-  /** The raw source map JSON content */
-  content: string;
-  /** Hash of the content */
-  contentHash: string;
-  fetchedAt: number;
+    /** Original URL of the source map */
+    url: string;
+    /** Hash of URL (used as filename) */
+    urlHash: string;
+    /** The raw source map JSON content */
+    content: string;
+    /** Hash of the content */
+    contentHash: string;
+    fetchedAt: number;
 }
 
 export interface ExtractedFile {
-  path: string;
-  content: string;
+    path: string;
+    content: string;
 }
 
 export interface ExtractionResultCache {
-  /** Source map URL */
-  sourceMapUrl: string;
-  /** Bundle URL */
-  bundleUrl: string;
-  /** Hash of source map URL (used as filename) */
-  urlHash: string;
-  /** Extracted files */
-  files: ExtractedFile[];
-  /** Any errors during extraction */
-  errors: string[];
-  fetchedAt: number;
+    /** Source map URL */
+    sourceMapUrl: string;
+    /** Bundle URL */
+    bundleUrl: string;
+    /** Hash of source map URL (used as filename) */
+    urlHash: string;
+    /** Extracted files */
+    files: ExtractedFile[];
+    /** Any errors during extraction */
+    errors: string[];
+    fetchedAt: number;
 }
 
 export interface BundleInfo {
-  url: string;
-  type: 'script' | 'stylesheet';
-  sourceMapUrl?: string;
+    url: string;
+    type: 'script' | 'stylesheet';
+    sourceMapUrl?: string;
 }
 
 export interface PageScrapingCache {
-  /** Original page URL */
-  pageUrl: string;
-  /** Hash of page URL (used as filename) */
-  urlHash: string;
-  /** Discovered bundle URLs */
-  bundles: BundleInfo[];
-  fetchedAt: number;
+    /** Original page URL */
+    pageUrl: string;
+    /** Hash of page URL (used as filename) */
+    urlHash: string;
+    /** Discovered bundle URLs */
+    bundles: BundleInfo[];
+    fetchedAt: number;
 }
 
 export interface SourceMapDiscoveryCache {
-  /** Bundle URL */
-  bundleUrl: string;
-  /** Hash of bundle URL (used as filename) */
-  urlHash: string;
-  /** Discovered source map URL (null if none found) */
-  sourceMapUrl: string | null;
-  fetchedAt: number;
+    /** Bundle URL */
+    bundleUrl: string;
+    /** Hash of bundle URL (used as filename) */
+    urlHash: string;
+    /** Discovered source map URL (null if none found) */
+    sourceMapUrl: string | null;
+    fetchedAt: number;
 }
 
 export interface DependencyInfo {
-  name: string;
-  version: string | null;
-  confidence?: 'exact' | 'high' | 'medium' | 'low' | 'unverified';
-  versionSource?: string;
-  importedFrom: string[];
-  isPrivate?: boolean;
+    name: string;
+    version: string | null;
+    confidence?: 'exact' | 'high' | 'medium' | 'low' | 'unverified';
+    versionSource?: string;
+    importedFrom: string[];
+    isPrivate?: boolean;
 }
 
 export interface DependencyAnalysisCache {
-  /** Hash of extracted files (paths + content hashes) */
-  extractionHash: string;
-  /** Discovered dependencies */
-  dependencies: Array<[string, DependencyInfo]>;
-  /** Local imports */
-  localImports: string[];
-  fetchedAt: number;
+    /** Hash of extracted files (paths + content hashes) */
+    extractionHash: string;
+    /** Discovered dependencies */
+    dependencies: Array<[string, DependencyInfo]>;
+    /** Local imports */
+    localImports: string[];
+    fetchedAt: number;
 }
 
 export interface VersionStats {
-  totalDependencies: number;
-  withVersion: number;
-  withoutVersion: number;
-  privatePackages: number;
-  bySource: Record<string, number>;
-  byConfidence: Record<string, number>;
+    totalDependencies: number;
+    withVersion: number;
+    withoutVersion: number;
+    privatePackages: number;
+    bySource: Record<string, number>;
+    byConfidence: Record<string, number>;
 }
 
 export interface DependencyManifestCache {
-  /** Hash of page URL */
-  urlHash: string;
-  /** Hash of extraction result */
-  extractionHash: string;
-  /** Hash of options */
-  optionsHash: string;
-  /** Generated package.json content */
-  packageJson: object;
-  /** Statistics */
-  stats: VersionStats;
-  fetchedAt: number;
+    /** Hash of page URL */
+    urlHash: string;
+    /** Hash of extraction result */
+    extractionHash: string;
+    /** Hash of options */
+    optionsHash: string;
+    /** Generated package.json content */
+    packageJson: object;
+    /** Statistics */
+    stats: VersionStats;
+    fetchedAt: number;
 }
 
 /**
  * Cache for package file structure (list of files from unpkg ?meta)
  */
 export interface PackageFileListCache {
-  packageName: string;
-  version: string;
-  /** List of file paths (relative to package root) */
-  files: string[];
-  fetchedAt: number;
+    packageName: string;
+    version: string;
+    /** List of file paths (relative to package root) */
+    files: string[];
+    fetchedAt: number;
 }
 
 /**
@@ -169,982 +173,1107 @@ export interface PackageFileListCache {
  * Used to determine if a package is public (on npm) or internal/private
  */
 export interface NpmPackageExistenceCache {
-  packageName: string;
-  /** true = package exists on npm (public), false = not found (internal/private) */
-  exists: boolean;
-  fetchedAt: number;
+    packageName: string;
+    /** true = package exists on npm (public), false = not found (internal/private) */
+    exists: boolean;
+    fetchedAt: number;
 }
 
 export interface CacheOptions {
-  cacheDir?: string;
-  ttl?: number;
-  disabled?: boolean;
+    cacheDir?: string;
+    ttl?: number;
+    disabled?: boolean;
 }
 
 export class FingerprintCache {
-  private cacheDir: string;
-  private ttl: number;
-  private disabled: boolean;
-  private memoryCache: Map<string, PackageMetadataCache | ContentFingerprintCache | MatchResultCache | SourceMapCache | ExtractionResultCache | PageScrapingCache | SourceMapDiscoveryCache | DependencyAnalysisCache | DependencyManifestCache | PackageFileListCache | NpmPackageExistenceCache> = new Map();
+    private cacheDir: string;
+    private ttl: number;
+    private disabled: boolean;
+    private memoryCache: Map<
+        string,
+        | PackageMetadataCache
+        | ContentFingerprintCache
+        | MatchResultCache
+        | SourceMapCache
+        | ExtractionResultCache
+        | PageScrapingCache
+        | SourceMapDiscoveryCache
+        | DependencyAnalysisCache
+        | DependencyManifestCache
+        | PackageFileListCache
+        | NpmPackageExistenceCache
+    > = new Map();
 
-  constructor(options: CacheOptions = {}) {
-    this.cacheDir = options.cacheDir || join(homedir(), '.cache', 'source-reverse-engineerer');
-    this.ttl = options.ttl || DEFAULT_CACHE_TTL;
-    this.disabled = options.disabled || false;
-  }
-
-  /**
-   * Initializes the cache directory structure
-   */
-  async init(): Promise<void> {
-    if (this.disabled) return;
-    
-    try {
-      await mkdir(join(this.cacheDir, 'metadata'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'fingerprints'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'minified-fingerprints'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'matches'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'sourcemaps'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'extractions'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'pages'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'discovery'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'analysis'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'manifests'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'file-lists'), { recursive: true });
-      await mkdir(join(this.cacheDir, 'npm-existence'), { recursive: true });
-    } catch {
-      // Ignore errors - cache is optional
-    }
-  }
-
-  /**
-   * Gets the cache file path for package metadata
-   */
-  private getMetadataPath(packageName: string): string {
-    // Handle scoped packages: @scope/pkg -> @scope__pkg
-    const safeName = packageName.replace(/\//g, '__');
-    return join(this.cacheDir, 'metadata', `${safeName}.json`);
-  }
-
-  /**
-   * Gets the cache file path for a content fingerprint
-   */
-  private getFingerprintPath(packageName: string, version: string): string {
-    const safeName = packageName.replace(/\//g, '__');
-    const dir = join(this.cacheDir, 'fingerprints', safeName);
-    return join(dir, `${version}.json`);
-  }
-
-  /**
-   * Gets the cache file path for a minified content fingerprint
-   */
-  private getMinifiedFingerprintPath(packageName: string, version: string): string {
-    const safeName = packageName.replace(/\//g, '__');
-    const dir = join(this.cacheDir, 'minified-fingerprints', safeName);
-    return join(dir, `${version}.json`);
-  }
-
-  /**
-   * Gets the cache file path for a match result
-   */
-  private getMatchResultPath(packageName: string, extractedContentHash: string): string {
-    const safeName = packageName.replace(/\//g, '__');
-    return join(this.cacheDir, 'matches', `${safeName}-${extractedContentHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for a source map
-   */
-  private getSourceMapPath(urlHash: string): string {
-    return join(this.cacheDir, 'sourcemaps', `${urlHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for an extraction result
-   */
-  private getExtractionResultPath(urlHash: string): string {
-    return join(this.cacheDir, 'extractions', `${urlHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for page scraping result
-   */
-  private getPageScrapingPath(urlHash: string): string {
-    return join(this.cacheDir, 'pages', `${urlHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for source map discovery result
-   */
-  private getSourceMapDiscoveryPath(urlHash: string): string {
-    return join(this.cacheDir, 'discovery', `${urlHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for dependency analysis result
-   */
-  private getDependencyAnalysisPath(extractionHash: string): string {
-    return join(this.cacheDir, 'analysis', `${extractionHash}.json`);
-  }
-
-  /**
-   * Gets the cache file path for dependency manifest result
-   */
-  private getDependencyManifestPath(urlHash: string, extractionHash: string, optionsHash: string): string {
-    return join(this.cacheDir, 'manifests', `${urlHash}-${extractionHash}-${optionsHash}.json`);
-  }
-
-  /**
-   * Checks if a cache entry is still valid
-   */
-  private isValid(fetchedAt: number): boolean {
-    return Date.now() - fetchedAt < this.ttl;
-  }
-
-  /**
-   * Gets cached package metadata
-   */
-  async getMetadata(packageName: string): Promise<PackageMetadataCache | null> {
-    if (this.disabled) return null;
-
-    // Check memory cache first
-    const memKey = `meta:${packageName}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as PackageMetadataCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
+    constructor(options: CacheOptions = {}) {
+        this.cacheDir =
+            options.cacheDir ||
+            join(homedir(), '.cache', 'source-reverse-engineerer');
+        this.ttl = options.ttl || DEFAULT_CACHE_TTL;
+        this.disabled = options.disabled || false;
     }
 
-    try {
-      const filePath = this.getMetadataPath(packageName);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: PackageMetadataCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      // Cache expired, delete file
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves package metadata to cache
-   */
-  async setMetadata(metadata: PackageMetadataCache): Promise<void> {
-    if (this.disabled) return;
-
-    const memKey = `meta:${metadata.name}`;
-    this.memoryCache.set(memKey, metadata);
-
-    try {
-      const filePath = this.getMetadataPath(metadata.name);
-      await writeFile(filePath, JSON.stringify(metadata, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors - cache is optional
-    }
-  }
-
-  /**
-   * Gets cached content fingerprint
-   */
-  async getFingerprint(packageName: string, version: string): Promise<ContentFingerprintCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `fp:${packageName}@${version}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as ContentFingerprintCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getFingerprintPath(packageName, version);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: ContentFingerprintCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves content fingerprint to cache
-   */
-  async setFingerprint(fingerprint: ContentFingerprintCache): Promise<void> {
-    if (this.disabled) return;
-
-    const memKey = `fp:${fingerprint.packageName}@${fingerprint.version}`;
-    this.memoryCache.set(memKey, fingerprint);
-
-    try {
-      const filePath = this.getFingerprintPath(fingerprint.packageName, fingerprint.version);
-      const dir = join(this.cacheDir, 'fingerprints', fingerprint.packageName.replace(/\//g, '__'));
-      await mkdir(dir, { recursive: true });
-      await writeFile(filePath, JSON.stringify(fingerprint, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-  }
-
-  /**
-   * Gets cached minified content fingerprint
-   */
-  async getMinifiedFingerprint(packageName: string, version: string): Promise<ContentFingerprintCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `mfp:${packageName}@${version}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as ContentFingerprintCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getMinifiedFingerprintPath(packageName, version);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: ContentFingerprintCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves minified content fingerprint to cache
-   */
-  async setMinifiedFingerprint(fingerprint: ContentFingerprintCache): Promise<void> {
-    if (this.disabled) return;
-
-    const memKey = `mfp:${fingerprint.packageName}@${fingerprint.version}`;
-    this.memoryCache.set(memKey, fingerprint);
-
-    try {
-      const filePath = this.getMinifiedFingerprintPath(fingerprint.packageName, fingerprint.version);
-      const dir = join(this.cacheDir, 'minified-fingerprints', fingerprint.packageName.replace(/\//g, '__'));
-      await mkdir(dir, { recursive: true });
-      await writeFile(filePath, JSON.stringify(fingerprint, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-  }
-
-  /**
-   * Gets cached match result for a package + extracted content hash
-   */
-  async getMatchResult(packageName: string, extractedContentHash: string): Promise<MatchResultCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `match:${packageName}:${extractedContentHash}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as MatchResultCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getMatchResultPath(packageName, extractedContentHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: MatchResultCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves match result to cache
-   */
-  async setMatchResult(result: MatchResultCache): Promise<void> {
-    if (this.disabled) return;
-
-    const memKey = `match:${result.packageName}:${result.extractedContentHash}`;
-    this.memoryCache.set(memKey, result);
-
-    try {
-      const filePath = this.getMatchResultPath(result.packageName, result.extractedContentHash);
-      await writeFile(filePath, JSON.stringify(result, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-  }
-
-  /**
-   * Gets cached source map by URL
-   */
-  async getSourceMap(url: string): Promise<SourceMapCache | null> {
-    if (this.disabled) return null;
-
-    const urlHash = createHash('md5').update(url).digest('hex');
-    const memKey = `srcmap:${urlHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as SourceMapCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getSourceMapPath(urlHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: SourceMapCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves source map to cache
-   */
-  async setSourceMap(url: string, content: string): Promise<SourceMapCache> {
-    const urlHash = createHash('md5').update(url).digest('hex');
-    const contentHash = createHash('md5').update(content).digest('hex');
-    
-    const cached: SourceMapCache = {
-      url,
-      urlHash,
-      content,
-      contentHash,
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `srcmap:${urlHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getSourceMapPath(urlHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  /**
-   * Gets cached extraction result by source map URL
-   */
-  async getExtractionResult(sourceMapUrl: string): Promise<ExtractionResultCache | null> {
-    if (this.disabled) return null;
-
-    const urlHash = createHash('md5').update(sourceMapUrl).digest('hex');
-    const memKey = `extraction:${urlHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as ExtractionResultCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getExtractionResultPath(urlHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: ExtractionResultCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves extraction result to cache
-   */
-  async setExtractionResult(
-    sourceMapUrl: string,
-    bundleUrl: string,
-    files: ExtractedFile[],
-    errors: string[]
-  ): Promise<ExtractionResultCache> {
-    const urlHash = createHash('md5').update(sourceMapUrl).digest('hex');
-    
-    const cached: ExtractionResultCache = {
-      sourceMapUrl,
-      bundleUrl,
-      urlHash,
-      files,
-      errors,
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `extraction:${urlHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getExtractionResultPath(urlHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  // ============================================
-  // PAGE SCRAPING CACHE
-  // ============================================
-
-  /**
-   * Gets cached page scraping result by URL
-   */
-  async getPageScraping(pageUrl: string): Promise<PageScrapingCache | null> {
-    if (this.disabled) return null;
-
-    const urlHash = createHash('md5').update(pageUrl).digest('hex');
-    const memKey = `page:${urlHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as PageScrapingCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getPageScrapingPath(urlHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: PageScrapingCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves page scraping result to cache
-   */
-  async setPageScraping(pageUrl: string, bundles: BundleInfo[]): Promise<PageScrapingCache> {
-    const urlHash = createHash('md5').update(pageUrl).digest('hex');
-    
-    const cached: PageScrapingCache = {
-      pageUrl,
-      urlHash,
-      bundles,
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `page:${urlHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getPageScrapingPath(urlHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  // ============================================
-  // SOURCE MAP DISCOVERY CACHE
-  // ============================================
-
-  /**
-   * Gets cached source map discovery result by bundle URL
-   */
-  async getSourceMapDiscovery(bundleUrl: string): Promise<SourceMapDiscoveryCache | null> {
-    if (this.disabled) return null;
-
-    const urlHash = createHash('md5').update(bundleUrl).digest('hex');
-    const memKey = `discovery:${urlHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as SourceMapDiscoveryCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getSourceMapDiscoveryPath(urlHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: SourceMapDiscoveryCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves source map discovery result to cache
-   */
-  async setSourceMapDiscovery(bundleUrl: string, sourceMapUrl: string | null): Promise<SourceMapDiscoveryCache> {
-    const urlHash = createHash('md5').update(bundleUrl).digest('hex');
-    
-    const cached: SourceMapDiscoveryCache = {
-      bundleUrl,
-      urlHash,
-      sourceMapUrl,
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `discovery:${urlHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getSourceMapDiscoveryPath(urlHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  // ============================================
-  // DEPENDENCY ANALYSIS CACHE
-  // ============================================
-
-  /**
-   * Gets cached dependency analysis result
-   */
-  async getDependencyAnalysis(extractionHash: string): Promise<DependencyAnalysisCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `analysis:${extractionHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as DependencyAnalysisCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getDependencyAnalysisPath(extractionHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: DependencyAnalysisCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves dependency analysis result to cache
-   */
-  async setDependencyAnalysis(
-    extractionHash: string,
-    dependencies: Map<string, DependencyInfo>,
-    localImports: Set<string>
-  ): Promise<DependencyAnalysisCache> {
-    const cached: DependencyAnalysisCache = {
-      extractionHash,
-      dependencies: Array.from(dependencies.entries()),
-      localImports: Array.from(localImports),
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `analysis:${extractionHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getDependencyAnalysisPath(extractionHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  // ============================================
-  // DEPENDENCY MANIFEST CACHE
-  // ============================================
-
-  /**
-   * Gets cached dependency manifest result
-   */
-  async getDependencyManifest(
-    urlHash: string,
-    extractionHash: string,
-    optionsHash: string
-  ): Promise<DependencyManifestCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `manifest:${urlHash}:${extractionHash}:${optionsHash}`;
-    
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as DependencyManifestCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
-    }
-
-    try {
-      const filePath = this.getDependencyManifestPath(urlHash, extractionHash, optionsHash);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: DependencyManifestCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
-        this.memoryCache.set(memKey, cached);
-        return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves dependency manifest result to cache
-   */
-  async setDependencyManifest(
-    urlHash: string,
-    extractionHash: string,
-    optionsHash: string,
-    packageJson: object,
-    stats: VersionStats
-  ): Promise<DependencyManifestCache> {
-    const cached: DependencyManifestCache = {
-      urlHash,
-      extractionHash,
-      optionsHash,
-      packageJson,
-      stats,
-      fetchedAt: Date.now(),
-    };
-
-    if (this.disabled) return cached;
-
-    const memKey = `manifest:${urlHash}:${extractionHash}:${optionsHash}`;
-    this.memoryCache.set(memKey, cached);
-
-    try {
-      const filePath = this.getDependencyManifestPath(urlHash, extractionHash, optionsHash);
-      await writeFile(filePath, JSON.stringify(cached), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-
-    return cached;
-  }
-
-  /**
-   * Gets cache statistics
-   */
-  async getStats(): Promise<{
-    metadataCount: number;
-    fingerprintCount: number;
-    totalSize: number;
-  }> {
-    if (this.disabled) {
-      return { metadataCount: 0, fingerprintCount: 0, totalSize: 0 };
-    }
-
-    let metadataCount = 0;
-    let fingerprintCount = 0;
-    let totalSize = 0;
-
-    try {
-      const metaDir = join(this.cacheDir, 'metadata');
-      const metaFiles = await readdir(metaDir).catch(() => []);
-      metadataCount = metaFiles.length;
-      
-      for (const file of metaFiles) {
-        const stats = await stat(join(metaDir, file)).catch(() => null);
-        if (stats) totalSize += stats.size;
-      }
-
-      const fpDir = join(this.cacheDir, 'fingerprints');
-      const pkgDirs = await readdir(fpDir).catch(() => []);
-      
-      for (const pkgDir of pkgDirs) {
-        const versions = await readdir(join(fpDir, pkgDir)).catch(() => []);
-        fingerprintCount += versions.length;
-        
-        for (const file of versions) {
-          const stats = await stat(join(fpDir, pkgDir, file)).catch(() => null);
-          if (stats) totalSize += stats.size;
+    /**
+     * Initializes the cache directory structure
+     */
+    async init(): Promise<void> {
+        if (this.disabled) return;
+
+        try {
+            await mkdir(join(this.cacheDir, 'metadata'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'fingerprints'), {
+                recursive: true,
+            });
+            await mkdir(join(this.cacheDir, 'minified-fingerprints'), {
+                recursive: true,
+            });
+            await mkdir(join(this.cacheDir, 'matches'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'sourcemaps'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'extractions'), {
+                recursive: true,
+            });
+            await mkdir(join(this.cacheDir, 'pages'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'discovery'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'analysis'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'manifests'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'file-lists'), { recursive: true });
+            await mkdir(join(this.cacheDir, 'npm-existence'), {
+                recursive: true,
+            });
+        } catch {
+            // Ignore errors - cache is optional
         }
-      }
-    } catch {
-      // Ignore errors
     }
 
-    return { metadataCount, fingerprintCount, totalSize };
-  }
-
-  /**
-   * Clears the entire cache
-   */
-  async clear(): Promise<void> {
-    this.memoryCache.clear();
-    
-    if (this.disabled) return;
-
-    const { rm } = await import('fs/promises');
-    try {
-      await rm(this.cacheDir, { recursive: true, force: true });
-      await this.init();
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  /**
-   * Gets the file path for package file list cache
-   */
-  private getFileListPath(packageName: string, version: string): string {
-    const safeName = packageName.replace(/\//g, '__');
-    return join(this.cacheDir, 'file-lists', `${safeName}@${version}.json`);
-  }
-
-  /**
-   * Gets cached package file list
-   */
-  async getFileList(packageName: string, version: string): Promise<PackageFileListCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `fl:${packageName}@${version}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as PackageFileListCache;
-      if (this.isValid(cached.fetchedAt)) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
+    /**
+     * Gets the cache file path for package metadata
+     */
+    private getMetadataPath(packageName: string): string {
+        // Handle scoped packages: @scope/pkg -> @scope__pkg
+        const safeName = packageName.replace(/\//g, '__');
+        return join(this.cacheDir, 'metadata', `${safeName}.json`);
     }
 
-    try {
-      const filePath = this.getFileListPath(packageName, version);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: PackageFileListCache = JSON.parse(content);
-      
-      if (this.isValid(cached.fetchedAt)) {
+    /**
+     * Gets the cache file path for a content fingerprint
+     */
+    private getFingerprintPath(packageName: string, version: string): string {
+        const safeName = packageName.replace(/\//g, '__');
+        const dir = join(this.cacheDir, 'fingerprints', safeName);
+        return join(dir, `${version}.json`);
+    }
+
+    /**
+     * Gets the cache file path for a minified content fingerprint
+     */
+    private getMinifiedFingerprintPath(
+        packageName: string,
+        version: string,
+    ): string {
+        const safeName = packageName.replace(/\//g, '__');
+        const dir = join(this.cacheDir, 'minified-fingerprints', safeName);
+        return join(dir, `${version}.json`);
+    }
+
+    /**
+     * Gets the cache file path for a match result
+     */
+    private getMatchResultPath(
+        packageName: string,
+        extractedContentHash: string,
+    ): string {
+        const safeName = packageName.replace(/\//g, '__');
+        return join(
+            this.cacheDir,
+            'matches',
+            `${safeName}-${extractedContentHash}.json`,
+        );
+    }
+
+    /**
+     * Gets the cache file path for a source map
+     */
+    private getSourceMapPath(urlHash: string): string {
+        return join(this.cacheDir, 'sourcemaps', `${urlHash}.json`);
+    }
+
+    /**
+     * Gets the cache file path for an extraction result
+     */
+    private getExtractionResultPath(urlHash: string): string {
+        return join(this.cacheDir, 'extractions', `${urlHash}.json`);
+    }
+
+    /**
+     * Gets the cache file path for page scraping result
+     */
+    private getPageScrapingPath(urlHash: string): string {
+        return join(this.cacheDir, 'pages', `${urlHash}.json`);
+    }
+
+    /**
+     * Gets the cache file path for source map discovery result
+     */
+    private getSourceMapDiscoveryPath(urlHash: string): string {
+        return join(this.cacheDir, 'discovery', `${urlHash}.json`);
+    }
+
+    /**
+     * Gets the cache file path for dependency analysis result
+     */
+    private getDependencyAnalysisPath(extractionHash: string): string {
+        return join(this.cacheDir, 'analysis', `${extractionHash}.json`);
+    }
+
+    /**
+     * Gets the cache file path for dependency manifest result
+     */
+    private getDependencyManifestPath(
+        urlHash: string,
+        extractionHash: string,
+        optionsHash: string,
+    ): string {
+        return join(
+            this.cacheDir,
+            'manifests',
+            `${urlHash}-${extractionHash}-${optionsHash}.json`,
+        );
+    }
+
+    /**
+     * Checks if a cache entry is still valid
+     */
+    private isValid(fetchedAt: number): boolean {
+        return Date.now() - fetchedAt < this.ttl;
+    }
+
+    /**
+     * Gets cached package metadata
+     */
+    async getMetadata(
+        packageName: string,
+    ): Promise<PackageMetadataCache | null> {
+        if (this.disabled) return null;
+
+        // Check memory cache first
+        const memKey = `meta:${packageName}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(memKey) as PackageMetadataCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getMetadataPath(packageName);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: PackageMetadataCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            // Cache expired, delete file
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves package metadata to cache
+     */
+    async setMetadata(metadata: PackageMetadataCache): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `meta:${metadata.name}`;
+        this.memoryCache.set(memKey, metadata);
+
+        try {
+            const filePath = this.getMetadataPath(metadata.name);
+            await writeFile(
+                filePath,
+                JSON.stringify(metadata, null, 2),
+                'utf-8',
+            );
+        } catch {
+            // Ignore write errors - cache is optional
+        }
+    }
+
+    /**
+     * Gets cached content fingerprint
+     */
+    async getFingerprint(
+        packageName: string,
+        version: string,
+    ): Promise<ContentFingerprintCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `fp:${packageName}@${version}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as ContentFingerprintCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getFingerprintPath(packageName, version);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: ContentFingerprintCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves content fingerprint to cache
+     */
+    async setFingerprint(fingerprint: ContentFingerprintCache): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `fp:${fingerprint.packageName}@${fingerprint.version}`;
+        this.memoryCache.set(memKey, fingerprint);
+
+        try {
+            const filePath = this.getFingerprintPath(
+                fingerprint.packageName,
+                fingerprint.version,
+            );
+            const dir = join(
+                this.cacheDir,
+                'fingerprints',
+                fingerprint.packageName.replace(/\//g, '__'),
+            );
+            await mkdir(dir, { recursive: true });
+            await writeFile(
+                filePath,
+                JSON.stringify(fingerprint, null, 2),
+                'utf-8',
+            );
+        } catch {
+            // Ignore write errors
+        }
+    }
+
+    /**
+     * Gets cached minified content fingerprint
+     */
+    async getMinifiedFingerprint(
+        packageName: string,
+        version: string,
+    ): Promise<ContentFingerprintCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `mfp:${packageName}@${version}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as ContentFingerprintCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getMinifiedFingerprintPath(
+                packageName,
+                version,
+            );
+            const content = await readFile(filePath, 'utf-8');
+            const cached: ContentFingerprintCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves minified content fingerprint to cache
+     */
+    async setMinifiedFingerprint(
+        fingerprint: ContentFingerprintCache,
+    ): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `mfp:${fingerprint.packageName}@${fingerprint.version}`;
+        this.memoryCache.set(memKey, fingerprint);
+
+        try {
+            const filePath = this.getMinifiedFingerprintPath(
+                fingerprint.packageName,
+                fingerprint.version,
+            );
+            const dir = join(
+                this.cacheDir,
+                'minified-fingerprints',
+                fingerprint.packageName.replace(/\//g, '__'),
+            );
+            await mkdir(dir, { recursive: true });
+            await writeFile(
+                filePath,
+                JSON.stringify(fingerprint, null, 2),
+                'utf-8',
+            );
+        } catch {
+            // Ignore write errors
+        }
+    }
+
+    /**
+     * Gets cached match result for a package + extracted content hash
+     */
+    async getMatchResult(
+        packageName: string,
+        extractedContentHash: string,
+    ): Promise<MatchResultCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `match:${packageName}:${extractedContentHash}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(memKey) as MatchResultCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getMatchResultPath(
+                packageName,
+                extractedContentHash,
+            );
+            const content = await readFile(filePath, 'utf-8');
+            const cached: MatchResultCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves match result to cache
+     */
+    async setMatchResult(result: MatchResultCache): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `match:${result.packageName}:${result.extractedContentHash}`;
+        this.memoryCache.set(memKey, result);
+
+        try {
+            const filePath = this.getMatchResultPath(
+                result.packageName,
+                result.extractedContentHash,
+            );
+            await writeFile(filePath, JSON.stringify(result, null, 2), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+    }
+
+    /**
+     * Gets cached source map by URL
+     */
+    async getSourceMap(url: string): Promise<SourceMapCache | null> {
+        if (this.disabled) return null;
+
+        const urlHash = createHash('md5').update(url).digest('hex');
+        const memKey = `srcmap:${urlHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(memKey) as SourceMapCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getSourceMapPath(urlHash);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: SourceMapCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves source map to cache
+     */
+    async setSourceMap(url: string, content: string): Promise<SourceMapCache> {
+        const urlHash = createHash('md5').update(url).digest('hex');
+        const contentHash = createHash('md5').update(content).digest('hex');
+
+        const cached: SourceMapCache = {
+            url,
+            urlHash,
+            content,
+            contentHash,
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `srcmap:${urlHash}`;
         this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getSourceMapPath(urlHash);
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
         return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
-    }
-    
-    return null;
-  }
-
-  /**
-   * Saves package file list to cache
-   */
-  async setFileList(fileList: PackageFileListCache): Promise<void> {
-    if (this.disabled) return;
-
-    const memKey = `fl:${fileList.packageName}@${fileList.version}`;
-    this.memoryCache.set(memKey, fileList);
-
-    try {
-      const filePath = this.getFileListPath(fileList.packageName, fileList.version);
-      await writeFile(filePath, JSON.stringify(fileList, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors
-    }
-  }
-
-  /**
-   * Gets the cache file path for npm package existence check
-   */
-  private getNpmExistencePath(packageName: string): string {
-    const safeName = packageName.replace(/\//g, '__');
-    return join(this.cacheDir, 'npm-existence', `${safeName}.json`);
-  }
-
-  /**
-   * Gets cached npm package existence check result
-   * Uses longer TTL (30 days) since package existence rarely changes
-   */
-  async getNpmPackageExistence(packageName: string): Promise<NpmPackageExistenceCache | null> {
-    if (this.disabled) return null;
-
-    const memKey = `npm:${packageName}`;
-    if (this.memoryCache.has(memKey)) {
-      const cached = this.memoryCache.get(memKey) as NpmPackageExistenceCache;
-      // Use 30 day TTL for npm existence checks
-      const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
-      if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
-        return cached;
-      }
-      this.memoryCache.delete(memKey);
     }
 
-    try {
-      const filePath = this.getNpmExistencePath(packageName);
-      const content = await readFile(filePath, 'utf-8');
-      const cached: NpmPackageExistenceCache = JSON.parse(content);
-      
-      // Use 30 day TTL for npm existence checks
-      const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
-      if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
+    /**
+     * Gets cached extraction result by source map URL
+     */
+    async getExtractionResult(
+        sourceMapUrl: string,
+    ): Promise<ExtractionResultCache | null> {
+        if (this.disabled) return null;
+
+        const urlHash = createHash('md5').update(sourceMapUrl).digest('hex');
+        const memKey = `extraction:${urlHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as ExtractionResultCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getExtractionResultPath(urlHash);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: ExtractionResultCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves extraction result to cache
+     */
+    async setExtractionResult(
+        sourceMapUrl: string,
+        bundleUrl: string,
+        files: ExtractedFile[],
+        errors: string[],
+    ): Promise<ExtractionResultCache> {
+        const urlHash = createHash('md5').update(sourceMapUrl).digest('hex');
+
+        const cached: ExtractionResultCache = {
+            sourceMapUrl,
+            bundleUrl,
+            urlHash,
+            files,
+            errors,
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `extraction:${urlHash}`;
         this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getExtractionResultPath(urlHash);
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
         return cached;
-      }
-      
-      await unlink(filePath).catch(() => {});
-    } catch {
-      // Cache miss
     }
-    
-    return null;
-  }
 
-  /**
-   * Saves npm package existence check result to cache
-   */
-  async setNpmPackageExistence(cache: NpmPackageExistenceCache): Promise<void> {
-    if (this.disabled) return;
+    // ============================================
+    // PAGE SCRAPING CACHE
+    // ============================================
 
-    const memKey = `npm:${cache.packageName}`;
-    this.memoryCache.set(memKey, cache);
+    /**
+     * Gets cached page scraping result by URL
+     */
+    async getPageScraping(pageUrl: string): Promise<PageScrapingCache | null> {
+        if (this.disabled) return null;
 
-    try {
-      const filePath = this.getNpmExistencePath(cache.packageName);
-      await writeFile(filePath, JSON.stringify(cache, null, 2), 'utf-8');
-    } catch {
-      // Ignore write errors
+        const urlHash = createHash('md5').update(pageUrl).digest('hex');
+        const memKey = `page:${urlHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(memKey) as PageScrapingCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getPageScrapingPath(urlHash);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: PageScrapingCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
     }
-  }
+
+    /**
+     * Saves page scraping result to cache
+     */
+    async setPageScraping(
+        pageUrl: string,
+        bundles: BundleInfo[],
+    ): Promise<PageScrapingCache> {
+        const urlHash = createHash('md5').update(pageUrl).digest('hex');
+
+        const cached: PageScrapingCache = {
+            pageUrl,
+            urlHash,
+            bundles,
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `page:${urlHash}`;
+        this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getPageScrapingPath(urlHash);
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
+        return cached;
+    }
+
+    // ============================================
+    // SOURCE MAP DISCOVERY CACHE
+    // ============================================
+
+    /**
+     * Gets cached source map discovery result by bundle URL
+     */
+    async getSourceMapDiscovery(
+        bundleUrl: string,
+    ): Promise<SourceMapDiscoveryCache | null> {
+        if (this.disabled) return null;
+
+        const urlHash = createHash('md5').update(bundleUrl).digest('hex');
+        const memKey = `discovery:${urlHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as SourceMapDiscoveryCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getSourceMapDiscoveryPath(urlHash);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: SourceMapDiscoveryCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves source map discovery result to cache
+     */
+    async setSourceMapDiscovery(
+        bundleUrl: string,
+        sourceMapUrl: string | null,
+    ): Promise<SourceMapDiscoveryCache> {
+        const urlHash = createHash('md5').update(bundleUrl).digest('hex');
+
+        const cached: SourceMapDiscoveryCache = {
+            bundleUrl,
+            urlHash,
+            sourceMapUrl,
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `discovery:${urlHash}`;
+        this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getSourceMapDiscoveryPath(urlHash);
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
+        return cached;
+    }
+
+    // ============================================
+    // DEPENDENCY ANALYSIS CACHE
+    // ============================================
+
+    /**
+     * Gets cached dependency analysis result
+     */
+    async getDependencyAnalysis(
+        extractionHash: string,
+    ): Promise<DependencyAnalysisCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `analysis:${extractionHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as DependencyAnalysisCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getDependencyAnalysisPath(extractionHash);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: DependencyAnalysisCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves dependency analysis result to cache
+     */
+    async setDependencyAnalysis(
+        extractionHash: string,
+        dependencies: Map<string, DependencyInfo>,
+        localImports: Set<string>,
+    ): Promise<DependencyAnalysisCache> {
+        const cached: DependencyAnalysisCache = {
+            extractionHash,
+            dependencies: Array.from(dependencies.entries()),
+            localImports: Array.from(localImports),
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `analysis:${extractionHash}`;
+        this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getDependencyAnalysisPath(extractionHash);
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
+        return cached;
+    }
+
+    // ============================================
+    // DEPENDENCY MANIFEST CACHE
+    // ============================================
+
+    /**
+     * Gets cached dependency manifest result
+     */
+    async getDependencyManifest(
+        urlHash: string,
+        extractionHash: string,
+        optionsHash: string,
+    ): Promise<DependencyManifestCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `manifest:${urlHash}:${extractionHash}:${optionsHash}`;
+
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as DependencyManifestCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getDependencyManifestPath(
+                urlHash,
+                extractionHash,
+                optionsHash,
+            );
+            const content = await readFile(filePath, 'utf-8');
+            const cached: DependencyManifestCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves dependency manifest result to cache
+     */
+    async setDependencyManifest(
+        urlHash: string,
+        extractionHash: string,
+        optionsHash: string,
+        packageJson: object,
+        stats: VersionStats,
+    ): Promise<DependencyManifestCache> {
+        const cached: DependencyManifestCache = {
+            urlHash,
+            extractionHash,
+            optionsHash,
+            packageJson,
+            stats,
+            fetchedAt: Date.now(),
+        };
+
+        if (this.disabled) return cached;
+
+        const memKey = `manifest:${urlHash}:${extractionHash}:${optionsHash}`;
+        this.memoryCache.set(memKey, cached);
+
+        try {
+            const filePath = this.getDependencyManifestPath(
+                urlHash,
+                extractionHash,
+                optionsHash,
+            );
+            await writeFile(filePath, JSON.stringify(cached), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+
+        return cached;
+    }
+
+    /**
+     * Gets cache statistics
+     */
+    async getStats(): Promise<{
+        metadataCount: number;
+        fingerprintCount: number;
+        totalSize: number;
+    }> {
+        if (this.disabled) {
+            return { metadataCount: 0, fingerprintCount: 0, totalSize: 0 };
+        }
+
+        let metadataCount = 0;
+        let fingerprintCount = 0;
+        let totalSize = 0;
+
+        try {
+            const metaDir = join(this.cacheDir, 'metadata');
+            const metaFiles = await readdir(metaDir).catch(() => []);
+            metadataCount = metaFiles.length;
+
+            for (const file of metaFiles) {
+                const stats = await stat(join(metaDir, file)).catch(() => null);
+                if (stats) totalSize += stats.size;
+            }
+
+            const fpDir = join(this.cacheDir, 'fingerprints');
+            const pkgDirs = await readdir(fpDir).catch(() => []);
+
+            for (const pkgDir of pkgDirs) {
+                const versions = await readdir(join(fpDir, pkgDir)).catch(
+                    () => [],
+                );
+                fingerprintCount += versions.length;
+
+                for (const file of versions) {
+                    const stats = await stat(join(fpDir, pkgDir, file)).catch(
+                        () => null,
+                    );
+                    if (stats) totalSize += stats.size;
+                }
+            }
+        } catch {
+            // Ignore errors
+        }
+
+        return { metadataCount, fingerprintCount, totalSize };
+    }
+
+    /**
+     * Clears the entire cache
+     */
+    async clear(): Promise<void> {
+        this.memoryCache.clear();
+
+        if (this.disabled) return;
+
+        const { rm } = await import('fs/promises');
+        try {
+            await rm(this.cacheDir, { recursive: true, force: true });
+            await this.init();
+        } catch {
+            // Ignore errors
+        }
+    }
+
+    /**
+     * Gets the file path for package file list cache
+     */
+    private getFileListPath(packageName: string, version: string): string {
+        const safeName = packageName.replace(/\//g, '__');
+        return join(this.cacheDir, 'file-lists', `${safeName}@${version}.json`);
+    }
+
+    /**
+     * Gets cached package file list
+     */
+    async getFileList(
+        packageName: string,
+        version: string,
+    ): Promise<PackageFileListCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `fl:${packageName}@${version}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(memKey) as PackageFileListCache;
+            if (this.isValid(cached.fetchedAt)) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getFileListPath(packageName, version);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: PackageFileListCache = JSON.parse(content);
+
+            if (this.isValid(cached.fetchedAt)) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves package file list to cache
+     */
+    async setFileList(fileList: PackageFileListCache): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `fl:${fileList.packageName}@${fileList.version}`;
+        this.memoryCache.set(memKey, fileList);
+
+        try {
+            const filePath = this.getFileListPath(
+                fileList.packageName,
+                fileList.version,
+            );
+            await writeFile(
+                filePath,
+                JSON.stringify(fileList, null, 2),
+                'utf-8',
+            );
+        } catch {
+            // Ignore write errors
+        }
+    }
+
+    /**
+     * Gets the cache file path for npm package existence check
+     */
+    private getNpmExistencePath(packageName: string): string {
+        const safeName = packageName.replace(/\//g, '__');
+        return join(this.cacheDir, 'npm-existence', `${safeName}.json`);
+    }
+
+    /**
+     * Gets cached npm package existence check result
+     * Uses longer TTL (30 days) since package existence rarely changes
+     */
+    async getNpmPackageExistence(
+        packageName: string,
+    ): Promise<NpmPackageExistenceCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `npm:${packageName}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as NpmPackageExistenceCache;
+            // Use 30 day TTL for npm existence checks
+            const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
+            if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getNpmExistencePath(packageName);
+            const content = await readFile(filePath, 'utf-8');
+            const cached: NpmPackageExistenceCache = JSON.parse(content);
+
+            // Use 30 day TTL for npm existence checks
+            const npmExistenceTtl = 30 * 24 * 60 * 60 * 1000;
+            if (Date.now() - cached.fetchedAt < npmExistenceTtl) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves npm package existence check result to cache
+     */
+    async setNpmPackageExistence(
+        cache: NpmPackageExistenceCache,
+    ): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `npm:${cache.packageName}`;
+        this.memoryCache.set(memKey, cache);
+
+        try {
+            const filePath = this.getNpmExistencePath(cache.packageName);
+            await writeFile(filePath, JSON.stringify(cache, null, 2), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+    }
 }
 
 /**
  * Computes normalized content hash (strips whitespace and comments)
+ * Uses AST-based comment stripping that properly handles comments inside strings
  */
 export function computeNormalizedHash(content: string): string {
-  // IMPORTANT: Remove comments BEFORE collapsing whitespace!
-  // Otherwise "// comment\ncode" becomes "// comment code" and the
-  // single-line comment regex removes everything.
-  const normalized = content
-    .replace(/\/\*[\s\S]*?\*\//g, '')  // Remove block comments first
-    .replace(/\/\/.*/g, '')             // Remove single-line comments
-    .replace(/\s+/g, ' ')               // Collapse whitespace
-    .trim();
-  return createHash('md5').update(normalized).digest('hex');
+    // Use AST-based comment stripping that correctly handles comments inside strings
+    // e.g., "http://example.com" won't have "//example.com" removed
+    const withoutComments = stripComments(content);
+    const normalized = withoutComments.replace(/\s+/g, ' ').trim();
+    return createHash('md5').update(normalized).digest('hex');
 }
 
 /**
- * Extracts a code signature from source content
- * Used for fuzzy matching when exact hash doesn't match
+ * Extracts a code signature from source content using AST parsing.
+ * Used for fuzzy matching when exact hash doesn't match.
+ * This properly extracts actual declaration names, not matches inside strings/comments.
  */
 export function extractCodeSignature(content: string): string {
-  const patterns = [
-    // Function declarations
-    /(?:function|class|const|let|var)\s+(\w+)/g,
-    // Export statements
-    /export\s+(?:default\s+)?(?:function|class|const|let|var)?\s*(\w+)/g,
-    // Method definitions
-    /(\w+)\s*\([^)]*\)\s*\{/g,
-  ];
-  
-  const identifiers = new Set<string>();
-  
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(content)) !== null) {
-      if (match[1] && match[1].length > 2) {
-        identifiers.add(match[1]);
-      }
-    }
-  }
-  
-  return Array.from(identifiers).sort().join('|');
+    // Use AST-based extraction for accurate declaration names
+    const names = extractDeclarationNames(content);
+
+    // Filter to names longer than 2 chars (skip single-char minified names)
+    const identifiers = names.filter((name) => name.length > 2);
+
+    return [...new Set(identifiers)].sort().join('|');
 }
 
 // Global cache instance
@@ -1156,20 +1285,22 @@ let globalCache: FingerprintCache | null = null;
  * To reconfigure, use initCache() instead.
  */
 export function getCache(): FingerprintCache {
-  if (!globalCache) {
-    globalCache = new FingerprintCache();
-  }
-  return globalCache;
+    if (!globalCache) {
+        globalCache = new FingerprintCache();
+    }
+    return globalCache;
 }
 
 /**
  * Initializes (or reinitializes) the global cache with specific options.
  * Call this once at startup before any fingerprinting operations.
  */
-export async function initCache(options?: CacheOptions): Promise<FingerprintCache> {
-  globalCache = new FingerprintCache(options);
-  await globalCache.init();
-  return globalCache;
+export async function initCache(
+    options?: CacheOptions,
+): Promise<FingerprintCache> {
+    globalCache = new FingerprintCache(options);
+    await globalCache.init();
+    return globalCache;
 }
 
 /**
@@ -1177,32 +1308,32 @@ export async function initCache(options?: CacheOptions): Promise<FingerprintCach
  * Uses file paths and content lengths for fast comparison
  */
 export function computeExtractionHash(files: ExtractedFile[]): string {
-  const data = files
-    .map(f => `${f.path}:${f.content.length}`)
-    .sort()
-    .join('\n');
-  return createHash('md5').update(data).digest('hex');
+    const data = files
+        .map((f) => `${f.path}:${f.content.length}`)
+        .sort()
+        .join('\n');
+    return createHash('md5').update(data).digest('hex');
 }
 
 /**
  * Computes a hash for options that affect the manifest result
  */
 export function computeOptionsHash(options: {
-  useFingerprinting?: boolean;
-  includePrereleases?: boolean;
-  fetchFromNpm?: boolean;
+    useFingerprinting?: boolean;
+    includePrereleases?: boolean;
+    fetchFromNpm?: boolean;
 }): string {
-  const data = JSON.stringify({
-    useFingerprinting: options.useFingerprinting || false,
-    includePrereleases: options.includePrereleases || false,
-    fetchFromNpm: options.fetchFromNpm || false,
-  });
-  return createHash('md5').update(data).digest('hex');
+    const data = JSON.stringify({
+        useFingerprinting: options.useFingerprinting || false,
+        includePrereleases: options.includePrereleases || false,
+        fetchFromNpm: options.fetchFromNpm || false,
+    });
+    return createHash('md5').update(data).digest('hex');
 }
 
 /**
  * Computes URL hash for cache keying
  */
 export function computeUrlHash(url: string): string {
-  return createHash('md5').update(url).digest('hex');
+    return createHash('md5').update(url).digest('hex');
 }

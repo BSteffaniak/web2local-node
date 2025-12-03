@@ -1,5 +1,5 @@
 import { readFile, readdir, writeFile } from 'fs/promises';
-import { join, extname, normalize } from 'path';
+import { join, extname } from 'path';
 import {
     detectVersions,
     getPackageFiles,
@@ -20,9 +20,15 @@ import {
     computeOptionsHash,
     computeUrlHash,
     type ExtractedFile,
-    type DependencyInfo as CacheDependencyInfo,
-    type NpmPackageExistenceCache,
 } from './fingerprint-cache.js';
+import {
+    extractImportSourcesFromAST,
+    hasJSXElements,
+    detectFrameworkImports,
+    detectModuleSystem,
+    detectEnvironmentAPIs,
+    detectESFeatures,
+} from './ast-utils.js';
 
 export interface DependencyInfo {
     name: string;
@@ -39,19 +45,7 @@ export interface AnalysisResult {
     errors: string[];
 }
 
-/**
- * Regex patterns to match import/require statements
- */
-const IMPORT_PATTERNS = [
-    // ES6 imports: import x from 'package', import { x } from 'package', import 'package'
-    /import\s+(?:(?:[\w*{}\s,]+)\s+from\s+)?['"]([^'"./][^'"]*)['"]/g,
-    // Dynamic imports: import('package')
-    /import\s*\(\s*['"]([^'"./][^'"]*)['"]\s*\)/g,
-    // Require: require('package')
-    /require\s*\(\s*['"]([^'"./][^'"]*)['"]\s*\)/g,
-    // Export from: export { x } from 'package'
-    /export\s+(?:[\w*{}\s,]+)\s+from\s+['"]([^'"./][^'"]*)['"]/g,
-];
+// Note: IMPORT_PATTERNS regex removed - now using AST-based extraction via extractImportSourcesFromAST
 
 /**
  * Pattern to match node_modules paths with versions in source map sources
@@ -166,29 +160,35 @@ function isBuiltinModule(name: string): boolean {
 }
 
 /**
- * Extracts all external package imports from a source file
+ * Extracts all external package imports from a source file using AST parsing.
+ * This properly handles imports/exports and ignores code inside strings/comments.
  */
 function extractImportsFromSource(
     content: string,
-    _filePath: string,
+    filePath: string,
 ): Set<string> {
     const imports = new Set<string>();
 
-    for (const pattern of IMPORT_PATTERNS) {
-        // Reset regex lastIndex
-        pattern.lastIndex = 0;
-        let match;
-        while ((match = pattern.exec(content)) !== null) {
-            const importSpecifier = match[1];
-            const packageName = getPackageName(importSpecifier);
+    // Use AST-based extraction for robust parsing
+    const importSources = extractImportSourcesFromAST(content, filePath);
 
-            // Skip built-in modules
-            if (isBuiltinModule(packageName)) {
-                continue;
-            }
-
-            imports.add(packageName);
+    for (const importSpecifier of importSources) {
+        // Skip relative imports (start with . or /)
+        if (
+            importSpecifier.startsWith('.') ||
+            importSpecifier.startsWith('/')
+        ) {
+            continue;
         }
+
+        const packageName = getPackageName(importSpecifier);
+
+        // Skip built-in modules
+        if (isBuiltinModule(packageName)) {
+            continue;
+        }
+
+        imports.add(packageName);
     }
 
     return imports;
@@ -1282,7 +1282,8 @@ export interface DetectedProjectConfig {
 }
 
 /**
- * Analyzes source files to detect project configuration
+ * Analyzes source files to detect project configuration using AST parsing.
+ * This properly handles code analysis without false positives from strings/comments.
  */
 export function detectProjectConfig(
     sourceFiles: SourceFile[],
@@ -1313,7 +1314,7 @@ export function detectProjectConfig(
     for (const file of sourceFiles) {
         const ext = file.path.split('.').pop()?.toLowerCase();
 
-        // Detect TypeScript/JavaScript
+        // Detect TypeScript/JavaScript from file extension
         if (ext === 'ts' || ext === 'tsx') {
             config.hasTypeScript = true;
         }
@@ -1321,7 +1322,7 @@ export function detectProjectConfig(
             config.hasJavaScript = true;
         }
 
-        // Detect JSX
+        // Detect JSX from file extension
         if (ext === 'tsx' || ext === 'jsx') {
             config.hasJsx = true;
         }
@@ -1329,74 +1330,37 @@ export function detectProjectConfig(
         // Skip content analysis if no content
         if (!file.content) continue;
 
-        const content = file.content;
-
-        // Detect JSX in content (for .ts/.js files that might have JSX)
-        if (
-            !config.hasJsx &&
-            (/<[A-Z][a-zA-Z]*[\s/>]/.test(content) || /<\/[A-Z]/.test(content))
-        ) {
-            config.hasJsx = true;
+        // Use AST-based detection for JSX in content (for .ts/.js files that might have JSX)
+        if (!config.hasJsx) {
+            if (hasJSXElements(file.content, file.path)) {
+                config.hasJsx = true;
+            }
         }
 
-        // Detect JSX framework imports
-        if (/from\s+['"]react['"]|require\s*\(\s*['"]react['"]/.test(content)) {
-            reactImports++;
-        }
-        if (
-            /from\s+['"]preact['"]|require\s*\(\s*['"]preact['"]/.test(content)
-        ) {
-            preactImports++;
-        }
-        if (
-            /from\s+['"]solid-js['"]|require\s*\(\s*['"]solid-js['"]/.test(
-                content,
-            )
-        ) {
-            solidImports++;
-        }
-        if (/from\s+['"]vue['"]|require\s*\(\s*['"]vue['"]/.test(content)) {
-            vueImports++;
-        }
+        // Use AST-based framework detection
+        const frameworks = detectFrameworkImports(file.content, file.path);
+        if (frameworks.react) reactImports++;
+        if (frameworks.preact) preactImports++;
+        if (frameworks.solid) solidImports++;
+        if (frameworks.vue) vueImports++;
 
-        // Detect module system
-        if (
-            /\bimport\s+.*\s+from\s+['"]|export\s+(default\s+|{|\*|const|function|class|interface|type)/.test(
-                content,
-            )
-        ) {
-            hasEsm = true;
-        }
-        if (/\brequire\s*\(|module\.exports|exports\.[a-zA-Z]/.test(content)) {
-            hasCommonJs = true;
-        }
+        // Use AST-based module system detection
+        const moduleInfo = detectModuleSystem(file.content, file.path);
+        if (moduleInfo.hasESM) hasEsm = true;
+        if (moduleInfo.hasCommonJS) hasCommonJs = true;
 
-        // Detect environment
-        if (
-            /\b(document|window|localStorage|sessionStorage|navigator|location|history|fetch|XMLHttpRequest|DOM|HTMLElement)\b/.test(
-                content,
-            )
-        ) {
-            hasBrowserApis = true;
-        }
-        if (
-            /\b(process\.env|__dirname|__filename|require\.resolve|Buffer|fs\.|path\.)\b/.test(
-                content,
-            )
-        ) {
-            hasNodeApis = true;
-        }
+        // Use AST-based environment detection
+        const envInfo = detectEnvironmentAPIs(file.content, file.path);
+        if (envInfo.hasBrowserAPIs) hasBrowserApis = true;
+        if (envInfo.hasNodeAPIs) hasNodeApis = true;
 
-        // Detect ES features
-        if (/\basync\s+function|\basync\s*\(|await\s+/.test(content)) {
-            config.targetFeatures.asyncAwait = true;
-        }
-        if (/\?\.\s*[a-zA-Z([]/.test(content)) {
+        // Use AST-based ES features detection
+        const features = detectESFeatures(file.content, file.path);
+        if (features.asyncAwait) config.targetFeatures.asyncAwait = true;
+        if (features.optionalChaining)
             config.targetFeatures.optionalChaining = true;
-        }
-        if (/\?\?\s*[^?]/.test(content)) {
+        if (features.nullishCoalescing)
             config.targetFeatures.nullishCoalescing = true;
-        }
     }
 
     // Determine JSX framework (pick the one with most imports)
