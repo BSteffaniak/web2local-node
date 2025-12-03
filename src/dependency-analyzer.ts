@@ -243,7 +243,9 @@ export function extractVersionsFromManifest(
 }
 
 /**
- * Analyzes all source files in a directory and extracts dependencies
+ * Analyzes all source files in a directory and extracts dependencies.
+ * NOTE: This skips node_modules directories. For complete analysis including
+ * internal packages, use analyzeDependenciesFromSourceFiles instead.
  */
 export async function analyzeDependencies(
   sourceDir: string,
@@ -284,6 +286,61 @@ export async function analyzeDependencies(
     }
   } catch (error) {
     result.errors.push(`Failed to walk directory ${sourceDir}: ${error}`);
+  }
+
+  return result;
+}
+
+/**
+ * Analyzes dependencies directly from source files (including those in node_modules).
+ * This is the preferred method when we have extracted source files, as it includes
+ * internal packages that were extracted from source maps.
+ * 
+ * Unlike analyzeDependencies which skips node_modules, this function analyzes ALL
+ * provided source files, which properly detects dependencies of internal packages
+ * like @fp/sarsaparilla that import react-stately, react-modal, etc.
+ */
+export function analyzeDependenciesFromSourceFiles(
+  sourceFiles: SourceFile[],
+  onProgress?: (file: string) => void
+): AnalysisResult {
+  const result: AnalysisResult = {
+    dependencies: new Map(),
+    localImports: new Set(),
+    errors: [],
+  };
+
+  for (const file of sourceFiles) {
+    // Check if file extension is analyzable
+    const ext = extname(file.path).toLowerCase();
+    if (![".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+      continue;
+    }
+
+    // Skip files without content
+    if (!file.content) {
+      continue;
+    }
+
+    onProgress?.(file.path);
+
+    try {
+      const imports = extractImportsFromSource(file.content, file.path);
+
+      for (const packageName of imports) {
+        if (result.dependencies.has(packageName)) {
+          result.dependencies.get(packageName)!.importedFrom.push(file.path);
+        } else {
+          result.dependencies.set(packageName, {
+            name: packageName,
+            version: null,
+            importedFrom: [file.path],
+          });
+        }
+      }
+    } catch (error) {
+      result.errors.push(`Failed to analyze ${file.path}: ${error}`);
+    }
   }
 
   return result;
@@ -1754,7 +1811,11 @@ export async function generateDependencyManifest(
   }
 
   // Analyze source files for imports
-  const analysis = await analyzeDependencies(sourceDir, onProgress);
+  // Use extractedSourceFiles directly if available - this includes internal packages
+  // in node_modules that would otherwise be skipped by directory walking
+  const analysis = extractedSourceFiles && extractedSourceFiles.length > 0
+    ? analyzeDependenciesFromSourceFiles(extractedSourceFiles, onProgress)
+    : await analyzeDependencies(sourceDir, onProgress);
 
   // Initialize stats tracking
   const stats: VersionStats = {

@@ -13,6 +13,7 @@ import { test, expect, describe, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { parseSync } from '@swc/core';
 import {
   extractExports,
   generateIndexFile,
@@ -23,6 +24,8 @@ import {
   generateDirectoryIndexFiles,
   generateMissingCssModuleStubs,
   generateExternalPackageStubs,
+  fixDuplicateExports,
+  fixAllDuplicateExports,
 } from '../src/stub-generator.js';
 
 // ============================================================================
@@ -1439,5 +1442,797 @@ describe('generateExternalPackageStubs', () => {
     const stubPath = join(tempDir, '@types/@company__internal-lib/index.d.ts');
     const stub = await readFileContent(stubPath);
     expect(stub).toContain('@company/internal-lib');
+  });
+});
+
+// ============================================================================
+// REGRESSION TESTS - Internal Packages in node_modules
+// ============================================================================
+
+describe('internal packages in node_modules', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  describe('scanImports with internal packages', () => {
+    test('should find CSS module imports from internal packages in node_modules', async () => {
+      // Setup: Create an internal package in node_modules with CSS module imports
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/avatar/Avatar.tsx', `
+        import React from 'react';
+        import styles from './Avatar.module.scss';
+        export const Avatar = () => <div className={styles.avatar}>Avatar</div>;
+      `);
+
+      // Scan with internalPackages specified
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+
+      // Should find the CSS module import
+      expect(imports.cssModuleImports.length).toBeGreaterThanOrEqual(1);
+      const avatarImport = imports.cssModuleImports.find(i => i.importPath.includes('Avatar.module.scss'));
+      expect(avatarImport).toBeDefined();
+    });
+
+    test('should find type file imports from internal packages in node_modules', async () => {
+      // Setup: Create an internal package with type file imports
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/card/Card.tsx', `
+        import type { CardProps } from './Card.types';
+        export const Card = (props: CardProps) => <div>{props.title}</div>;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+
+      // Should find the missing type file import
+      expect(imports.missingTypeFileImports.length).toBeGreaterThanOrEqual(1);
+      const typeImport = imports.missingTypeFileImports.find(i => i.importPath.includes('Card.types'));
+      expect(typeImport).toBeDefined();
+    });
+
+    test('should find external package imports from internal packages', async () => {
+      // Setup: Internal package importing external packages
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/search/SearchBar.tsx', `
+        import { Item, Section, useAsyncList } from 'react-stately';
+        import { useOverlayTrigger } from 'react-aria';
+        export const SearchBar = () => null;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+
+      // Should find external package imports
+      const reactStatelyImport = imports.externalPackageImports.find(i => i.importPath === 'react-stately');
+      const reactAriaImport = imports.externalPackageImports.find(i => i.importPath.startsWith('react-aria'));
+      expect(reactStatelyImport).toBeDefined();
+      expect(reactAriaImport).toBeDefined();
+    });
+
+    test('should find directory imports without index files from internal packages', async () => {
+      // Setup: Internal package importing a directory without index
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/nav/Navbar.tsx', `
+        import { Stack } from '../sharedComponents/LayoutPrimitives';
+        export const Navbar = () => null;
+      `);
+      // Create the directory but without an index file
+      await mkdir(join(tempDir, 'node_modules/@fp/sarsaparilla/src/sharedComponents/LayoutPrimitives'), { recursive: true });
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/sharedComponents/LayoutPrimitives/Stack.tsx', `
+        export const Stack = () => null;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+
+      // Should find the directory import
+      expect(imports.directoryImports.length).toBeGreaterThanOrEqual(1);
+      const layoutImport = imports.directoryImports.find(i => i.importPath.includes('LayoutPrimitives'));
+      expect(layoutImport).toBeDefined();
+    });
+  });
+
+  describe('generateStubFiles with internal packages', () => {
+    test('should create CSS module stubs for imports in internal packages', async () => {
+      // Setup: Internal package with CSS module import where the file doesn't exist
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/avatar/Avatar.tsx', `
+        import styles from './Avatar.module.scss';
+        export const Avatar = () => <div className={styles.avatar} />;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+      await generateMissingCssModuleStubs(tempDir, imports.cssModuleImports, { dryRun: false });
+
+      // CSS module stub should be created
+      const cssPath = join(tempDir, 'node_modules/@fp/sarsaparilla/src/avatar/Avatar.module.scss');
+      const cssContent = await readFileContent(cssPath);
+      expect(cssContent).toContain('Auto-generated CSS module stub');
+
+      // .d.ts should also be created
+      const dtsPath = cssPath + '.d.ts';
+      const dtsContent = await readFileContent(dtsPath);
+      expect(dtsContent).toContain('declare const styles');
+    });
+
+    test('should create type file stubs for missing .types imports in internal packages', async () => {
+      // Setup: Internal package with type file import where the file doesn't exist
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/card/CardCarousel.tsx', `
+        import type { CardCarouselProps, ResponsiveItems } from './CardCarousel.types';
+        export const CardCarousel = (props: CardCarouselProps) => null;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+      const { generateMissingTypeFileStubs } = await import('../src/stub-generator.js');
+      await generateMissingTypeFileStubs(tempDir, imports.missingTypeFileImports, { dryRun: false });
+
+      // Type file stub should be created
+      const typePath = join(tempDir, 'node_modules/@fp/sarsaparilla/src/card/CardCarousel.types.ts');
+      const typeContent = await readFileContent(typePath);
+      expect(typeContent).toContain('CardCarouselProps');
+      expect(typeContent).toContain('ResponsiveItems');
+    });
+
+    test('should correctly extract type names from inline type modifiers (regression)', async () => {
+      // Regression test: import { type ReduxStore } was being captured as "type ReduxStore"
+      // instead of just "ReduxStore"
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/redux/store.tsx', `
+        import { type ReduxStore, type AppDispatch, useSelector } from './store.types';
+        export const useAppStore = (store: ReduxStore) => store;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+      const { generateMissingTypeFileStubs } = await import('../src/stub-generator.js');
+      await generateMissingTypeFileStubs(tempDir, imports.missingTypeFileImports, { dryRun: false });
+
+      // Type file stub should be created with correct names (not "type ReduxStore")
+      const typePath = join(tempDir, 'node_modules/@fp/sarsaparilla/src/redux/store.types.ts');
+      const typeContent = await readFileContent(typePath);
+      
+      // Should have proper type names without the "type " prefix
+      expect(typeContent).toContain('export type ReduxStore = unknown;');
+      expect(typeContent).toContain('export type AppDispatch = unknown;');
+      expect(typeContent).toContain('export type useSelector = unknown;');
+      
+      // Should NOT have the broken "type type ReduxStore" format
+      expect(typeContent).not.toContain('type type ');
+      expect(typeContent).not.toMatch(/export type type \w+/);
+    });
+
+    test('should handle mixed inline type modifiers and regular imports (regression)', async () => {
+      // Mix of inline type modifiers and regular named imports
+      await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/components/Modal.tsx', `
+        import { type ModalProps, Modal as BaseModal, type ModalState } from './Modal.types';
+        import { useModal } from './Modal.types';
+        export const CustomModal = (props: ModalProps) => <BaseModal {...props} />;
+      `);
+
+      const imports = await scanImports(tempDir, { internalPackages: new Set(['@fp/sarsaparilla']) });
+      const { generateMissingTypeFileStubs } = await import('../src/stub-generator.js');
+      await generateMissingTypeFileStubs(tempDir, imports.missingTypeFileImports, { dryRun: false });
+
+      const typePath = join(tempDir, 'node_modules/@fp/sarsaparilla/src/components/Modal.types.ts');
+      const typeContent = await readFileContent(typePath);
+      
+      // Should correctly extract: ModalProps, Modal (from "Modal as BaseModal"), ModalState, useModal
+      expect(typeContent).toContain('export type ModalProps = unknown;');
+      expect(typeContent).toContain('export type Modal = unknown;');
+      expect(typeContent).toContain('export type ModalState = unknown;');
+      expect(typeContent).toContain('export type useModal = unknown;');
+      
+      // Should NOT include BaseModal (that's the alias, not the original)
+      expect(typeContent).not.toContain('BaseModal');
+    });
+  });
+});
+
+// ============================================================================
+// REGRESSION TESTS - Duplicate Identifier Prevention
+// ============================================================================
+
+describe('duplicate identifier prevention', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should not create duplicate exports when same name exported as type and value', async () => {
+    // This is the LocationSuggestion case:
+    // - types.ts exports: export type { LocationSuggestion }
+    // - LocationSuggestion.tsx exports: export { LocationSuggestion }
+    await createFile(tempDir, 'src/types.ts', `
+      export type LocationSuggestion = { id: string; name: string };
+      export type OtherType = { value: number };
+    `);
+    await createFile(tempDir, 'src/LocationSuggestion.tsx', `
+      import React from 'react';
+      export const LocationSuggestion = () => <div>Location</div>;
+    `);
+
+    const { generated, content } = await generateIndexFile(tempDir, { dryRun: true });
+
+    expect(generated).toBe(true);
+
+    // Count occurrences of LocationSuggestion exports
+    const matches = content.match(/LocationSuggestion/g) || [];
+    // Should only appear once in an export statement (either as type or value, not both)
+    const exportMatches = content.match(/export.*LocationSuggestion/g) || [];
+    expect(exportMatches.length).toBe(1);
+  });
+
+  test('should handle re-export of same name from default and named', async () => {
+    // Case where a component is both:
+    // - export function LogInPage() {}
+    // - export default LogInPage;
+    await createFile(tempDir, 'src/LogInPage.tsx', `
+      export function LogInPage() { return <div>Login</div>; }
+      export default LogInPage;
+    `);
+
+    const { generated, content } = await generateIndexFile(tempDir, { dryRun: true });
+
+    expect(generated).toBe(true);
+
+    // LogInPage should only be exported once
+    const exportMatches = content.match(/export.*LogInPage/g) || [];
+    expect(exportMatches.length).toBe(1);
+  });
+});
+
+// ============================================================================
+// REGRESSION TESTS - SCSS Module Declarations in Internal Packages
+// ============================================================================
+
+describe('SCSS module declarations in internal packages', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should generate .d.ts for existing SCSS modules in internal packages', async () => {
+    // Setup: Internal package with existing SCSS module (no .d.ts)
+    await createFile(tempDir, 'node_modules/@fp/sarsaparilla/src/button/Button.module.scss', `
+      .button { color: blue; }
+    `);
+
+    const count = await generateScssModuleDeclarations(tempDir, {
+      dryRun: false,
+      internalPackages: new Set(['@fp/sarsaparilla']),
+    });
+
+    expect(count).toBe(1);
+
+    // .d.ts should be created
+    const dtsPath = join(tempDir, 'node_modules/@fp/sarsaparilla/src/button/Button.module.scss.d.ts');
+    const dtsContent = await readFileContent(dtsPath);
+    expect(dtsContent).toContain('declare const styles');
+  });
+
+  test('should NOT generate .d.ts for non-internal packages in node_modules', async () => {
+    // Setup: External package (not in internalPackages) with SCSS module
+    await createFile(tempDir, 'node_modules/some-external-pkg/src/Widget.module.scss', `
+      .widget { color: red; }
+    `);
+
+    const count = await generateScssModuleDeclarations(tempDir, {
+      dryRun: false,
+      internalPackages: new Set(['@fp/sarsaparilla']), // some-external-pkg not listed
+    });
+
+    // Should not process external package
+    expect(count).toBe(0);
+  });
+});
+
+// ============================================================================
+// FIX DUPLICATE EXPORTS
+// ============================================================================
+
+describe('fixDuplicateExports', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('SWC parses exports correctly', () => {
+    const code = `export type { Foo } from './types';
+export { Foo } from './foo';
+`;
+    const ast = parseSync(code, { syntax: 'typescript', tsx: true });
+    
+    // Should have 2 export statements
+    expect(ast.body.length).toBe(2);
+    expect(ast.body[0].type).toBe('ExportNamedDeclaration');
+    expect(ast.body[1].type).toBe('ExportNamedDeclaration');
+    
+    // Check first export (type export)
+    const first = ast.body[0] as any;
+    expect(first.typeOnly).toBe(true);
+    expect(first.specifiers.length).toBe(1);
+    expect(first.specifiers[0].type).toBe('ExportSpecifier');
+    
+    // Check second export (value export)
+    const second = ast.body[1] as any;
+    expect(second.typeOnly).toBeFalsy();
+    expect(second.specifiers.length).toBe(1);
+  });
+
+
+
+  test('should remove duplicate exports when same name appears as type and value', async () => {
+    // This is the LocationSuggestion case
+    const indexContent = `// Auto-generated index file for reconstructed package
+export type { ContentSuggestion, LocationSuggestion, HistorySuggestion } from './types';
+export type { OtherType } from './other';
+export { LocationSuggestion } from './LocationSuggestion';
+export { SomeComponent } from './SomeComponent';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('LocationSuggestion');
+
+    // Read the fixed file
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    
+    // LocationSuggestion should only appear once
+    const matches = fixedContent.match(/LocationSuggestion/g) || [];
+    expect(matches.length).toBe(1);
+    
+    // Other exports should still be present
+    expect(fixedContent).toContain('ContentSuggestion');
+    expect(fixedContent).toContain('HistorySuggestion');
+    expect(fixedContent).toContain('SomeComponent');
+  });
+
+  test('should handle line with all duplicates by removing it', async () => {
+    const indexContent = `// Auto-generated index file for reconstructed package
+export { Foo, Bar } from './first';
+export { Foo, Bar } from './second';
+export { Baz } from './third';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+    expect(duplicatesRemoved).toContain('Bar');
+
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    
+    // Should only have one export line for Foo, Bar and one for Baz
+    const lines = fixedContent.split('\n').filter(l => l.startsWith('export'));
+    expect(lines.length).toBe(2); // Foo,Bar from first + Baz from third
+  });
+
+  test('should not modify file without duplicates', async () => {
+    const indexContent = `// Auto-generated index file for reconstructed package
+export { Foo } from './foo';
+export { Bar } from './bar';
+export type { FooType } from './foo.types';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(false);
+    expect(duplicatesRemoved).toHaveLength(0);
+  });
+
+  test('should work in dry run mode', async () => {
+    const indexContent = `// Auto-generated index file for reconstructed package
+export type { Foo } from './types';
+export { Foo } from './foo';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: true }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+
+    // File should be unchanged in dry run
+    const content = await readFileContent(join(tempDir, 'index.ts'));
+    expect(content).toBe(indexContent);
+  });
+});
+
+describe('fixAllDuplicateExports', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should fix duplicates in internal packages within node_modules', async () => {
+    // Create internal package with duplicate exports
+    const indexContent = `// Auto-generated index file for reconstructed package
+export type { LocationSuggestion } from './types';
+export { LocationSuggestion } from './LocationSuggestion';
+`;
+    await createFile(
+      tempDir,
+      'node_modules/@fp/sarsaparilla/src/index.ts',
+      indexContent
+    );
+
+    const fixedCount = await fixAllDuplicateExports(tempDir, {
+      internalPackages: new Set(['@fp/sarsaparilla']),
+      dryRun: false,
+    });
+
+    expect(fixedCount).toBe(1);
+
+    // Verify the file was fixed
+    const fixedContent = await readFileContent(
+      join(tempDir, 'node_modules/@fp/sarsaparilla/src/index.ts')
+    );
+    const matches = fixedContent.match(/LocationSuggestion/g) || [];
+    expect(matches.length).toBe(1);
+  });
+
+  test('should NOT fix files in non-internal packages', async () => {
+    // Create external package with duplicate exports (should not be touched)
+    const indexContent = `// Auto-generated index file for reconstructed package
+export type { Foo } from './types';
+export { Foo } from './foo';
+`;
+    await createFile(
+      tempDir,
+      'node_modules/external-pkg/src/index.ts',
+      indexContent
+    );
+
+    const fixedCount = await fixAllDuplicateExports(tempDir, {
+      internalPackages: new Set(['@fp/sarsaparilla']), // external-pkg not listed
+      dryRun: false,
+    });
+
+    expect(fixedCount).toBe(0);
+
+    // File should be unchanged
+    const content = await readFileContent(
+      join(tempDir, 'node_modules/external-pkg/src/index.ts')
+    );
+    expect(content).toBe(indexContent);
+  });
+});
+
+// ============================================================================
+// EDGE CASE REGRESSION TESTS - Duplicate Export Fixing
+// ============================================================================
+
+describe('fixDuplicateExports edge cases', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should handle multi-line exports', async () => {
+    const indexContent = `// Auto-generated index file
+export {
+  Foo,
+  Bar,
+  Baz
+} from './components';
+export { Foo } from './other';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Foo should only appear once in the entire file (duplicates removed)
+    // Note: multi-line exports have 'Foo' on a different line than 'export'
+    const fooMatches = fixedContent.match(/\bFoo\b/g) || [];
+    expect(fooMatches.length).toBe(1);
+    // And the duplicate export line should be gone
+    expect(fixedContent).not.toContain('from "./other"');
+  });
+
+  test('should handle exports with aliases correctly', async () => {
+    // When aliased, we should track by the EXPORTED name, not the original
+    const indexContent = `// Auto-generated index file
+export { Original as Foo } from './a';
+export { Foo } from './b';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+  });
+
+  test('should handle exports with inline comments', async () => {
+    const indexContent = `// Auto-generated index file
+export { Foo /* primary */ } from './a';
+export { Foo /* secondary */ } from './b';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    const fooMatches = fixedContent.match(/\bFoo\b/g) || [];
+    expect(fooMatches.length).toBe(1);
+  });
+
+  test('should preserve leading comments', async () => {
+    const indexContent = `// Auto-generated index file for reconstructed package
+// This file was created because the original index.ts was not in the source map
+
+export type { Foo } from './types';
+export { Foo } from './foo';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Leading comments should be preserved
+    expect(fixedContent).toContain('// Auto-generated index file');
+    expect(fixedContent).toContain('// This file was created');
+  });
+
+  test('should handle mixed type and value exports with same name correctly', async () => {
+    // Complex case: type export first, then value export of same name
+    const indexContent = `// Auto-generated index file
+export type { Button, ButtonProps } from './Button.types';
+export { Button } from './Button';
+export { Icon } from './Icon';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Button');
+    expect(duplicatesRemoved).not.toContain('ButtonProps');
+    expect(duplicatesRemoved).not.toContain('Icon');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Button should appear only once, ButtonProps and Icon should remain
+    expect(fixedContent).toContain('ButtonProps');
+    expect(fixedContent).toContain('Icon');
+  });
+
+  test('should handle UTF-8 multi-byte characters in comments (regression)', async () => {
+    // Regression test: SWC spans are byte-based, but we need character indices
+    // Multi-byte characters (emoji, CJK, etc.) could cause offset miscalculation
+    const indexContent = `// 日本語コメント - Japanese comment
+// Emoji test: 🚀🔥💻
+export { Foo } from './foo';
+export { Foo } from './bar';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Foo');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Comments with multi-byte characters should be preserved
+    expect(fixedContent).toContain('日本語コメント');
+    expect(fixedContent).toContain('🚀🔥💻');
+    // Only one Foo export should remain
+    const fooMatches = fixedContent.match(/\bFoo\b/g) || [];
+    expect(fooMatches.length).toBe(1);
+  });
+
+  test('should handle UTF-8 multi-byte characters in export names (regression)', async () => {
+    // Export names with unicode characters
+    const indexContent = `// Auto-generated index
+export { Café } from './cafe';
+export { Naïve } from './naive';
+export { Café } from './duplicate';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Café');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Café should appear only once, Naïve should still be there
+    // Note: \b word boundary doesn't work with Unicode characters in JS regex
+    const cafeMatches = fixedContent.match(/Café/g) || [];
+    expect(cafeMatches.length).toBe(1);
+    expect(fixedContent).toContain('Naïve');
+    // Duplicate export should be removed
+    expect(fixedContent).not.toContain('./duplicate');
+  });
+
+  test('should handle CJK characters in source paths and comments (regression)', async () => {
+    // Chinese/Japanese/Korean characters in paths and comments
+    const indexContent = `// 组件导出 - Component exports
+// コンポーネント
+export { Button } from './组件/Button';
+export { Icon } from './아이콘/Icon';
+export { Button } from './duplicate';
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('Button');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // Multi-byte path strings should be preserved
+    expect(fixedContent).toContain('./组件/Button');
+    expect(fixedContent).toContain('./아이콘/Icon');
+    // Comments should be preserved
+    expect(fixedContent).toContain('组件导出');
+    expect(fixedContent).toContain('コンポーネント');
+  });
+
+  test('should handle mixed ASCII and multi-byte on same line (regression)', async () => {
+    // This tests the byte-to-char offset conversion more rigorously
+    const indexContent = `export { A } from './a'; // 注释 Comment
+export { B } from './b'; // More ASCII
+export { A } from './c'; // Duplicate 重复
+`;
+    await createFile(tempDir, 'index.ts', indexContent);
+
+    const { fixed, duplicatesRemoved } = await fixDuplicateExports(
+      join(tempDir, 'index.ts'),
+      { dryRun: false }
+    );
+
+    expect(fixed).toBe(true);
+    expect(duplicatesRemoved).toContain('A');
+    
+    const fixedContent = await readFileContent(join(tempDir, 'index.ts'));
+    // A should appear only once - count export statements with A
+    const aExportMatches = fixedContent.match(/export\s*{\s*A\s*}/g) || [];
+    expect(aExportMatches.length).toBe(1);
+    // B should still be there
+    expect(fixedContent).toContain("export { B } from './b'");
+    // Comments should be preserved
+    expect(fixedContent).toContain('注释');
+    // Duplicate export line should be gone
+    expect(fixedContent).not.toContain("from './c'");
+  });
+});
+
+// ============================================================================
+// INTEGRATION TEST - Real LocationSuggestion Case
+// ============================================================================
+
+describe('real-world LocationSuggestion duplicate (integration)', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await createTempDir();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('should fix the exact LocationSuggestion duplicate pattern from @fp/sarsaparilla', async () => {
+    // This is the EXACT pattern from the real error:
+    // Line 23: export type { ..., LocationSuggestion, ... } from './LocationSuggestion.types';
+    // Line 168: export { LocationSuggestion } from './LocationSuggestion';
+    const indexContent = `// Auto-generated index file for reconstructed package
+// This file was created because the original index.ts was not in the source map
+
+export type { AriaPopoverProps, PopoverAria } from './js/components/Autosuggest/usePopover';
+export type { ContentSuggestion, InventorySuggestion, LocationSuggestion, HistorySuggestion, Suggestion, LocationSuggestionOptionType } from './js/components/sharedComponents/LocationSuggestion/LocationSuggestion.types';
+export type { LocationSuggestionProps } from './js/components/sharedComponents/LocationSuggestion/LocationSuggestion';
+export { Accordion } from './js/components/sharedComponents/Accordion/Accordion';
+export { LocationContent } from './js/components/sharedComponents/LocationSuggestion/LocationContent';
+export { LocationIcon } from './js/components/sharedComponents/LocationSuggestion/LocationIcon';
+export { LocationSubtitle } from './js/components/sharedComponents/LocationSuggestion/LocationSubtitle';
+export { LocationSuggestion } from './js/components/sharedComponents/LocationSuggestion/LocationSuggestion';
+export { LocationTitle } from './js/components/sharedComponents/LocationSuggestion/LocationTitle';
+`;
+    await createFile(
+      tempDir,
+      'node_modules/@fp/sarsaparilla/src/index.ts',
+      indexContent
+    );
+
+    const fixedCount = await fixAllDuplicateExports(tempDir, {
+      internalPackages: new Set(['@fp/sarsaparilla']),
+      dryRun: false,
+    });
+
+    expect(fixedCount).toBe(1);
+
+    const fixedContent = await readFileContent(
+      join(tempDir, 'node_modules/@fp/sarsaparilla/src/index.ts')
+    );
+
+    // LocationSuggestion should appear exactly once as an EXPORTED NAME
+    // We check by looking for "{ LocationSuggestion" or ", LocationSuggestion" patterns
+    // to distinguish from paths like '/LocationSuggestion/'
+    const exportedLocationSuggestionCount = (
+      fixedContent.match(/\{\s*LocationSuggestion\s*[,}]|,\s*LocationSuggestion\s*[,}]/g) || []
+    ).length;
+    expect(exportedLocationSuggestionCount).toBe(1);
+
+    // Other exports should still be present
+    expect(fixedContent).toContain('ContentSuggestion');
+    expect(fixedContent).toContain('HistorySuggestion');
+    expect(fixedContent).toContain('Accordion');
+    expect(fixedContent).toContain('LocationContent');
+    expect(fixedContent).toContain('LocationTitle');
+    
+    // The type export line should no longer have LocationSuggestion (it was first, kept)
+    // or the value export line should be removed (depending on which was first)
+    // Either way, no duplicate identifier error should occur
   });
 });
