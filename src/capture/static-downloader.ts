@@ -88,13 +88,50 @@ function shouldCaptureResourceType(
 }
 
 /**
+ * Extract the base domain from a host (removes www. prefix)
+ */
+function getBaseDomain(host: string): string {
+    return host.replace(/^www\./, '');
+}
+
+/**
+ * Check if a URL is same-site (same domain or CDN subdomain)
+ */
+function isSameSite(urlObj: URL, baseUrlObj: URL): boolean {
+    // Exact origin match
+    if (urlObj.origin === baseUrlObj.origin) {
+        return true;
+    }
+
+    const baseDomain = getBaseDomain(baseUrlObj.host);
+    const urlHost = urlObj.host;
+
+    // Check for common subdomains of the same domain
+    // e.g., cdn.bob.com, api.bob.com, www.bob.com
+    if (
+        urlHost === baseDomain ||
+        urlHost === `www.${baseDomain}` ||
+        urlHost === `cdn.${baseDomain}` ||
+        urlHost === `static.${baseDomain}` ||
+        urlHost === `assets.${baseDomain}` ||
+        urlHost === `images.${baseDomain}` ||
+        urlHost === `media.${baseDomain}`
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
  * Generate a local path for a URL
  */
 function urlToLocalPath(url: string, baseUrl: string): string {
     const urlObj = new URL(url);
     const baseUrlObj = new URL(baseUrl);
+    const baseDomain = getBaseDomain(baseUrlObj.host);
 
-    // For same-origin resources, use the pathname
+    // For same-origin resources, use the pathname directly
     if (urlObj.origin === baseUrlObj.origin) {
         let path = urlObj.pathname;
 
@@ -110,6 +147,23 @@ function urlToLocalPath(url: string, baseUrl: string): string {
 
         // Remove leading slash
         return path.replace(/^\//, '');
+    }
+
+    // For CDN/static subdomains of the same domain, save to _cdn/ directory
+    const urlHost = urlObj.host;
+    if (
+        urlHost === `cdn.${baseDomain}` ||
+        urlHost === `static.${baseDomain}` ||
+        urlHost === `assets.${baseDomain}` ||
+        urlHost === `images.${baseDomain}` ||
+        urlHost === `media.${baseDomain}`
+    ) {
+        // Extract subdomain prefix (cdn, static, etc.)
+        const subdomain = urlHost.split('.')[0];
+        let path = urlObj.pathname;
+
+        // Remove leading slash and prefix with _subdomain/
+        return `_${subdomain}${path}`;
     }
 
     // For cross-origin resources, use a hash-based filename in _external/
@@ -384,11 +438,15 @@ export class StaticCapturer {
 
         this.log(`[Static] Capturing document: ${url}`);
 
-        const html = await page.content();
+        let html = await page.content();
+
+        // Rewrite URLs in the HTML to point to local paths
+        const baseUrl = this.baseOrigin || this.entrypointUrl || url;
+        html = this.rewriteDocumentUrls(html, baseUrl);
+
         const body = Buffer.from(html, 'utf-8');
 
         // Use the base origin (which should have been updated after redirects) for path resolution
-        const baseUrl = this.baseOrigin || this.entrypointUrl || url;
         const localPath = urlToLocalPath(url, baseUrl);
         const fullPath = join(this.options.outputDir, localPath);
 
@@ -412,6 +470,53 @@ export class StaticCapturer {
         );
 
         return asset;
+    }
+
+    /**
+     * Rewrite URLs in HTML content to use local paths.
+     * This converts absolute URLs matching the site's origin to relative paths,
+     * and rewrites CDN subdomain URLs to use the _cdn/ prefix.
+     */
+    private rewriteDocumentUrls(html: string, baseUrl: string): string {
+        const baseUrlObj = new URL(baseUrl);
+        const baseDomain = getBaseDomain(baseUrlObj.host);
+        const origin = baseUrlObj.origin;
+
+        this.log(
+            `[Static] Rewriting URLs for origin: ${origin}, base domain: ${baseDomain}`,
+        );
+
+        let result = html;
+        let rewriteCount = 0;
+
+        // Rewrite full URLs matching the base origin to relative paths
+        // e.g., https://www.bob.com/foo/bar -> /foo/bar
+        const originPattern = new RegExp(
+            `https?://(www\\.)?${escapeRegex(baseDomain)}(/[^"'\\s<>]*)`,
+            'g',
+        );
+        result = result.replace(originPattern, (match, _www, path) => {
+            rewriteCount++;
+            return path || '/';
+        });
+
+        // Rewrite CDN subdomain URLs to use _cdn/ prefix
+        // e.g., https://cdn.bob.com/public/images/foo.jpg -> /_cdn/public/images/foo.jpg
+        const cdnSubdomains = ['cdn', 'static', 'assets', 'images', 'media'];
+        for (const subdomain of cdnSubdomains) {
+            const cdnPattern = new RegExp(
+                `https?://${subdomain}\\.${escapeRegex(baseDomain)}(/[^"'\\s<>]*)`,
+                'g',
+            );
+            result = result.replace(cdnPattern, (match, path) => {
+                rewriteCount++;
+                return `/_${subdomain}${path || '/'}`;
+            });
+        }
+
+        this.log(`[Static] Rewrote ${rewriteCount} URLs in document`);
+
+        return result;
     }
 
     /**
