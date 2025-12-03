@@ -3,7 +3,11 @@
 import chalk from "chalk";
 import ora from "ora";
 import { parseArgs } from "./cli.js";
-import { extractBundleUrls, findAllSourceMaps, type BundleInfo, type VendorBundle } from "./scraper.js";
+import {
+  extractBundleUrls,
+  findAllSourceMaps,
+  type BundleInfo,
+} from "./scraper.js";
 import { extractSourcesFromMap, type SourceFile } from "./sourcemap.js";
 import {
   reconstructSources,
@@ -21,6 +25,7 @@ import {
 import { generateStubFiles } from "./stub-generator.js";
 import { initCache } from "./fingerprint-cache.js";
 import { join } from "path";
+import { captureWebsite, generateCaptureSummary } from "./capture/index.js";
 
 async function main() {
   const options = parseArgs();
@@ -527,11 +532,142 @@ async function main() {
   
   if (!options.generatePackageJson && totalFilesWritten > 0) {
     console.log(
-      chalk.gray("  Tip: Use --generate-package-json to create a package.json with dependencies")
+      chalk.gray(
+        "  Tip: Use --generate-package-json to create a package.json with dependencies"
+      )
+    );
+  }
+
+  if (!options.captureApi) {
+    console.log(
+      chalk.gray(
+        "  Tip: Use --capture-api to capture API calls for mock server generation"
+      )
     );
   }
 
   console.log();
+
+  // Step 6: Capture API calls if requested
+  if (options.captureApi) {
+    console.log(chalk.bold("\nCapturing API calls:"));
+    console.log();
+
+    const captureSpinner = ora({
+      text: "Starting browser for API capture...",
+      color: "cyan",
+    }).start();
+
+    try {
+      const captureResult = await captureWebsite({
+        url: options.url,
+        outputDir: options.output,
+        apiFilter: options.apiFilter,
+        captureStatic: options.captureStatic,
+        headless: options.headless,
+        browseTimeout: options.browseTimeout,
+        autoScroll: options.autoScroll,
+        verbose: options.verbose,
+        onProgress: (message) => {
+          captureSpinner.text = message;
+        },
+      });
+
+      // Generate summary
+      const summary = generateCaptureSummary(
+        captureResult.fixtures,
+        captureResult.assets
+      );
+
+      if (captureResult.errors.length > 0) {
+        captureSpinner.warn(
+          `Capture completed with ${captureResult.errors.length} errors`
+        );
+        if (options.verbose) {
+          for (const error of captureResult.errors) {
+            console.log(chalk.red(`    ${error}`));
+          }
+        }
+      } else {
+        captureSpinner.succeed("API capture completed");
+      }
+
+      // Show capture summary
+      console.log(chalk.gray("\n  ─".repeat(20)));
+      console.log(chalk.bold("\n  API Capture Summary:"));
+      console.log(
+        `    ${chalk.green("✓")} API endpoints captured: ${chalk.bold(summary.apiEndpoints)}`
+      );
+      console.log(
+        `    ${chalk.green("✓")} Unique patterns: ${chalk.bold(summary.uniquePatterns)}`
+      );
+
+      if (summary.staticAssets > 0) {
+        console.log(
+          `    ${chalk.green("✓")} Static assets: ${chalk.bold(summary.staticAssets)} (${formatBytes(summary.totalBytes)})`
+        );
+      }
+
+      // Show method breakdown
+      const methodCounts = Object.entries(summary.byMethod)
+        .map(([method, count]) => `${method}: ${count}`)
+        .join(", ");
+      if (methodCounts) {
+        console.log(`    ${chalk.blue("→")} Methods: ${methodCounts}`);
+      }
+
+      // Show status breakdown
+      const statusCounts = Object.entries(summary.byStatus)
+        .map(([status, count]) => {
+          const color = status.startsWith("2")
+            ? chalk.green
+            : status.startsWith("4")
+              ? chalk.yellow
+              : status.startsWith("5")
+                ? chalk.red
+                : chalk.gray;
+          return color(`${status}: ${count}`);
+        })
+        .join(", ");
+      if (statusCounts) {
+        console.log(`    ${chalk.blue("→")} Status codes: ${statusCounts}`);
+      }
+
+      console.log(
+        `    ${chalk.blue("→")} Capture time: ${(captureResult.stats.captureTimeMs / 1000).toFixed(1)}s`
+      );
+      console.log(
+        `    ${chalk.blue("→")} Server manifest: ${chalk.cyan(join(options.output, hostname, "_server", "manifest.json"))}`
+      );
+
+      console.log();
+      console.log(
+        chalk.gray(
+          "  Tip: Use mock-site-server to serve the captured API fixtures"
+        )
+      );
+      console.log(
+        chalk.gray(
+          `  Example: npx mock-site-server serve ${join(options.output, hostname)}`
+        )
+      );
+    } catch (error) {
+      captureSpinner.fail(`API capture failed: ${error}`);
+    }
+
+    console.log();
+  }
+}
+
+/**
+ * Format bytes to human readable string
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
 main().catch((error) => {

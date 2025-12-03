@@ -14,6 +14,13 @@ export interface CliOptions {
   noCache: boolean;
   includePrereleases: boolean;
   forceRefresh: boolean;
+  // API capture options
+  captureApi: boolean;
+  apiFilter: string[];
+  captureStatic: boolean;
+  headless: boolean;
+  browseTimeout: number;
+  autoScroll: boolean;
 }
 
 export function parseArgs(): CliOptions {
@@ -63,19 +70,38 @@ export function parseArgs(): CliOptions {
       "Directory for caching npm metadata and fingerprints",
       ""
     )
-    .option(
-      "--no-cache",
-      "Disable fingerprint caching",
-      false
-    )
+    .option("--no-cache", "Disable fingerprint caching", false)
     .option(
       "--include-prereleases",
       "Include pre-release versions (alpha, beta, rc, nightly) when fingerprinting",
       false
     )
+    .option("--force-refresh", "Bypass all caches and fetch fresh data", false)
+    // API capture options
     .option(
-      "--force-refresh",
-      "Bypass all caches and fetch fresh data",
+      "--capture-api",
+      "Enable API call capture via browser automation (uses Playwright)",
+      false
+    )
+    .option(
+      "--api-filter <patterns...>",
+      "Filter patterns for API routes to capture (glob-style)",
+      ["**/api/**", "**/graphql**", "**/v1/**", "**/v2/**", "**/v3/**"]
+    )
+    .option(
+      "--no-static",
+      "Disable static asset capture (only capture API calls)",
+      false
+    )
+    .option("--no-headless", "Run browser in visible mode (not headless)", false)
+    .option(
+      "--browse-timeout <ms>",
+      "Time to wait for API calls after page load (ms)",
+      "10000"
+    )
+    .option(
+      "--no-scroll",
+      "Disable auto-scrolling to trigger lazy loading",
       false
     )
     .parse();
@@ -93,9 +119,24 @@ export function parseArgs(): CliOptions {
     useFingerprinting: options.useFingerprinting,
     fetchNpmVersions: options.fetchNpmVersions,
     maxVersions: parseInt(options.maxVersions, 10),
-    cacheDir: options.cacheDir || '',
+    cacheDir: options.cacheDir || "",
     noCache: options.noCache || false,
     includePrereleases: options.includePrereleases || false,
     forceRefresh: options.forceRefresh || false,
+    // API capture options
+    captureApi: options.captureApi || false,
+    apiFilter: options.apiFilter || [
+      "**/api/**",
+      "**/graphql**",
+      "**/v1/**",
+      "**/v2/**",
+      "**/v3/**",
+    ],
+    // Note: commander's --no-X flags set the option to true when NOT specified
+    // and false when specified, so we need to handle this correctly
+    captureStatic: options.static !== false,
+    headless: options.headless !== false,
+    browseTimeout: parseInt(options.browseTimeout, 10),
+    autoScroll: options.scroll !== false,
   };
 }
