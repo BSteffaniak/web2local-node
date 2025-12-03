@@ -822,6 +822,53 @@ function detectWorkspacePackageRoots(
         }
     }
 
+    // Fourth pass: detect parent packages of detected workspace packages
+    // e.g., if we detected "r1s" at "navigation/site-kit/r1s", then
+    // "site-kit" at "navigation/site-kit" is likely also a package
+    const detectedRoots = Array.from(packageRoots.entries());
+    for (const [packageName, packagePath] of detectedRoots) {
+        // Get the parent directory
+        const pathParts = packagePath.split('/');
+        if (pathParts.length >= 2) {
+            const parentName = pathParts[pathParts.length - 2];
+            const parentPath = pathParts.slice(0, -1).join('/');
+
+            // Skip if parent is a common non-package name
+            if (
+                ['src', 'lib', 'dist', 'build', 'node_modules'].includes(
+                    parentName,
+                )
+            ) {
+                continue;
+            }
+
+            // Skip if already detected
+            if (packageRoots.has(parentName)) {
+                continue;
+            }
+
+            // Check if the parent path has multiple detected children (more likely to be a package)
+            // or if the parent looks like a package name (not a generic dir like "packages")
+            const siblingPackages = detectedRoots.filter(([, path]) => {
+                const parts = path.split('/');
+                return (
+                    parts.length >= 2 &&
+                    parts.slice(0, -1).join('/') === parentPath
+                );
+            });
+
+            // If there's at least one sibling, or the name looks like a package name
+            // (contains hyphen or is a known pattern like "site-kit")
+            if (
+                siblingPackages.length >= 1 ||
+                parentName.includes('-') ||
+                /^[a-z]+-[a-z]+$/i.test(parentName)
+            ) {
+                packageRoots.set(parentName, parentPath);
+            }
+        }
+    }
+
     return packageRoots;
 }
 
@@ -1089,9 +1136,22 @@ export function generatePackageJson(
     }
 
     // Add type definitions for detected frameworks
+    // Match @types/react version to the detected React version to avoid type mismatches
+    // (e.g., React 19 changed RefObject<T> to be non-generic, breaking React 18 code)
     if (projectConfig?.jsxFramework === 'react' && !deps['@types/react']) {
-        devDeps['@types/react'] = '^18.0.0';
-        devDeps['@types/react-dom'] = '^18.0.0';
+        const reactVersion = deps['react'];
+        let typesVersion = '^18.0.0'; // Default fallback
+
+        if (reactVersion && reactVersion !== '*') {
+            // Extract major version (e.g., "^18.2.0" -> "18", "~17.0.0" -> "17")
+            const majorMatch = reactVersion.match(/(\d+)/);
+            if (majorMatch) {
+                typesVersion = `^${majorMatch[1]}.0.0`;
+            }
+        }
+
+        devDeps['@types/react'] = typesVersion;
+        devDeps['@types/react-dom'] = typesVersion;
     }
 
     // Add Node types if Node environment detected
@@ -1536,6 +1596,187 @@ export interface WorkspacePackageMapping {
 }
 
 /**
+ * Subpath import mapping for package subpaths
+ * e.g., 'sarsaparilla/auth' -> './navigation/shared-ui/auth'
+ */
+export interface SubpathMapping {
+    /** Full import specifier (e.g., 'sarsaparilla/auth') */
+    specifier: string;
+    /** Relative path from project root (e.g., './navigation/shared-ui/auth') */
+    relativePath: string;
+}
+
+/**
+ * Detects subpath imports (like 'sarsaparilla/auth') from source files
+ * and attempts to map them to actual directories.
+ */
+export function detectSubpathImports(
+    sourceFiles: SourceFile[],
+    aliasMap?: AliasMap,
+    workspacePackages?: WorkspacePackageMapping[],
+): SubpathMapping[] {
+    const subpathMappings: SubpathMapping[] = [];
+    const seenSpecifiers = new Set<string>();
+
+    // Collect all subpath imports from source files
+    const subpathImports = new Set<string>();
+
+    for (const file of sourceFiles) {
+        // Match import statements with subpaths
+        const importPatterns = [
+            /import\s+(?:[\s\S]*?\s+from\s+)?['"]([^'"]+\/[^'"]+)['"]/g,
+            /require\s*\(\s*['"]([^'"]+\/[^'"]+)['"]\s*\)/g,
+            /from\s+['"]([^'"]+\/[^'"]+)['"]/g,
+        ];
+
+        for (const pattern of importPatterns) {
+            pattern.lastIndex = 0;
+            let match;
+            while ((match = pattern.exec(file.content)) !== null) {
+                const specifier = match[1];
+
+                // Skip relative imports and node: imports
+                if (
+                    specifier.startsWith('.') ||
+                    specifier.startsWith('node:')
+                ) {
+                    continue;
+                }
+
+                // Get the package name and subpath
+                let packageName: string;
+                let subpath: string;
+
+                if (specifier.startsWith('@')) {
+                    // Scoped package: @scope/package/subpath
+                    const parts = specifier.split('/');
+                    if (parts.length <= 2) continue; // No subpath
+                    packageName = parts.slice(0, 2).join('/');
+                    subpath = parts.slice(2).join('/');
+                } else {
+                    // Regular package: package/subpath
+                    const parts = specifier.split('/');
+                    if (parts.length <= 1) continue; // No subpath
+                    packageName = parts[0];
+                    subpath = parts.slice(1).join('/');
+                }
+
+                // Check if this is an aliased package or workspace package
+                const isAliased = aliasMap?.aliases.has(packageName);
+                const isWorkspace = workspacePackages?.some(
+                    (wp) => wp.name === packageName,
+                );
+
+                if (isAliased || isWorkspace) {
+                    subpathImports.add(specifier);
+                }
+            }
+        }
+    }
+
+    // Try to resolve each subpath import to an actual directory
+    // Build a map of directory names to their paths
+    const directoryMap = new Map<string, string[]>();
+    for (const file of sourceFiles) {
+        const pathParts = file.path.split('/');
+        for (let i = 0; i < pathParts.length - 1; i++) {
+            const dirName = pathParts[i].toLowerCase();
+            const dirPath = pathParts.slice(0, i + 1).join('/');
+            if (!directoryMap.has(dirName)) {
+                directoryMap.set(dirName, []);
+            }
+            const paths = directoryMap.get(dirName)!;
+            if (!paths.includes(dirPath)) {
+                paths.push(dirPath);
+            }
+        }
+    }
+
+    // Try to match subpath imports to directories
+    for (const specifier of subpathImports) {
+        if (seenSpecifiers.has(specifier)) continue;
+
+        let packageName: string;
+        let subpath: string;
+
+        if (specifier.startsWith('@')) {
+            const parts = specifier.split('/');
+            packageName = parts.slice(0, 2).join('/');
+            subpath = parts.slice(2).join('/');
+        } else {
+            const parts = specifier.split('/');
+            packageName = parts[0];
+            subpath = parts.slice(1).join('/');
+        }
+
+        // Normalize subpath for matching (handle kebab-case vs PascalCase)
+        const subpathLower = subpath.toLowerCase().replace(/-/g, '');
+
+        // Look for matching directories
+        const matches: string[] = [];
+
+        // Direct match by name
+        if (directoryMap.has(subpathLower)) {
+            matches.push(...directoryMap.get(subpathLower)!);
+        }
+
+        // Try common transformations (auth -> auth, top-nav -> topnavigationexternal, etc.)
+        const subpathNoDash = subpathLower.replace(/-/g, '');
+
+        // Expand common abbreviations
+        const expandAbbreviations = (s: string): string[] => {
+            const expansions = [s];
+            // nav -> navigation
+            if (s.includes('nav')) {
+                expansions.push(s.replace('nav', 'navigation'));
+            }
+            // btn -> button
+            if (s.includes('btn')) {
+                expansions.push(s.replace('btn', 'button'));
+            }
+            return expansions;
+        };
+
+        const baseVariants = [subpathLower, subpathNoDash];
+        const transformations: string[] = [];
+
+        for (const base of baseVariants) {
+            const expanded = expandAbbreviations(base);
+            for (const exp of expanded) {
+                transformations.push(exp);
+                transformations.push(`${exp}external`);
+            }
+        }
+
+        for (const transformed of transformations) {
+            if (directoryMap.has(transformed) && matches.length === 0) {
+                matches.push(...directoryMap.get(transformed)!);
+            }
+        }
+
+        // Find the best match - prefer paths that are under shared-ui or the aliased package
+        if (matches.length > 0) {
+            // Sort by specificity - prefer paths with more segments and "shared-ui"
+            const sorted = matches.sort((a, b) => {
+                const aShared = a.includes('shared-ui') ? 1 : 0;
+                const bShared = b.includes('shared-ui') ? 1 : 0;
+                if (aShared !== bShared) return bShared - aShared;
+                return b.split('/').length - a.split('/').length;
+            });
+
+            const bestMatch = sorted[0];
+            seenSpecifiers.add(specifier);
+            subpathMappings.push({
+                specifier,
+                relativePath: `./${bestMatch}`,
+            });
+        }
+    }
+
+    return subpathMappings;
+}
+
+/**
  * Sanitizes a source map path to match how files are actually written by the reconstructor.
  *
  * Source map paths often contain relative sequences like "../../" which need to be resolved
@@ -1590,6 +1831,7 @@ export function generateTsConfig(
     projectConfig?: DetectedProjectConfig,
     vendorBundleDirs?: string[],
     workspacePackages?: WorkspacePackageMapping[],
+    subpathMappings?: SubpathMapping[],
 ): object {
     const paths: Record<string, string[]> = {};
 
@@ -1626,18 +1868,24 @@ export function generateTsConfig(
         }
     }
 
-    // Determine lib based on environment
-    const lib: string[] = [];
-    if (
-        projectConfig?.targetFeatures.optionalChaining ||
-        projectConfig?.targetFeatures.nullishCoalescing
-    ) {
-        lib.push('ES2020');
-    } else if (projectConfig?.targetFeatures.asyncAwait) {
-        lib.push('ES2017');
-    } else {
-        lib.push('ES2015');
+    // Add path mappings for subpath imports (e.g., 'sarsaparilla/auth' -> './shared-ui/auth')
+    if (subpathMappings && subpathMappings.length > 0) {
+        for (const mapping of subpathMappings) {
+            if (paths[mapping.specifier]) continue; // Don't override existing mappings
+
+            const normalizedPath = sanitizeSourceMapPath(mapping.relativePath);
+            const srcPath = `${normalizedPath}/src`;
+            paths[mapping.specifier] = [srcPath, normalizedPath];
+            paths[`${mapping.specifier}/*`] = [
+                `${srcPath}/*`,
+                `${normalizedPath}/*`,
+            ];
+        }
     }
+
+    // Determine lib based on environment
+    // Use ES2022 by default to support modern features like Object.hasOwn()
+    const lib: string[] = ['ES2022'];
 
     if (
         projectConfig?.environment === 'browser' ||
@@ -1646,16 +1894,8 @@ export function generateTsConfig(
         lib.push('DOM', 'DOM.Iterable');
     }
 
-    // Determine target
-    let target = 'ES2015';
-    if (
-        projectConfig?.targetFeatures.optionalChaining ||
-        projectConfig?.targetFeatures.nullishCoalescing
-    ) {
-        target = 'ES2020';
-    } else if (projectConfig?.targetFeatures.asyncAwait) {
-        target = 'ES2017';
-    }
+    // Determine target - use ES2022 for modern features
+    const target = 'ES2022';
 
     // Determine JSX setting
     let jsx: string | undefined;
@@ -1971,6 +2211,16 @@ export async function generateDependencyManifest(
             const aliasPathMappings = extractedSourceFiles
                 ? buildAliasPathMappings(cachedAliasMap, extractedSourceFiles)
                 : [];
+
+            // Detect subpath imports for aliased packages
+            const subpathMappings = extractedSourceFiles
+                ? detectSubpathImports(
+                      extractedSourceFiles,
+                      cachedAliasMap,
+                      workspacePackages,
+                  )
+                : [];
+
             return {
                 packageJson: cachedManifest.packageJson,
                 tsconfig: generateTsConfig(
@@ -1978,6 +2228,7 @@ export async function generateDependencyManifest(
                     projectConfig,
                     vendorBundleDirs,
                     workspacePackages,
+                    subpathMappings,
                 ),
                 stats: cachedManifest.stats as VersionStats,
                 aliasMap: cachedAliasMap,
@@ -2484,6 +2735,15 @@ export async function generateDependencyManifest(
         ? buildAliasPathMappings(aliasMap, extractedSourceFiles)
         : [];
 
+    // Detect subpath imports for aliased packages
+    const subpathMappings = extractedSourceFiles
+        ? detectSubpathImports(
+              extractedSourceFiles,
+              aliasMap,
+              workspacePackages,
+          )
+        : [];
+
     const packageJson = generatePackageJson(
         outputName,
         analysis.dependencies,
@@ -2495,6 +2755,7 @@ export async function generateDependencyManifest(
         projectConfig,
         vendorBundleDirs,
         workspacePackages,
+        subpathMappings,
     );
 
     // Cache the result for next time
