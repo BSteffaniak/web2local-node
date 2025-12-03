@@ -1,0 +1,46 @@
+{
+  "name": "mock-site-server",
+  "version": "1.0.0",
+  "description": "Serve captured API fixtures and static assets from a mock server",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "mock-site-server": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "mock",
+    "server",
+    "api",
+    "fixtures",
+    "testing",
+    "hono"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.10.7",
+    "@hono/node-server": "^1.19.6",
+    "commander": "^14.0.2",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}
