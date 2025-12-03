@@ -999,17 +999,20 @@ export async function generateMissingTypeFileStubs(
       '// Original type definition file was not available in source maps',
       `// Imported by: ${importers.slice(0, 3).map(p => relative(sourceDir, p)).join(', ')}${importers.length > 3 ? ` and ${importers.length - 3} more` : ''}`,
       '',
+      '/* eslint-disable @typescript-eslint/no-explicit-any */',
+      '',
     ];
     
     if (importedNames.size > 0) {
       // Generate specific type stubs for each imported name
+      // Use 'any' instead of 'unknown' to allow destructuring and property access
       for (const name of importedNames) {
-        stubLines.push(`export type ${name} = unknown;`);
+        stubLines.push(`export type ${name} = any;`);
       }
     } else {
       // No specific names found - create a generic stub
       stubLines.push('// Add your type definitions here');
-      stubLines.push('export type TODO = unknown;');
+      stubLines.push('export type TODO = any;');
     }
     
     stubLines.push('');

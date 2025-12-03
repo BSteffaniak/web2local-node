@@ -1588,9 +1588,9 @@ describe('internal packages in node_modules', () => {
       const typeContent = await readFileContent(typePath);
       
       // Should have proper type names without the "type " prefix
-      expect(typeContent).toContain('export type ReduxStore = unknown;');
-      expect(typeContent).toContain('export type AppDispatch = unknown;');
-      expect(typeContent).toContain('export type useSelector = unknown;');
+      expect(typeContent).toContain('export type ReduxStore = any;');
+      expect(typeContent).toContain('export type AppDispatch = any;');
+      expect(typeContent).toContain('export type useSelector = any;');
       
       // Should NOT have the broken "type type ReduxStore" format
       expect(typeContent).not.toContain('type type ');
@@ -1613,10 +1613,10 @@ describe('internal packages in node_modules', () => {
       const typeContent = await readFileContent(typePath);
       
       // Should correctly extract: ModalProps, Modal (from "Modal as BaseModal"), ModalState, useModal
-      expect(typeContent).toContain('export type ModalProps = unknown;');
-      expect(typeContent).toContain('export type Modal = unknown;');
-      expect(typeContent).toContain('export type ModalState = unknown;');
-      expect(typeContent).toContain('export type useModal = unknown;');
+      expect(typeContent).toContain('export type ModalProps = any;');
+      expect(typeContent).toContain('export type Modal = any;');
+      expect(typeContent).toContain('export type ModalState = any;');
+      expect(typeContent).toContain('export type useModal = any;');
       
       // Should NOT include BaseModal (that's the alias, not the original)
       expect(typeContent).not.toContain('BaseModal');
