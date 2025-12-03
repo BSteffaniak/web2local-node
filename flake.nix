@@ -23,6 +23,9 @@
             
             # Playwright with browsers from nixpkgs
             playwright-driver.browsers
+            
+            # Virtual framebuffer for headless browser support
+            xvfb-run
           ];
 
           # Point Playwright to nixpkgs browsers instead of downloading its own
