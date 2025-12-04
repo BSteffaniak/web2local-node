@@ -45,9 +45,8 @@ export class BrowserManager {
         }
 
         this.browser = await chromium.launch({
-            // Use 'new' headless mode (Chrome's built-in) which doesn't require X11/display
-            headless: this.options.headless ? ('new' as const) : false,
-        } as Parameters<typeof chromium.launch>[0]);
+            headless: this.options.headless,
+        });
 
         this.context = await this.browser.newContext({
             userAgent: this.options.userAgent,
