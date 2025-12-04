@@ -26,6 +26,11 @@ import { generateStubFiles } from './stub-generator.js';
 import { initCache } from './fingerprint-cache.js';
 import { join } from 'path';
 import { captureWebsite, generateCaptureSummary } from './capture/index.js';
+import {
+    prepareRebuild,
+    rebuild as runRebuild,
+    extractAliasesFromTsConfig,
+} from './rebuild/index.js';
 
 async function main() {
     const options = parseArgs();
@@ -468,13 +473,18 @@ async function main() {
                     installedPackages.add(pkg);
                 }
 
+                // Extract aliases from tsconfig for missing source file detection
+                const aliases = await extractAliasesFromTsConfig(sourceDir);
+
                 const stubResult = await generateStubFiles(sourceDir, {
                     internalPackages,
                     installedPackages,
+                    aliases,
                     generateScssDeclarations: true,
                     generateDirectoryIndexes: true,
                     generateCssModuleStubs: true,
                     generateExternalStubs: true,
+                    generateMissingSourceStubs: true,
                     onProgress: (msg) => {
                         stubSpinner.text = msg;
                     },
@@ -485,7 +495,8 @@ async function main() {
                     stubResult.directoryIndexesGenerated +
                     stubResult.scssDeclarationsGenerated +
                     stubResult.cssModuleStubsGenerated +
-                    stubResult.externalPackageStubsGenerated;
+                    stubResult.externalPackageStubsGenerated +
+                    stubResult.missingSourceStubsGenerated;
 
                 if (totalGenerated > 0) {
                     const parts = [];
@@ -508,6 +519,10 @@ async function main() {
                     if (stubResult.externalPackageStubsGenerated > 0)
                         parts.push(
                             `${stubResult.externalPackageStubsGenerated} external package stubs`,
+                        );
+                    if (stubResult.missingSourceStubsGenerated > 0)
+                        parts.push(
+                            `${stubResult.missingSourceStubsGenerated} missing source stubs`,
                         );
                     stubSpinner.succeed(`Generated ${parts.join(', ')}`);
                 } else {
@@ -746,6 +761,110 @@ async function main() {
             );
         } catch (error) {
             captureSpinner.fail(`API capture failed: ${error}`);
+        }
+
+        console.log();
+    }
+
+    // Step 7: Prepare for rebuild if requested
+    if (options.prepareRebuild || options.rebuild) {
+        const sourceDir = join(options.output, hostname);
+
+        console.log(chalk.bold('\nPreparing for rebuild:'));
+        console.log();
+
+        const rebuildSpinner = ora({
+            text: 'Analyzing project...',
+            color: 'cyan',
+        }).start();
+
+        try {
+            if (options.rebuild) {
+                // Full rebuild
+                const result = await runRebuild({
+                    projectDir: sourceDir,
+                    verbose: options.verbose,
+                    recovery: true,
+                    maxRecoveryAttempts: 3,
+                    packageManager:
+                        options.packageManager === 'auto'
+                            ? undefined
+                            : options.packageManager,
+                    onProgress: (message) => {
+                        rebuildSpinner.text = message;
+                    },
+                });
+
+                if (result.success) {
+                    rebuildSpinner.succeed('Rebuild completed successfully');
+                    console.log(
+                        `    ${chalk.green('✓')} Built ${chalk.bold(result.bundles.length)} files`,
+                    );
+                    console.log(
+                        `    ${chalk.blue('→')} Output: ${chalk.cyan(result.outputDir)}`,
+                    );
+                    console.log(
+                        `    ${chalk.blue('→')} Build time: ${(result.durationMs / 1000).toFixed(1)}s`,
+                    );
+                } else {
+                    rebuildSpinner.fail('Rebuild failed');
+                    for (const error of result.errors) {
+                        console.log(chalk.red(`    ${error}`));
+                    }
+                }
+
+                if (result.warnings.length > 0 && options.verbose) {
+                    for (const warning of result.warnings) {
+                        console.log(chalk.yellow(`    Warning: ${warning}`));
+                    }
+                }
+            } else {
+                // Just prepare (generate config files)
+                const result = await prepareRebuild({
+                    projectDir: sourceDir,
+                    verbose: options.verbose,
+                    overwrite: false,
+                    onProgress: (message) => {
+                        rebuildSpinner.text = message;
+                    },
+                });
+
+                if (result.success) {
+                    rebuildSpinner.succeed('Rebuild preparation completed');
+                    console.log(
+                        `    ${chalk.green('✓')} Entry points found: ${chalk.bold(result.entryPoints.length)}`,
+                    );
+                    if (result.generatedFiles.length > 0) {
+                        console.log(
+                            `    ${chalk.green('✓')} Generated: ${result.generatedFiles.join(', ')}`,
+                        );
+                    }
+                    console.log();
+                    console.log(chalk.gray('  To build the project, run:'));
+                    const pm =
+                        options.packageManager === 'auto'
+                            ? 'pnpm'
+                            : options.packageManager;
+                    console.log(
+                        chalk.cyan(
+                            `    cd ${sourceDir} && ${pm} install && ${pm === 'npm' ? 'npm run' : pm} build`,
+                        ),
+                    );
+                } else {
+                    rebuildSpinner.fail('Rebuild preparation failed');
+                    for (const error of result.errors) {
+                        console.log(chalk.red(`    ${error}`));
+                    }
+                }
+
+                if (result.warnings.length > 0) {
+                    for (const warning of result.warnings) {
+                        console.log(chalk.yellow(`    Warning: ${warning}`));
+                    }
+                }
+            }
+        } catch (error) {
+            rebuildSpinner.fail(`Rebuild preparation failed: ${error}`);
         }
 
         console.log();

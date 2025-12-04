@@ -195,6 +195,33 @@ function extractImportsFromSource(
 }
 
 /**
+ * Extracts all bare (non-relative) imports from source files.
+ * Returns a Set of package names that are imported as bare modules.
+ *
+ * This is useful for determining which directory names actually need aliases.
+ * If a package name is never imported as a bare module, it doesn't need an alias.
+ *
+ * @param sourceFiles - Source files to analyze
+ * @returns Set of package names that are imported as bare modules
+ */
+export function extractBareImports(sourceFiles: SourceFile[]): Set<string> {
+    const allImports = new Set<string>();
+
+    for (const file of sourceFiles) {
+        // Skip files in node_modules
+        if (file.path.includes('node_modules/')) continue;
+        if (!file.content) continue;
+
+        const imports = extractImportsFromSource(file.content, file.path);
+        for (const imp of imports) {
+            allImports.add(imp);
+        }
+    }
+
+    return allImports;
+}
+
+/**
  * Recursively walks a directory and yields file paths
  */
 async function* walkDirectory(dir: string): AsyncGenerator<string> {
@@ -1638,25 +1665,40 @@ export function detectSubpathImports(
         }
     }
 
-    // Try to resolve each subpath import to an actual directory
-    // Build a map of directory names to their paths
-    const directoryMap = new Map<string, string[]>();
+    // Build a map of actual package -> paths for aliased packages
+    // This allows us to resolve subpaths WITHIN the correct package
+    const packagePaths = new Map<string, string[]>();
+
     for (const file of sourceFiles) {
-        const pathParts = file.path.split('/');
-        for (let i = 0; i < pathParts.length - 1; i++) {
-            const dirName = pathParts[i].toLowerCase();
-            const dirPath = pathParts.slice(0, i + 1).join('/');
-            if (!directoryMap.has(dirName)) {
-                directoryMap.set(dirName, []);
-            }
-            const paths = directoryMap.get(dirName)!;
-            if (!paths.includes(dirPath)) {
-                paths.push(dirPath);
-            }
+        // Check if this path contains node_modules
+        const nodeModulesIdx = file.path.indexOf('node_modules/');
+        if (nodeModulesIdx === -1) continue;
+
+        // Extract the portion from node_modules onwards
+        const nodeModulesPath = file.path.slice(nodeModulesIdx);
+
+        // Match the package name
+        const pkgMatch = nodeModulesPath.match(
+            /^node_modules\/(@[^/]+\/[^/]+|[^/]+)/,
+        );
+        if (!pkgMatch) continue;
+
+        const packageName = pkgMatch[1];
+
+        // Get the bundle prefix (first path segment)
+        const firstSegment = file.path.split('/')[0];
+        const packageBasePath = `${firstSegment}/${pkgMatch[0]}`;
+
+        if (!packagePaths.has(packageName)) {
+            packagePaths.set(packageName, []);
+        }
+        const paths = packagePaths.get(packageName)!;
+        if (!paths.includes(packageBasePath)) {
+            paths.push(packageBasePath);
         }
     }
 
-    // Try to match subpath imports to directories
+    // Try to match subpath imports to directories WITHIN the correct package
     for (const specifier of subpathImports) {
         if (seenSpecifiers.has(specifier)) continue;
 
@@ -1673,62 +1715,88 @@ export function detectSubpathImports(
             subpath = parts.slice(1).join('/');
         }
 
-        // Normalize subpath for matching (handle kebab-case vs PascalCase)
-        const subpathLower = subpath.toLowerCase().replace(/-/g, '');
+        // Resolve the alias to actual package name
+        const actualPackage = aliasMap?.aliases.get(packageName);
 
-        // Look for matching directories
-        const matches: string[] = [];
+        // Find the package's base path(s)
+        const packageBasePaths = actualPackage
+            ? packagePaths.get(actualPackage)
+            : packagePaths.get(packageName);
 
-        // Direct match by name
-        if (directoryMap.has(subpathLower)) {
-            matches.push(...directoryMap.get(subpathLower)!);
+        if (!packageBasePaths || packageBasePaths.length === 0) {
+            // Package not found in extracted files - skip
+            continue;
         }
 
-        // Try common transformations (auth -> auth, top-nav -> topnavigationexternal, etc.)
+        // Look for the subpath within the package's files
+        // Common patterns: package/src/subpath, package/subpath, package/lib/subpath
+        const subpathLower = subpath.toLowerCase();
         const subpathNoDash = subpathLower.replace(/-/g, '');
 
         // Expand common abbreviations
         const expandAbbreviations = (s: string): string[] => {
             const expansions = [s];
-            // nav -> navigation
             if (s.includes('nav')) {
                 expansions.push(s.replace('nav', 'navigation'));
             }
-            // btn -> button
             if (s.includes('btn')) {
                 expansions.push(s.replace('btn', 'button'));
             }
             return expansions;
         };
 
-        const baseVariants = [subpathLower, subpathNoDash];
-        const transformations: string[] = [];
-
-        for (const base of baseVariants) {
-            const expanded = expandAbbreviations(base);
-            for (const exp of expanded) {
-                transformations.push(exp);
-                transformations.push(`${exp}external`);
+        const subpathVariants = new Set<string>();
+        for (const base of [subpathLower, subpathNoDash]) {
+            for (const expanded of expandAbbreviations(base)) {
+                subpathVariants.add(expanded);
+                subpathVariants.add(`${expanded}external`);
             }
         }
 
-        for (const transformed of transformations) {
-            if (directoryMap.has(transformed) && matches.length === 0) {
-                matches.push(...directoryMap.get(transformed)!);
+        // Search for files within this package that match the subpath
+        let bestMatch: string | null = null;
+
+        for (const packageBasePath of packageBasePaths) {
+            // Find all files under this package
+            const packageFiles = sourceFiles.filter((f) =>
+                f.path.startsWith(packageBasePath + '/'),
+            );
+
+            // Look for directories matching the subpath
+            const matchedDirs = new Set<string>();
+
+            for (const file of packageFiles) {
+                // Get the path relative to package base
+                const relativePath = file.path.slice(
+                    packageBasePath.length + 1,
+                );
+                const pathParts = relativePath.split('/');
+
+                // Check each directory in the path
+                for (let i = 0; i < pathParts.length - 1; i++) {
+                    const dirName = pathParts[i].toLowerCase();
+                    if (subpathVariants.has(dirName)) {
+                        // Found a matching directory - construct the full path
+                        const fullDirPath = `${packageBasePath}/${pathParts.slice(0, i + 1).join('/')}`;
+                        matchedDirs.add(fullDirPath);
+                    }
+                }
+            }
+
+            if (matchedDirs.size > 0) {
+                // Prefer paths with 'src' in them, then shorter paths
+                const sorted = [...matchedDirs].sort((a, b) => {
+                    const aHasSrc = a.includes('/src/') ? 1 : 0;
+                    const bHasSrc = b.includes('/src/') ? 1 : 0;
+                    if (aHasSrc !== bHasSrc) return bHasSrc - aHasSrc;
+                    return a.length - b.length;
+                });
+                bestMatch = sorted[0];
+                break;
             }
         }
 
-        // Find the best match - prefer paths that are under shared-ui or the aliased package
-        if (matches.length > 0) {
-            // Sort by specificity - prefer paths with more segments and "shared-ui"
-            const sorted = matches.sort((a, b) => {
-                const aShared = a.includes('shared-ui') ? 1 : 0;
-                const bShared = b.includes('shared-ui') ? 1 : 0;
-                if (aShared !== bShared) return bShared - aShared;
-                return b.split('/').length - a.split('/').length;
-            });
-
-            const bestMatch = sorted[0];
+        if (bestMatch) {
             seenSpecifiers.add(specifier);
             subpathMappings.push({
                 specifier,

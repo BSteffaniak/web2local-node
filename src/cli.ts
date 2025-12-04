@@ -22,6 +22,10 @@ export interface CliOptions {
     headless: boolean;
     browseTimeout: number;
     autoScroll: boolean;
+    // Rebuild options
+    prepareRebuild: boolean;
+    rebuild: boolean;
+    packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
 }
 
 export function parseArgs(): CliOptions {
@@ -117,6 +121,22 @@ export function parseArgs(): CliOptions {
             'Capture rendered HTML after JS execution instead of original (use for SPAs)',
             false,
         )
+        // Rebuild options
+        .option(
+            '--prepare-rebuild',
+            'Generate build configuration (vite.config.ts, index.html) for rebuilding from source',
+            false,
+        )
+        .option(
+            '--rebuild',
+            'Generate build configuration and run the build (requires -p for package.json)',
+            false,
+        )
+        .option(
+            '--package-manager <manager>',
+            'Package manager to use for install/build (npm, pnpm, yarn, or auto for detection)',
+            'auto',
+        )
         .parse();
 
     const options = program.opts();
@@ -152,5 +172,9 @@ export function parseArgs(): CliOptions {
         headless: options.headless !== false,
         browseTimeout: parseInt(options.browseTimeout, 10),
         autoScroll: options.scroll !== false,
+        // Rebuild options
+        prepareRebuild: options.prepareRebuild || false,
+        rebuild: options.rebuild || false,
+        packageManager: options.packageManager || 'auto',
     };
 }

@@ -1,13 +1,18 @@
 import { readdir, writeFile, stat, readFile, mkdir } from 'fs/promises';
 import { join, dirname, basename, relative, extname, resolve } from 'path';
 import { parseSync } from '@swc/core';
-import type { ExportSpecifier, ExportNamedDeclaration } from '@swc/types';
+import type {
+    ExportSpecifier,
+    ExportNamedDeclaration,
+    ExportDeclaration,
+} from '@swc/types';
 import { extractExportsFromSource } from './export-extractor.js';
 import type { FileExports } from './export-extractor.js';
 import {
     extractImportsFromSource,
     categorizeImport,
     isNodeBuiltin,
+    type ImportDeclarationInfo,
 } from './import-extractor.js';
 import {
     extractNamedImportsForSource,
@@ -222,6 +227,14 @@ export async function generateIndexFile(
         filesByDir.get(dir)!.push(file);
     }
 
+    // Track the first file with a default export for fallback default re-export
+    // This enables `import X from './Dir'` to work even when no file matches the directory name
+    let firstDefaultExportFile: string | null = null;
+    let firstDefaultExportImportPath: string | null = null;
+
+    // Get the root package directory name for matching
+    const packageDirName = basename(packagePath);
+
     // Process each file
     for (const file of sourceFiles) {
         // Skip test files, stories, and type definition files
@@ -308,6 +321,7 @@ export async function generateIndexFile(
                     /\.(tsx?|jsx?)$/,
                     '',
                 );
+                // dirName is the immediate parent directory of the file
                 const dirName = basename(dirname(join(packagePath, file)));
 
                 if (
@@ -322,13 +336,31 @@ export async function generateIndexFile(
                     allExports.push(safeName);
                     fileExportParts.push('default');
 
+                    // Track the first file with a default export as a fallback
+                    // Prefer files in the root directory (dirname(file) === '.')
+                    if (
+                        firstDefaultExportFile === null ||
+                        dirname(file) === '.'
+                    ) {
+                        firstDefaultExportFile = file;
+                        firstDefaultExportImportPath = importPath;
+                    }
+
                     // If this file's default export matches the directory name (e.g., Label/Label.tsx exports Label),
                     // also add a direct default re-export so `import X from './Dir'` works.
                     // This handles the common pattern where directories have a main component file.
+                    // We check both the immediate parent directory AND the root package directory.
+                    const matchesDirName =
+                        safeName.toLowerCase() === dirName.toLowerCase() ||
+                        fileBaseName.toLowerCase() === dirName.toLowerCase();
+                    const matchesPackageName =
+                        safeName.toLowerCase() ===
+                            packageDirName.toLowerCase() ||
+                        fileBaseName.toLowerCase() ===
+                            packageDirName.toLowerCase();
+
                     if (
-                        (safeName.toLowerCase() === dirName.toLowerCase() ||
-                            fileBaseName.toLowerCase() ===
-                                dirName.toLowerCase()) &&
+                        (matchesDirName || matchesPackageName) &&
                         !usedExportNames.has('default')
                     ) {
                         exportLines.push(
@@ -346,6 +378,23 @@ export async function generateIndexFile(
                 );
             }
         }
+    }
+
+    // If no file matched the directory name but we have files with default exports,
+    // use the first one as the module's default export.
+    // This ensures `import X from './Dir'` works for directories with a single main component.
+    if (
+        !usedExportNames.has('default') &&
+        firstDefaultExportFile !== null &&
+        firstDefaultExportImportPath !== null
+    ) {
+        exportLines.push(
+            `export { default } from '${firstDefaultExportImportPath}';`,
+        );
+        usedExportNames.add('default');
+        onProgress?.(
+            `  Using ${firstDefaultExportFile} as default export for directory`,
+        );
     }
 
     if (exportLines.length === 0 && importLines.length === 0) {
@@ -2125,6 +2174,735 @@ export async function fixAllDuplicateExports(
 }
 
 /**
+ * Information about what a missing file needs to export
+ */
+export interface MissingFileRequirements {
+    /** Absolute path where the stub file should be created */
+    filePath: string;
+    /** Whether any importer uses a default import */
+    needsDefaultExport: boolean;
+    /** Named value exports needed (non-type) */
+    namedExports: Set<string>;
+    /** Type exports needed */
+    typeExports: Set<string>;
+    /** Files that import this missing file */
+    importedBy: string[];
+}
+
+/**
+ * Alias mapping for import resolution
+ */
+export interface AliasMapping {
+    /** Import alias (e.g., "sarsaparilla") */
+    alias: string;
+    /** Resolved path relative to source dir (e.g., "./navigation/node_modules/@fp/sarsaparilla") */
+    path: string;
+}
+
+/**
+ * Scans all source files and finds imports that point to missing files.
+ * Handles both relative imports and aliased imports.
+ * Collects all the export requirements from every importer.
+ */
+export async function findMissingSourceFiles(
+    sourceDir: string,
+    options: {
+        internalPackages?: Set<string>;
+        aliases?: AliasMapping[];
+        onProgress?: (message: string) => void;
+    } = {},
+): Promise<Map<string, MissingFileRequirements>> {
+    const { internalPackages = new Set(), aliases = [], onProgress } = options;
+    const missingFiles = new Map<string, MissingFileRequirements>();
+
+    // Extensions to try when resolving imports
+    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
+    const indexFiles = ['index.ts', 'index.tsx', 'index.js', 'index.jsx'];
+
+    // Sort aliases by specificity for matching (longer/more specific first)
+    const sortedAliases = [...aliases].sort((a, b) => {
+        const segmentsA = a.alias.split('/').length;
+        const segmentsB = b.alias.split('/').length;
+        if (segmentsB !== segmentsA) {
+            return segmentsB - segmentsA;
+        }
+        return b.alias.length - a.alias.length;
+    });
+
+    /**
+     * Try to resolve an import path using aliases
+     * Returns the absolute resolved path if alias matches, null otherwise
+     */
+    function resolveWithAlias(importPath: string): string | null {
+        for (const { alias, path: aliasPath } of sortedAliases) {
+            if (importPath === alias || importPath.startsWith(alias + '/')) {
+                // Replace the alias with the actual path
+                const subPath = importPath.slice(alias.length); // '' or '/subpath'
+                const cleanAliasPath = aliasPath.replace(/^\.\//, '');
+                const resolvedPath = join(sourceDir, cleanAliasPath + subPath);
+                return resolvedPath;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a file exists with any of the common extensions
+     */
+    async function resolveImportPath(basePath: string): Promise<string | null> {
+        // Try exact path first
+        if (await fileExists(basePath)) {
+            const stats = await stat(basePath);
+            if (stats.isFile()) {
+                return basePath;
+            }
+            // It's a directory - check for index file
+            for (const idx of indexFiles) {
+                const indexPath = join(basePath, idx);
+                if (await fileExists(indexPath)) {
+                    return indexPath;
+                }
+            }
+            return null; // Directory without index
+        }
+
+        // Try adding extensions
+        for (const ext of extensions) {
+            const pathWithExt = basePath + ext;
+            if (await fileExists(pathWithExt)) {
+                return pathWithExt;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Process a node_modules directory, only scanning internal packages
+     */
+    async function processNodeModules(nodeModulesDir: string): Promise<void> {
+        try {
+            const entries = await readdir(nodeModulesDir, {
+                withFileTypes: true,
+            });
+
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+
+                const fullPath = join(nodeModulesDir, entry.name);
+
+                if (entry.name.startsWith('@')) {
+                    const scopedEntries = await readdir(fullPath, {
+                        withFileTypes: true,
+                    });
+                    for (const scopedEntry of scopedEntries) {
+                        if (!scopedEntry.isDirectory()) continue;
+                        const scopedPackageName = `${entry.name}/${scopedEntry.name}`;
+                        if (internalPackages.has(scopedPackageName)) {
+                            await processDir(join(fullPath, scopedEntry.name));
+                        }
+                    }
+                } else if (internalPackages.has(entry.name)) {
+                    await processDir(fullPath);
+                }
+            }
+        } catch {
+            // Directory doesn't exist
+        }
+    }
+
+    async function processDir(dir: string): Promise<void> {
+        try {
+            const entries = await readdir(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    if (entry.name === 'node_modules') {
+                        await processNodeModules(fullPath);
+                    } else if (
+                        !entry.name.startsWith('.') &&
+                        !entry.name.startsWith('_')
+                    ) {
+                        await processDir(fullPath);
+                    }
+                } else if (entry.isFile()) {
+                    const ext = extname(entry.name).toLowerCase();
+                    if (
+                        ['.ts', '.tsx', '.js', '.jsx'].includes(ext) &&
+                        !entry.name.endsWith('.d.ts')
+                    ) {
+                        await processFile(fullPath);
+                    }
+                }
+            }
+        } catch {
+            // Directory doesn't exist
+        }
+    }
+
+    async function processFile(filePath: string): Promise<void> {
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            const fileDir = dirname(filePath);
+
+            const imports = extractImportsFromSource(
+                content,
+                basename(filePath),
+            );
+
+            for (const imp of imports) {
+                const importPath = imp.source;
+                const category = categorizeImport(importPath);
+
+                // Skip CSS/SCSS modules - handled separately
+                if (category.isCssModule) continue;
+
+                let resolvedBasePath: string | null = null;
+
+                if (category.isRelative) {
+                    // Relative import - resolve from file directory
+                    resolvedBasePath = resolve(fileDir, importPath);
+                } else {
+                    // Non-relative import - try to resolve via aliases
+                    resolvedBasePath = resolveWithAlias(importPath);
+                    if (!resolvedBasePath) {
+                        // Not an aliased import we know about - skip
+                        continue;
+                    }
+                }
+
+                const resolvedFile = await resolveImportPath(resolvedBasePath);
+
+                // If file exists, skip
+                if (resolvedFile !== null) continue;
+
+                // File is missing - determine what extension to use for stub
+                // Default to .tsx for maximum compatibility (supports JSX and types)
+                const stubPath = resolvedBasePath + '.tsx';
+
+                // Get or create requirements for this missing file
+                let requirements = missingFiles.get(stubPath);
+                if (!requirements) {
+                    requirements = {
+                        filePath: stubPath,
+                        needsDefaultExport: false,
+                        namedExports: new Set(),
+                        typeExports: new Set(),
+                        importedBy: [],
+                    };
+                    missingFiles.set(stubPath, requirements);
+                }
+
+                // Track who imports this file
+                requirements.importedBy.push(filePath);
+
+                // Collect export requirements from this import
+                if (imp.hasDefaultImport) {
+                    requirements.needsDefaultExport = true;
+                }
+
+                // Process named imports
+                if (imp.isTypeOnly) {
+                    // Entire import is type-only: import type { A, B } from './missing'
+                    for (const name of imp.namedImports) {
+                        requirements.typeExports.add(name);
+                    }
+                } else {
+                    // Check each specifier
+                    for (const detail of imp.namedImportDetails) {
+                        if (detail.isTypeOnly) {
+                            requirements.typeExports.add(detail.name);
+                        } else {
+                            requirements.namedExports.add(detail.name);
+                        }
+                    }
+                }
+
+                // Namespace imports don't require specific exports - file just needs to exist
+                // Side-effect imports also just need the file to exist
+            }
+        } catch {
+            // File can't be read or parsed
+        }
+    }
+
+    onProgress?.('Scanning for missing source files...');
+    await processDir(sourceDir);
+
+    return missingFiles;
+}
+
+/**
+ * Generates stub files for missing source imports.
+ * Each stub exports the required default, named, and type exports as `any`.
+ */
+export async function generateMissingSourceStubs(
+    sourceDir: string,
+    missingFiles: Map<string, MissingFileRequirements>,
+    options: {
+        dryRun?: boolean;
+        onProgress?: (message: string) => void;
+    } = {},
+): Promise<number> {
+    const { dryRun = false, onProgress } = options;
+    let count = 0;
+
+    for (const [stubPath, requirements] of missingFiles) {
+        // Skip if file somehow now exists
+        if (await fileExists(stubPath)) {
+            continue;
+        }
+
+        const lines: string[] = [
+            '// Auto-generated stub for missing source file',
+            '// Original file was not available in source maps',
+            `// Imported by: ${requirements.importedBy
+                .slice(0, 3)
+                .map((p) => relative(sourceDir, p))
+                .join(
+                    ', ',
+                )}${requirements.importedBy.length > 3 ? ` and ${requirements.importedBy.length - 3} more` : ''}`,
+            '',
+            '/* eslint-disable @typescript-eslint/no-explicit-any */',
+            '',
+        ];
+
+        // Add default export if needed
+        if (requirements.needsDefaultExport) {
+            lines.push('const _default: any = {};');
+            lines.push('export default _default;');
+            lines.push('');
+        }
+
+        // Add named exports
+        if (requirements.namedExports.size > 0) {
+            for (const name of requirements.namedExports) {
+                lines.push(`export const ${name}: any = {};`);
+            }
+            lines.push('');
+        }
+
+        // Add type exports
+        if (requirements.typeExports.size > 0) {
+            for (const name of requirements.typeExports) {
+                lines.push(`export type ${name} = any;`);
+            }
+            lines.push('');
+        }
+
+        // If no exports were needed (side-effect or namespace only), add a comment
+        if (
+            !requirements.needsDefaultExport &&
+            requirements.namedExports.size === 0 &&
+            requirements.typeExports.size === 0
+        ) {
+            lines.push(
+                '// This file exists for side-effect or namespace imports',
+            );
+            lines.push('export {};');
+            lines.push('');
+        }
+
+        if (!dryRun) {
+            // Ensure directory exists
+            await mkdir(dirname(stubPath), { recursive: true });
+            await writeFile(stubPath, lines.join('\n'), 'utf-8');
+            onProgress?.(
+                `Generated stub: ${relative(sourceDir, stubPath)} (${requirements.needsDefaultExport ? 'default' : ''}${requirements.namedExports.size > 0 ? ` ${requirements.namedExports.size} named` : ''}${requirements.typeExports.size > 0 ? ` ${requirements.typeExports.size} types` : ''})`,
+            );
+        }
+
+        count++;
+    }
+
+    return count;
+}
+
+/**
+ * Information about missing exports from a generated barrel/index file
+ */
+export interface MissingBarrelExport {
+    /** The directory path containing the index.ts */
+    directoryPath: string;
+    /** The index.ts file path */
+    indexPath: string;
+    /** Named exports that are imported but not provided */
+    missingNamedExports: Set<string>;
+    /** Type exports that are imported but not provided */
+    missingTypeExports: Set<string>;
+    /** Files that import from this directory */
+    importedBy: string[];
+}
+
+/**
+ * Extracts what named exports a generated index file actually provides.
+ * Uses SWC AST parsing for accuracy.
+ */
+async function extractProvidedExports(
+    indexPath: string,
+): Promise<{ named: Set<string>; types: Set<string> }> {
+    const result = { named: new Set<string>(), types: new Set<string>() };
+
+    try {
+        const content = await readFile(indexPath, 'utf-8');
+        const ast = parseSync(content, {
+            syntax: 'typescript',
+            tsx: false,
+        });
+
+        for (const item of ast.body) {
+            if (item.type === 'ExportNamedDeclaration') {
+                const namedExport = item as ExportNamedDeclaration;
+                const isTypeOnly = namedExport.typeOnly ?? false;
+
+                for (const spec of namedExport.specifiers) {
+                    let exportedName: string | null = null;
+
+                    if (spec.type === 'ExportSpecifier') {
+                        // export { foo } or export { foo as bar }
+                        if (spec.exported) {
+                            exportedName =
+                                spec.exported.type === 'Identifier'
+                                    ? spec.exported.value
+                                    : spec.exported.value;
+                        } else {
+                            exportedName =
+                                spec.orig.type === 'Identifier'
+                                    ? spec.orig.value
+                                    : spec.orig.value;
+                        }
+
+                        // Check for inline type modifier
+                        const isSpecTypeOnly = spec.isTypeOnly ?? false;
+                        if (exportedName) {
+                            if (isTypeOnly || isSpecTypeOnly) {
+                                result.types.add(exportedName);
+                            } else {
+                                result.named.add(exportedName);
+                            }
+                        }
+                    } else if (spec.type === 'ExportDefaultSpecifier') {
+                        result.named.add('default');
+                    } else if (spec.type === 'ExportNamespaceSpecifier') {
+                        const name =
+                            spec.name.type === 'Identifier'
+                                ? spec.name.value
+                                : spec.name.value;
+                        result.named.add(name);
+                    }
+                }
+            } else if (item.type === 'ExportDeclaration') {
+                // Handle export declarations (export const X = ...)
+                const exportDecl = item as ExportDeclaration;
+                const decl = exportDecl.declaration;
+                if (decl.type === 'VariableDeclaration' && decl.declarations) {
+                    for (const d of decl.declarations) {
+                        if (d.id.type === 'Identifier') {
+                            result.named.add(d.id.value);
+                        }
+                    }
+                } else if (
+                    decl.type === 'FunctionDeclaration' &&
+                    decl.identifier
+                ) {
+                    result.named.add(decl.identifier.value);
+                } else if (
+                    decl.type === 'ClassDeclaration' &&
+                    decl.identifier
+                ) {
+                    result.named.add(decl.identifier.value);
+                } else if (decl.type === 'TsTypeAliasDeclaration' && decl.id) {
+                    result.types.add(decl.id.value);
+                } else if (decl.type === 'TsInterfaceDeclaration' && decl.id) {
+                    result.types.add(decl.id.value);
+                }
+            } else if (item.type === 'ExportDefaultDeclaration') {
+                result.named.add('default');
+            }
+        }
+    } catch {
+        // If parsing fails, return empty sets
+    }
+
+    return result;
+}
+
+/**
+ * Finds missing exports from generated barrel/index files.
+ * Scans source files for imports from directories with generated index files,
+ * extracts what named exports they expect, and compares against what the
+ * generated index actually exports.
+ */
+export async function findMissingBarrelExports(
+    sourceDir: string,
+    generatedIndexPaths: string[],
+    options: {
+        internalPackages?: Set<string>;
+        onProgress?: (message: string) => void;
+    } = {},
+): Promise<Map<string, MissingBarrelExport>> {
+    const { internalPackages = new Set(), onProgress } = options;
+    const missingExports = new Map<string, MissingBarrelExport>();
+
+    // Build a map of directory paths to their generated index files
+    const indexByDir = new Map<string, string>();
+    for (const indexPath of generatedIndexPaths) {
+        const dirPath = dirname(indexPath);
+        indexByDir.set(dirPath, indexPath);
+    }
+
+    // Extract what each index file actually exports
+    const providedExportsByDir = new Map<
+        string,
+        { named: Set<string>; types: Set<string> }
+    >();
+    for (const [dirPath, indexPath] of indexByDir) {
+        const provided = await extractProvidedExports(indexPath);
+        providedExportsByDir.set(dirPath, provided);
+    }
+
+    // Extensions to try when resolving directory imports
+    const indexFiles = ['index.ts', 'index.tsx', 'index.js', 'index.jsx'];
+
+    /**
+     * Resolve an import path to a directory if it points to one of our generated index files
+     */
+    function resolveToGeneratedIndex(
+        importPath: string,
+        fromDir: string,
+    ): string | null {
+        if (!importPath.startsWith('.')) {
+            return null; // Not a relative import
+        }
+
+        const resolvedPath = resolve(fromDir, importPath);
+
+        // Check if this resolves to a directory with a generated index
+        if (indexByDir.has(resolvedPath)) {
+            return resolvedPath;
+        }
+
+        return null;
+    }
+
+    /**
+     * Process a node_modules directory, only scanning internal packages
+     */
+    async function processNodeModules(nodeModulesDir: string): Promise<void> {
+        try {
+            const entries = await readdir(nodeModulesDir, {
+                withFileTypes: true,
+            });
+
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+
+                const fullPath = join(nodeModulesDir, entry.name);
+
+                if (entry.name.startsWith('@')) {
+                    const scopedEntries = await readdir(fullPath, {
+                        withFileTypes: true,
+                    });
+                    for (const scopedEntry of scopedEntries) {
+                        if (!scopedEntry.isDirectory()) continue;
+                        const scopedPackageName = `${entry.name}/${scopedEntry.name}`;
+                        if (internalPackages.has(scopedPackageName)) {
+                            await processDir(join(fullPath, scopedEntry.name));
+                        }
+                    }
+                } else if (internalPackages.has(entry.name)) {
+                    await processDir(fullPath);
+                }
+            }
+        } catch {
+            // Directory doesn't exist
+        }
+    }
+
+    async function processDir(dir: string): Promise<void> {
+        try {
+            const entries = await readdir(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    if (entry.name === 'node_modules') {
+                        await processNodeModules(fullPath);
+                    } else if (
+                        !entry.name.startsWith('.') &&
+                        !entry.name.startsWith('_')
+                    ) {
+                        await processDir(fullPath);
+                    }
+                } else if (entry.isFile()) {
+                    const ext = extname(entry.name).toLowerCase();
+                    if (
+                        ['.ts', '.tsx', '.js', '.jsx'].includes(ext) &&
+                        !entry.name.endsWith('.d.ts')
+                    ) {
+                        await processFile(fullPath);
+                    }
+                }
+            }
+        } catch {
+            // Directory doesn't exist
+        }
+    }
+
+    async function processFile(filePath: string): Promise<void> {
+        try {
+            const content = await readFile(filePath, 'utf-8');
+            const fileDir = dirname(filePath);
+
+            const imports = extractImportsFromSource(
+                content,
+                basename(filePath),
+            );
+
+            for (const imp of imports) {
+                const importPath = imp.source;
+
+                // Check if this import resolves to a directory with a generated index
+                const targetDir = resolveToGeneratedIndex(importPath, fileDir);
+                if (!targetDir) continue;
+
+                // Get what exports this directory provides
+                const provided = providedExportsByDir.get(targetDir);
+                if (!provided) continue;
+
+                // Get or create missing exports entry
+                let missing = missingExports.get(targetDir);
+                if (!missing) {
+                    missing = {
+                        directoryPath: targetDir,
+                        indexPath: indexByDir.get(targetDir)!,
+                        missingNamedExports: new Set(),
+                        missingTypeExports: new Set(),
+                        importedBy: [],
+                    };
+                    missingExports.set(targetDir, missing);
+                }
+
+                // Track who imports this
+                if (!missing.importedBy.includes(filePath)) {
+                    missing.importedBy.push(filePath);
+                }
+
+                // Check each named import against what's provided
+                if (imp.isTypeOnly) {
+                    // Entire import is type-only
+                    for (const name of imp.namedImports) {
+                        if (
+                            !provided.named.has(name) &&
+                            !provided.types.has(name)
+                        ) {
+                            missing.missingTypeExports.add(name);
+                        }
+                    }
+                } else {
+                    // Check each specifier individually
+                    for (const detail of imp.namedImportDetails) {
+                        if (
+                            !provided.named.has(detail.name) &&
+                            !provided.types.has(detail.name)
+                        ) {
+                            if (detail.isTypeOnly) {
+                                missing.missingTypeExports.add(detail.name);
+                            } else {
+                                missing.missingNamedExports.add(detail.name);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            // File can't be read or parsed
+        }
+    }
+
+    onProgress?.('Scanning for missing barrel exports...');
+    await processDir(sourceDir);
+
+    // Filter out entries with no missing exports
+    for (const [dirPath, missing] of missingExports) {
+        if (
+            missing.missingNamedExports.size === 0 &&
+            missing.missingTypeExports.size === 0
+        ) {
+            missingExports.delete(dirPath);
+        }
+    }
+
+    return missingExports;
+}
+
+/**
+ * Appends stub exports to generated index files for missing named/type exports.
+ * These are exports that are imported from the directory but not provided by any file.
+ */
+export async function appendMissingBarrelExports(
+    sourceDir: string,
+    missingExports: Map<string, MissingBarrelExport>,
+    options: {
+        dryRun?: boolean;
+        onProgress?: (message: string) => void;
+    } = {},
+): Promise<number> {
+    const { dryRun = false, onProgress } = options;
+    let count = 0;
+
+    for (const [_dirPath, missing] of missingExports) {
+        if (
+            missing.missingNamedExports.size === 0 &&
+            missing.missingTypeExports.size === 0
+        ) {
+            continue;
+        }
+
+        try {
+            const currentContent = await readFile(missing.indexPath, 'utf-8');
+
+            const stubLines: string[] = [
+                '',
+                '// Stub exports for values imported but not found in source maps',
+                '/* eslint-disable @typescript-eslint/no-explicit-any */',
+            ];
+
+            // Add named export stubs
+            for (const name of missing.missingNamedExports) {
+                stubLines.push(`export const ${name}: any = undefined;`);
+            }
+
+            // Add type export stubs
+            for (const name of missing.missingTypeExports) {
+                stubLines.push(`export type ${name} = any;`);
+            }
+
+            stubLines.push('');
+
+            const newContent =
+                currentContent.trimEnd() + '\n' + stubLines.join('\n');
+
+            if (!dryRun) {
+                await writeFile(missing.indexPath, newContent, 'utf-8');
+                onProgress?.(
+                    `Added ${missing.missingNamedExports.size + missing.missingTypeExports.size} stub exports to ${relative(sourceDir, missing.indexPath)}`,
+                );
+            }
+
+            count++;
+        } catch {
+            // File can't be read or written
+        }
+    }
+
+    return count;
+}
+
+/**
  * Generates all necessary stub files for a reconstructed project
  */
 export async function generateStubFiles(
@@ -2132,12 +2910,14 @@ export async function generateStubFiles(
     options: {
         internalPackages?: Set<string>;
         installedPackages?: Set<string>;
+        aliases?: AliasMapping[];
         generateScssDeclarations?: boolean;
         generateDirectoryIndexes?: boolean;
         generateCssModuleStubs?: boolean;
         generateExternalStubs?: boolean;
         generateTypeFileStubs?: boolean;
         generateEnvDeclarations?: boolean;
+        generateMissingSourceStubs?: boolean;
         dryRun?: boolean;
         onProgress?: (message: string) => void;
     } = {},
@@ -2148,6 +2928,8 @@ export async function generateStubFiles(
     cssModuleStubsGenerated: number;
     externalPackageStubsGenerated: number;
     typeFileStubsGenerated: number;
+    missingSourceStubsGenerated: number;
+    missingBarrelExportsFixed: number;
     duplicateExportsFixed: number;
     envDeclarationsGenerated: boolean;
     envVars: string[];
@@ -2156,12 +2938,14 @@ export async function generateStubFiles(
     const {
         internalPackages = new Set(),
         installedPackages = new Set(),
+        aliases = [],
         generateScssDeclarations = true,
         generateDirectoryIndexes = true,
         generateCssModuleStubs = true,
         generateExternalStubs = true,
         generateTypeFileStubs = true,
         generateEnvDeclarations: generateEnvDeclarationsOpt = true,
+        generateMissingSourceStubs: generateMissingSourceStubsOpt = true,
         dryRun = false,
         onProgress,
     } = options;
@@ -2173,11 +2957,16 @@ export async function generateStubFiles(
         cssModuleStubsGenerated: 0,
         externalPackageStubsGenerated: 0,
         typeFileStubsGenerated: 0,
+        missingSourceStubsGenerated: 0,
+        missingBarrelExportsFixed: 0,
         duplicateExportsFixed: 0,
         envDeclarationsGenerated: false,
         envVars: [] as string[],
         packages: [] as string[],
     };
+
+    // Track all generated index file paths for later missing export detection
+    const generatedIndexPaths: string[] = [];
 
     // Find packages needing index files
     onProgress?.('Scanning for packages needing index files...');
@@ -2196,6 +2985,12 @@ export async function generateStubFiles(
         if (generated) {
             result.indexFilesGenerated++;
             result.packages.push(packagePath);
+            // Track the generated index path
+            const hasSrc = await fileExists(join(packagePath, 'src'));
+            const indexPath = hasSrc
+                ? join(packagePath, 'src', 'index.ts')
+                : join(packagePath, 'index.ts');
+            generatedIndexPaths.push(indexPath);
         }
     }
 
@@ -2213,6 +3008,12 @@ export async function generateStubFiles(
             imports.directoryImports,
             { dryRun, onProgress },
         );
+        // Track directory index paths
+        for (const imp of imports.directoryImports) {
+            if (imp.resolvedPath) {
+                generatedIndexPaths.push(join(imp.resolvedPath, 'index.ts'));
+            }
+        }
     }
 
     // Generate CSS module stubs for missing files
@@ -2266,6 +3067,27 @@ export async function generateStubFiles(
         );
     }
 
+    // Generate stubs for missing source files (relative imports and aliased imports)
+    if (generateMissingSourceStubsOpt) {
+        onProgress?.('Scanning for missing source files...');
+        const missingSourceFiles = await findMissingSourceFiles(sourceDir, {
+            internalPackages,
+            aliases,
+            onProgress,
+        });
+        if (missingSourceFiles.size > 0) {
+            onProgress?.(
+                `Found ${missingSourceFiles.size} missing source files...`,
+            );
+            result.missingSourceStubsGenerated =
+                await generateMissingSourceStubs(
+                    sourceDir,
+                    missingSourceFiles,
+                    { dryRun, onProgress },
+                );
+        }
+    }
+
     // Generate env.d.ts for custom process.env types
     if (generateEnvDeclarationsOpt) {
         onProgress?.('Scanning for process.env usage...');
@@ -2275,6 +3097,26 @@ export async function generateStubFiles(
         });
         result.envDeclarationsGenerated = envResult.generated;
         result.envVars = envResult.envVars;
+    }
+
+    // Find and fix missing barrel exports (exports that are imported but not provided)
+    if (generatedIndexPaths.length > 0) {
+        onProgress?.('Scanning for missing barrel exports...');
+        const missingBarrelExports = await findMissingBarrelExports(
+            sourceDir,
+            generatedIndexPaths,
+            { internalPackages, onProgress },
+        );
+        if (missingBarrelExports.size > 0) {
+            onProgress?.(
+                `Found ${missingBarrelExports.size} directories with missing exports...`,
+            );
+            result.missingBarrelExportsFixed = await appendMissingBarrelExports(
+                sourceDir,
+                missingBarrelExports,
+                { dryRun, onProgress },
+            );
+        }
     }
 
     // Fix duplicate exports in generated index files
