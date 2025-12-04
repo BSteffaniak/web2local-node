@@ -1,0 +1,284 @@
+/**
+ * Package.json enhancer
+ *
+ * Adds build dependencies and scripts to package.json for rebuilding
+ */
+
+import { readFile, writeFile } from 'fs/promises';
+import type { Framework, PackageEnhanceOptions } from './types.js';
+import { getFrameworkPluginPackage } from './vite-config-generator.js';
+
+/**
+ * Default Vite version
+ */
+const VITE_VERSION = '^5.4.0';
+
+/**
+ * Default TypeScript version
+ */
+const TYPESCRIPT_VERSION = '^5.6.0';
+
+/**
+ * Get dev dependencies for a framework
+ */
+function getFrameworkDevDeps(framework: Framework): Record<string, string> {
+    const deps: Record<string, string> = {};
+
+    const pluginPkg = getFrameworkPluginPackage(framework);
+    if (pluginPkg) {
+        deps[pluginPkg] = '^4.3.0';
+    }
+
+    // Add framework-specific type packages
+    switch (framework) {
+        case 'react':
+            deps['@types/react'] = '^18.3.0';
+            deps['@types/react-dom'] = '^18.3.0';
+            break;
+        case 'vue':
+            deps['vue-tsc'] = '^2.0.0';
+            break;
+        case 'svelte':
+            deps['svelte-check'] = '^4.0.0';
+            break;
+    }
+
+    return deps;
+}
+
+/**
+ * Get build scripts for the project
+ */
+function getBuildScripts(): Record<string, string> {
+    return {
+        dev: 'vite',
+        build: 'vite build',
+        preview: 'vite preview',
+        typecheck: 'tsc --noEmit',
+    };
+}
+
+/**
+ * Read and parse package.json
+ */
+async function readPackageJson(
+    packageJsonPath: string,
+): Promise<Record<string, unknown>> {
+    try {
+        const content = await readFile(packageJsonPath, 'utf-8');
+        return JSON.parse(content);
+    } catch {
+        // Return minimal package.json if it doesn't exist
+        return {
+            name: 'rebuilt-app',
+            version: '0.0.0',
+            private: true,
+        };
+    }
+}
+
+/**
+ * Enhance package.json with build dependencies
+ */
+export async function enhancePackageJson(
+    options: PackageEnhanceOptions,
+): Promise<{ added: string[]; updated: boolean }> {
+    const { packageJsonPath, framework, usesSass, additionalDevDeps } = options;
+
+    const pkg = await readPackageJson(packageJsonPath);
+    const added: string[] = [];
+
+    // Ensure devDependencies exists
+    if (!pkg.devDependencies) {
+        pkg.devDependencies = {};
+    }
+    const devDeps = pkg.devDependencies as Record<string, string>;
+
+    // Add Vite
+    if (!devDeps['vite']) {
+        devDeps['vite'] = VITE_VERSION;
+        added.push('vite');
+    }
+
+    // Add TypeScript if not present
+    const deps = (pkg.dependencies || {}) as Record<string, string>;
+    if (!devDeps['typescript'] && !deps['typescript']) {
+        devDeps['typescript'] = TYPESCRIPT_VERSION;
+        added.push('typescript');
+    }
+
+    // Add framework-specific dev dependencies
+    const frameworkDeps = getFrameworkDevDeps(framework);
+    for (const [name, version] of Object.entries(frameworkDeps)) {
+        if (!devDeps[name]) {
+            devDeps[name] = version;
+            added.push(name);
+        }
+    }
+
+    // Add SASS if used
+    if (usesSass && !devDeps['sass']) {
+        devDeps['sass'] = '^1.80.0';
+        added.push('sass');
+    }
+
+    // Add additional dev dependencies
+    if (additionalDevDeps) {
+        for (const [name, version] of Object.entries(additionalDevDeps)) {
+            if (!devDeps[name]) {
+                devDeps[name] = version;
+                added.push(name);
+            }
+        }
+    }
+
+    // Add/update scripts
+    if (!pkg.scripts) {
+        pkg.scripts = {};
+    }
+    const scripts = pkg.scripts as Record<string, string>;
+    const buildScripts = getBuildScripts();
+
+    for (const [name, command] of Object.entries(buildScripts)) {
+        // Don't overwrite existing scripts except 'build' if it's just 'tsc'
+        if (!scripts[name] || (name === 'build' && scripts[name] === 'tsc')) {
+            scripts[name] = command;
+        }
+    }
+
+    // Ensure type: module for ESM
+    if (!pkg.type) {
+        pkg.type = 'module';
+    }
+
+    // Sort devDependencies alphabetically
+    pkg.devDependencies = Object.fromEntries(
+        Object.entries(devDeps).sort(([a], [b]) => a.localeCompare(b)),
+    );
+
+    // Write back
+    await writeFile(
+        packageJsonPath,
+        JSON.stringify(pkg, null, 2) + '\n',
+        'utf-8',
+    );
+
+    return { added, updated: added.length > 0 };
+}
+
+/**
+ * Check if package.json already has build dependencies
+ */
+export async function hasBuildDependencies(
+    packageJsonPath: string,
+): Promise<boolean> {
+    try {
+        const pkg = await readPackageJson(packageJsonPath);
+        const devDeps = (pkg.devDependencies || {}) as Record<string, string>;
+        return 'vite' in devDeps;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Get missing dependencies that need to be installed
+ */
+export async function getMissingDependencies(
+    packageJsonPath: string,
+    framework: Framework,
+    usesSass: boolean,
+): Promise<string[]> {
+    const missing: string[] = [];
+    const pkg = await readPackageJson(packageJsonPath);
+    const devDeps = (pkg.devDependencies || {}) as Record<string, string>;
+    const deps = (pkg.dependencies || {}) as Record<string, string>;
+
+    // Check for Vite
+    if (!devDeps['vite']) {
+        missing.push('vite');
+    }
+
+    // Check for TypeScript
+    if (!devDeps['typescript'] && !deps['typescript']) {
+        missing.push('typescript');
+    }
+
+    // Check for framework plugin
+    const pluginPkg = getFrameworkPluginPackage(framework);
+    if (pluginPkg && !devDeps[pluginPkg]) {
+        missing.push(pluginPkg);
+    }
+
+    // Check for SASS
+    if (usesSass && !devDeps['sass']) {
+        missing.push('sass');
+    }
+
+    return missing;
+}
+
+/**
+ * Add a dependency to package.json
+ */
+export async function addDependency(
+    packageJsonPath: string,
+    name: string,
+    version: string,
+    isDev: boolean = true,
+): Promise<void> {
+    const pkg = await readPackageJson(packageJsonPath);
+
+    const targetKey = isDev ? 'devDependencies' : 'dependencies';
+    if (!pkg[targetKey]) {
+        pkg[targetKey] = {};
+    }
+
+    (pkg[targetKey] as Record<string, string>)[name] = version;
+
+    // Sort dependencies
+    pkg[targetKey] = Object.fromEntries(
+        Object.entries(pkg[targetKey] as Record<string, string>).sort(
+            ([a], [b]) => a.localeCompare(b),
+        ),
+    );
+
+    await writeFile(
+        packageJsonPath,
+        JSON.stringify(pkg, null, 2) + '\n',
+        'utf-8',
+    );
+}
+
+/**
+ * Remove the '*' version placeholder for unknown packages
+ * and replace with 'latest' for npm install compatibility
+ */
+export async function fixUnknownVersions(
+    packageJsonPath: string,
+): Promise<string[]> {
+    const pkg = await readPackageJson(packageJsonPath);
+    const fixed: string[] = [];
+
+    for (const key of ['dependencies', 'devDependencies'] as const) {
+        const deps = pkg[key] as Record<string, string> | undefined;
+        if (!deps) continue;
+
+        for (const [name, version] of Object.entries(deps)) {
+            if (version === '*') {
+                deps[name] = 'latest';
+                fixed.push(name);
+            }
+        }
+    }
+
+    if (fixed.length > 0) {
+        await writeFile(
+            packageJsonPath,
+            JSON.stringify(pkg, null, 2) + '\n',
+            'utf-8',
+        );
+    }
+
+    return fixed;
+}
