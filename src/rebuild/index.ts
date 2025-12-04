@@ -5,7 +5,7 @@
  */
 
 import { join } from 'path';
-import { stat } from 'fs/promises';
+import { stat, writeFile } from 'fs/promises';
 import type {
     PrepareRebuildOptions,
     PrepareResult,
@@ -26,6 +26,7 @@ import {
 import {
     extractAliasesFromTsConfig,
     writeViteConfig,
+    generateEnvExample,
 } from './vite-config-generator.js';
 
 import { writeHtml } from './html-generator.js';
@@ -250,6 +251,19 @@ export async function prepareRebuild(
         }
     } catch (error) {
         errors.push(`Failed to generate index.html: ${error}`);
+    }
+
+    // Generate .env.example if there are environment variables
+    if (config.envVariables.length > 0) {
+        onProgress?.('Generating .env.example...');
+        try {
+            const envExampleContent = generateEnvExample(config.envVariables);
+            const envExamplePath = join(projectDir, '.env.example');
+            await writeFile(envExamplePath, envExampleContent, 'utf-8');
+            generatedFiles.push('.env.example');
+        } catch (error) {
+            warnings.push(`Failed to generate .env.example: ${error}`);
+        }
     }
 
     // Update package.json

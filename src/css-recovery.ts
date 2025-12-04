@@ -116,6 +116,22 @@ export interface CssRecoveryResult {
 }
 
 /**
+ * Represents a captured pre-built CSS bundle from the website
+ */
+export interface CapturedCssBundle {
+    /** Original URL of the CSS bundle */
+    url: string;
+    /** Local path relative to output dir (e.g., "_server/static/navigation/index-CPeWLd_6.css") */
+    localPath: string;
+    /** The CSS content (minified) */
+    content: string;
+    /** Original filename from URL (e.g., "index-CPeWLd_6.css") */
+    filename: string;
+    /** Base name without hash (e.g., "index") */
+    baseName: string;
+}
+
+/**
  * Options for CSS recovery
  */
 export interface CssRecoveryOptions {
@@ -714,6 +730,145 @@ declare module '*.less' {
         content,
         source: 'declaration',
     };
+}
+
+// ============================================================================
+// CAPTURED CSS BUNDLE UTILITIES
+// ============================================================================
+
+/**
+ * Extract base name from a hashed CSS filename.
+ * Handles common bundler patterns:
+ *   - "index-CPeWLd_6.css" -> "index"
+ *   - "sarsaparilla-CAVT8XC2.css" -> "sarsaparilla"
+ *   - "main.abc123.css" -> "main"
+ *   - "styles.min.css" -> "styles"
+ *   - "button.module.scss" -> "button"
+ */
+export function extractCssBaseName(filename: string): string {
+    // Remove extension
+    let name = filename.replace(/\.(css|scss|sass|less)$/i, '');
+
+    // Remove .module suffix (CSS modules)
+    name = name.replace(/\.module$/, '');
+
+    // Remove common hash patterns:
+    // -[hash] pattern (Vite/Rollup style)
+    name = name.replace(/-[A-Za-z0-9_-]{6,}$/, '');
+    // .[hash] pattern (Webpack style)
+    name = name.replace(/\.[a-f0-9]{8,}$/, '');
+    // .min suffix
+    name = name.replace(/\.min$/, '');
+
+    return name;
+}
+
+/**
+ * Try to match a CSS/SCSS import to a captured CSS bundle.
+ *
+ * @param importPath - The import path from source code (e.g., "./index.scss" or "sarsaparilla/styles")
+ * @param sourceFile - The file containing the import (for context)
+ * @param capturedBundles - Array of captured CSS bundles
+ * @returns The matched bundle, or null if no match found
+ */
+export function matchCssImportToBundle(
+    importPath: string,
+    sourceFile: string,
+    capturedBundles: CapturedCssBundle[],
+): CapturedCssBundle | null {
+    if (capturedBundles.length === 0) {
+        return null;
+    }
+
+    // Extract the base name from the import path
+    const importFilename = basename(importPath);
+    const importBaseName = extractCssBaseName(importFilename);
+
+    // Get directory context from source file for better matching
+    const sourceDir = dirname(sourceFile);
+    const sourceDirParts = sourceDir.split('/').filter(Boolean);
+
+    // Find bundles with matching base name
+    const candidates = capturedBundles.filter(
+        (bundle) => bundle.baseName === importBaseName,
+    );
+
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+
+    // Multiple matches - try to find the best one based on path context
+    // Score each candidate by how many path segments match
+    let bestMatch: CapturedCssBundle | null = null;
+    let bestScore = -1;
+
+    for (const candidate of candidates) {
+        const bundleDirParts = dirname(candidate.localPath)
+            .split('/')
+            .filter(Boolean);
+
+        // Count matching path segments
+        let score = 0;
+        for (const part of sourceDirParts) {
+            if (bundleDirParts.includes(part)) {
+                score++;
+            }
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = candidate;
+        }
+    }
+
+    return bestMatch || candidates[0];
+}
+
+/**
+ * Generate stub content using captured CSS bundle as fallback.
+ *
+ * @param importInfo - Information about the CSS import
+ * @param capturedBundle - The matched captured CSS bundle
+ * @param useInlineContent - If true, use the CSS content directly. If false, generate an @import.
+ * @param relativePathToStatic - Relative path from stub location to _server/static directory
+ * @returns The stub file content
+ */
+export function generateCssStubFromBundle(
+    importInfo: CssModuleImport,
+    capturedBundle: CapturedCssBundle,
+    useInlineContent: boolean,
+    relativePathToStatic?: string,
+): string {
+    const isModule = importInfo.importPath.includes('.module.');
+
+    if (useInlineContent || isModule) {
+        // For CSS modules or when inline is preferred, use the content directly
+        const lines = [
+            '/* Auto-generated from captured CSS bundle */',
+            `/* Original: ${capturedBundle.url} */`,
+            `/* Note: This is minified CSS, not original source */`,
+            '',
+            capturedBundle.content,
+        ];
+        return lines.join('\n');
+    } else {
+        // For global CSS, generate an @import pointing to the captured bundle
+        const importPath = relativePathToStatic
+            ? `${relativePathToStatic}/${capturedBundle.localPath}`
+            : capturedBundle.localPath;
+
+        const lines = [
+            '/* Auto-generated stub - imports captured CSS bundle */',
+            `/* Original: ${capturedBundle.url} */`,
+            '',
+            `@import '${importPath}';`,
+        ];
+        return lines.join('\n');
+    }
 }
 
 // ============================================================================

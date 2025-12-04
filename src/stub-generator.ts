@@ -23,6 +23,11 @@ import {
     generateExportStatement,
     groupResolutionsByType,
 } from './export-resolver.js';
+import {
+    type CapturedCssBundle,
+    matchCssImportToBundle,
+    generateCssStubFromBundle,
+} from './css-recovery.js';
 
 /**
  * The universal stub runtime code that gets written to the output directory.
@@ -1265,7 +1270,9 @@ export async function generateDirectoryIndexFiles(
 }
 
 /**
- * Generates stub CSS module files for imports that don't exist
+ * Generates stub CSS module files for imports that don't exist.
+ * If captured CSS bundles are provided, attempts to use them as fallback content
+ * instead of generating empty stubs.
  */
 export async function generateMissingCssModuleStubs(
     sourceDir: string,
@@ -1273,9 +1280,10 @@ export async function generateMissingCssModuleStubs(
     options: {
         dryRun?: boolean;
         onProgress?: (message: string) => void;
+        capturedCssBundles?: CapturedCssBundle[];
     } = {},
 ): Promise<number> {
-    const { dryRun = false, onProgress } = options;
+    const { dryRun = false, onProgress, capturedCssBundles = [] } = options;
     let count = 0;
 
     for (const importInfo of cssModuleImports) {
@@ -1288,15 +1296,52 @@ export async function generateMissingCssModuleStubs(
             continue;
         }
 
-        // Create the stub CSS module file
-        const stubContent = [
-            '/* Auto-generated CSS module stub */',
-            '/* Original file was not available in source maps */',
-            `/* Imported by: ${relative(sourceDir, importInfo.sourceFile)} */`,
-            '',
-            '/* Add your styles here */',
-            '',
-        ].join('\n');
+        let stubContent = '';
+        let usedCapturedBundle = false;
+
+        // Try to match this import to a captured CSS bundle
+        if (capturedCssBundles.length > 0) {
+            const matchedBundle = matchCssImportToBundle(
+                importInfo.importPath,
+                importInfo.sourceFile,
+                capturedCssBundles,
+            );
+
+            if (matchedBundle) {
+                // Determine if this is a CSS module (inline content) or global CSS (use @import)
+                const isModule = importInfo.importPath.includes('.module.');
+
+                // Calculate relative path from the stub location to _server/static
+                const stubDir = dirname(cssPath);
+                const staticDir = join(sourceDir, '_server', 'static');
+                const relativeToStatic = relative(stubDir, staticDir);
+
+                stubContent = generateCssStubFromBundle(
+                    {
+                        importPath: importInfo.importPath,
+                        sourceFile: importInfo.sourceFile,
+                        variableName: 'styles',
+                        usedClassNames: [],
+                    },
+                    matchedBundle,
+                    isModule, // Use inline content for modules, @import for global CSS
+                    relativeToStatic,
+                );
+                usedCapturedBundle = true;
+            }
+        }
+
+        // Fall back to empty stub if no captured bundle matched
+        if (!usedCapturedBundle) {
+            stubContent = [
+                '/* Auto-generated CSS module stub */',
+                '/* Original file was not available in source maps */',
+                `/* Imported by: ${relative(sourceDir, importInfo.sourceFile)} */`,
+                '',
+                '/* Add your styles here */',
+                '',
+            ].join('\n');
+        }
 
         // Also create the .d.ts declaration
         const dtsContent = [
@@ -1312,12 +1357,136 @@ export async function generateMissingCssModuleStubs(
 
             await writeFile(cssPath, stubContent, 'utf-8');
             await writeFile(cssPath + '.d.ts', dtsContent, 'utf-8');
-            onProgress?.(
-                `Generated CSS module stub: ${relative(sourceDir, cssPath)}`,
-            );
+
+            const statusPrefix = usedCapturedBundle
+                ? 'Generated CSS stub from captured bundle'
+                : 'Generated CSS module stub';
+            onProgress?.(`${statusPrefix}: ${relative(sourceDir, cssPath)}`);
         }
 
         count++;
+    }
+
+    return count;
+}
+
+/**
+ * Updates existing CSS stub files with content from captured CSS bundles.
+ * This is called after API/static capture to enhance previously generated
+ * empty CSS stubs with actual minified CSS content.
+ */
+export async function updateCssStubsWithCapturedBundles(
+    sourceDir: string,
+    capturedCssBundles: CapturedCssBundle[],
+    options: {
+        onProgress?: (message: string) => void;
+    } = {},
+): Promise<number> {
+    const { onProgress } = options;
+    let count = 0;
+
+    if (capturedCssBundles.length === 0) {
+        return 0;
+    }
+
+    // Find all CSS/SCSS files that are stubs (contain the stub marker comment)
+    const cssExtensions = ['.css', '.scss', '.sass', '.less'];
+
+    async function scanForCssStubs(dir: string): Promise<string[]> {
+        const stubs: string[] = [];
+
+        try {
+            const entries = await readdir(dir, { withFileTypes: true });
+
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    // Skip node_modules and hidden directories
+                    if (
+                        entry.name === 'node_modules' ||
+                        entry.name.startsWith('.') ||
+                        entry.name.startsWith('_')
+                    ) {
+                        continue;
+                    }
+                    stubs.push(...(await scanForCssStubs(fullPath)));
+                } else if (
+                    entry.isFile() &&
+                    cssExtensions.some((ext) => entry.name.endsWith(ext))
+                ) {
+                    // Check if this is a stub file
+                    try {
+                        const content = await readFile(fullPath, 'utf-8');
+                        if (
+                            content.includes(
+                                'Auto-generated CSS module stub',
+                            ) ||
+                            content.includes(
+                                'Original file was not available in source maps',
+                            )
+                        ) {
+                            stubs.push(fullPath);
+                        }
+                    } catch {
+                        // Skip files that can't be read
+                    }
+                }
+            }
+        } catch {
+            // Skip directories that can't be read
+        }
+
+        return stubs;
+    }
+
+    const stubFiles = await scanForCssStubs(sourceDir);
+
+    for (const stubPath of stubFiles) {
+        const filename = basename(stubPath);
+        const stubBaseName = filename.replace(/\.(css|scss|sass|less)$/i, '');
+
+        // Try to find a matching captured bundle
+        const matchedBundle = capturedCssBundles.find(
+            (bundle) => bundle.baseName === stubBaseName,
+        );
+
+        if (matchedBundle) {
+            // Determine if this is a CSS module
+            const isModule = stubPath.includes('.module.');
+
+            // Calculate relative path from stub to _server/static
+            const stubDir = dirname(stubPath);
+            const staticDir = join(sourceDir, '_server', 'static');
+            const relativeToStatic = relative(stubDir, staticDir);
+
+            let newContent: string;
+            if (isModule) {
+                // For CSS modules, inline the content
+                newContent = [
+                    '/* Auto-generated from captured CSS bundle */',
+                    `/* Original: ${matchedBundle.url} */`,
+                    '/* Note: This is minified CSS, not original source */',
+                    '',
+                    matchedBundle.content,
+                ].join('\n');
+            } else {
+                // For global CSS, use @import
+                const importPath = `${relativeToStatic}/${matchedBundle.localPath}`;
+                newContent = [
+                    '/* Auto-generated stub - imports captured CSS bundle */',
+                    `/* Original: ${matchedBundle.url} */`,
+                    '',
+                    `@import '${importPath}';`,
+                ].join('\n');
+            }
+
+            await writeFile(stubPath, newContent, 'utf-8');
+            onProgress?.(
+                `Updated CSS stub with captured content: ${relative(sourceDir, stubPath)}`,
+            );
+            count++;
+        }
     }
 
     return count;
@@ -2385,7 +2554,36 @@ export async function findMissingSourceFiles(
                     return indexPath;
                 }
             }
-            return null; // Directory without index
+            // Check for package.json with main/module field
+            const pkgJsonPath = join(basePath, 'package.json');
+            if (await fileExists(pkgJsonPath)) {
+                try {
+                    const pkgJson = JSON.parse(
+                        await readFile(pkgJsonPath, 'utf-8'),
+                    );
+                    // Try main, module, or types fields
+                    const mainField =
+                        pkgJson.main || pkgJson.module || pkgJson.types;
+                    if (mainField) {
+                        const mainPath = join(basePath, mainField);
+                        if (await fileExists(mainPath)) {
+                            return mainPath;
+                        }
+                        // Try with extensions if main doesn't have one
+                        if (!extname(mainField)) {
+                            for (const ext of extensions) {
+                                const mainPathWithExt = mainPath + ext;
+                                if (await fileExists(mainPathWithExt)) {
+                                    return mainPathWithExt;
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    // Invalid package.json, ignore
+                }
+            }
+            return null; // Directory without resolvable entry
         }
 
         // Try adding extensions
@@ -3236,6 +3434,7 @@ export async function generateStubFiles(
         internalPackages?: Set<string>;
         installedPackages?: Set<string>;
         aliases?: AliasMapping[];
+        capturedCssBundles?: CapturedCssBundle[];
         generateScssDeclarations?: boolean;
         generateDirectoryIndexes?: boolean;
         generateCssModuleStubs?: boolean;
@@ -3268,6 +3467,7 @@ export async function generateStubFiles(
         internalPackages = new Set(),
         installedPackages = new Set(),
         aliases = [],
+        capturedCssBundles = [],
         generateScssDeclarations = true,
         generateDirectoryIndexes = true,
         generateCssModuleStubs = true,
@@ -3362,7 +3562,7 @@ export async function generateStubFiles(
         result.cssModuleStubsGenerated = await generateMissingCssModuleStubs(
             sourceDir,
             imports.cssModuleImports,
-            { dryRun, onProgress },
+            { dryRun, onProgress, capturedCssBundles },
         );
     }
 

@@ -25,9 +25,14 @@ import {
     extractNodeModulesPackages,
     identifyInternalPackages,
 } from './dependency-analyzer.js';
-import { generateStubFiles } from './stub-generator.js';
+import {
+    generateStubFiles,
+    updateCssStubsWithCapturedBundles,
+} from './stub-generator.js';
+import { type CapturedCssBundle, extractCssBaseName } from './css-recovery.js';
 import { initCache } from './fingerprint-cache.js';
-import { join } from 'path';
+import { join, basename } from 'path';
+import { readFile } from 'fs/promises';
 import { captureWebsite, generateCaptureSummary } from './capture/index.js';
 import {
     prepareRebuild,
@@ -857,6 +862,65 @@ async function main() {
             console.log(
                 `    ${chalk.blue('→')} Server manifest: ${chalk.cyan(join(options.output, hostname, '_server', 'manifest.json'))}`,
             );
+
+            // Update CSS stubs with captured bundle content
+            if (options.captureStatic && captureResult.assets.length > 0) {
+                const cssAssets = captureResult.assets.filter(
+                    (a) =>
+                        a.contentType === 'text/css' ||
+                        a.localPath.endsWith('.css'),
+                );
+
+                if (cssAssets.length > 0) {
+                    const capturedCssBundles: CapturedCssBundle[] = [];
+                    const staticDir = join(
+                        options.output,
+                        hostname,
+                        '_server',
+                        'static',
+                    );
+
+                    for (const asset of cssAssets) {
+                        try {
+                            const fullPath = join(staticDir, asset.localPath);
+                            const content = await readFile(fullPath, 'utf-8');
+                            const filename = basename(asset.localPath);
+                            capturedCssBundles.push({
+                                url: asset.url,
+                                localPath: asset.localPath,
+                                content,
+                                filename,
+                                baseName: extractCssBaseName(filename),
+                            });
+                        } catch {
+                            // Skip assets that can't be read
+                        }
+                    }
+
+                    if (capturedCssBundles.length > 0) {
+                        const sourceDir = join(options.output, hostname);
+                        const updatedCount =
+                            await updateCssStubsWithCapturedBundles(
+                                sourceDir,
+                                capturedCssBundles,
+                                {
+                                    onProgress: options.verbose
+                                        ? (msg) =>
+                                              console.log(
+                                                  chalk.gray(`    ${msg}`),
+                                              )
+                                        : undefined,
+                                },
+                            );
+
+                        if (updatedCount > 0) {
+                            console.log(
+                                `    ${chalk.green('✓')} Updated ${chalk.bold(updatedCount)} CSS stubs with captured bundle content`,
+                            );
+                        }
+                    }
+                }
+            }
 
             console.log();
             console.log(
