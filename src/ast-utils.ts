@@ -302,6 +302,90 @@ function extractMemberChain(
 }
 
 /**
+ * Represents a JSX member expression access like <Foo.Bar /> or <Foo.Bar.Baz />
+ */
+export interface JSXMemberAccess {
+    /** The base object name (e.g., 'Foo' in <Foo.Bar />) */
+    object: string;
+    /** The property chain (e.g., ['Bar'] or ['Bar', 'Baz']) */
+    properties: string[];
+    /** Full path as string (e.g., 'Foo.Bar') */
+    fullPath: string;
+}
+
+/**
+ * Extract JSX member expression accesses for a specific object name.
+ * e.g., extractJSXMemberAccesses(code, 'InventoryTag') finds <InventoryTag.Camping />
+ *
+ * Handles nested JSX member expressions: <Foo.Bar.Baz />
+ */
+export function extractJSXMemberAccesses(
+    sourceCode: string,
+    objectName: string,
+    filename: string = 'file.tsx',
+): JSXMemberAccess[] {
+    const ast = safeParse(sourceCode, filename);
+    if (!ast) return [];
+
+    const accesses: JSXMemberAccess[] = [];
+
+    walkAST(ast, (node) => {
+        if (node.type === 'JSXMemberExpression') {
+            const result = extractJSXMemberChain(node, objectName);
+            if (result) {
+                accesses.push(result);
+            }
+        }
+    });
+
+    return accesses;
+}
+
+/**
+ * Helper to extract a JSX member expression chain starting from a specific identifier
+ * Handles: <Foo.Bar />, <Foo.Bar.Baz />
+ */
+function extractJSXMemberChain(
+    node: Record<string, unknown>,
+    targetObject: string,
+): JSXMemberAccess | null {
+    const properties: string[] = [];
+    let current = node;
+
+    // Walk up the JSX member expression chain
+    while (current.type === 'JSXMemberExpression') {
+        const property = current.property as Record<string, unknown>;
+
+        // Get property name (JSXIdentifier or Identifier)
+        if (
+            property.type === 'Identifier' ||
+            property.type === 'JSXIdentifier'
+        ) {
+            properties.unshift(property.value as string);
+        } else {
+            // Unknown property type
+            return null;
+        }
+
+        current = current.object as Record<string, unknown>;
+    }
+
+    // Check if base is our target identifier
+    if (
+        (current.type === 'Identifier' || current.type === 'JSXIdentifier') &&
+        current.value === targetObject
+    ) {
+        return {
+            object: targetObject,
+            properties,
+            fullPath: `${targetObject}.${properties.join('.')}`,
+        };
+    }
+
+    return null;
+}
+
+/**
  * Extract all process.env property accesses
  */
 export function extractProcessEnvAccesses(

@@ -18,6 +18,11 @@ import {
     extractProcessEnvAccesses,
 } from './ast-utils.js';
 import { findAndResolveAssetStubs } from './asset-stub-resolver.js';
+import {
+    resolvePackageMissingExports,
+    generateExportStatement,
+    groupResolutionsByType,
+} from './export-resolver.js';
 
 /**
  * The universal stub runtime code that gets written to the output directory.
@@ -1758,12 +1763,8 @@ export async function generateExternalPackageStubs(
             }
         }
 
-        // Collect all named imports used with this package to generate specific stubs
-        const namedImports = new Set<string>();
-        for (const imp of imports) {
-            // Try to extract named imports from the source file
-            // This is a simplified approach - we'll just generate catch-all exports
-        }
+        // Note: We could collect named imports here to generate specific stubs,
+        // but for now we use a catch-all approach with wildcard module patterns
 
         // Generate the stub content using a wildcard module pattern
         // We create both an index.d.ts and a _types.d.ts for flexibility
@@ -2755,16 +2756,19 @@ async function extractProvidedExports(
  * Scans source files for imports from directories with generated index files,
  * extracts what named exports they expect, and compares against what the
  * generated index actually exports.
+ *
+ * Supports both relative imports and aliased imports (e.g., 'sarsaparilla').
  */
 export async function findMissingBarrelExports(
     sourceDir: string,
     generatedIndexPaths: string[],
     options: {
         internalPackages?: Set<string>;
+        aliases?: AliasMapping[];
         onProgress?: (message: string) => void;
     } = {},
 ): Promise<Map<string, MissingBarrelExport>> {
-    const { internalPackages = new Set(), onProgress } = options;
+    const { internalPackages = new Set(), aliases = [], onProgress } = options;
     const missingExports = new Map<string, MissingBarrelExport>();
 
     // Build a map of directory paths to their generated index files
@@ -2772,6 +2776,22 @@ export async function findMissingBarrelExports(
     for (const indexPath of generatedIndexPaths) {
         const dirPath = dirname(indexPath);
         indexByDir.set(dirPath, indexPath);
+
+        // Also map the parent directory if index is in src/
+        if (dirPath.endsWith('/src') || dirPath.endsWith('\\src')) {
+            const parentDir = dirname(dirPath);
+            if (!indexByDir.has(parentDir)) {
+                indexByDir.set(parentDir, indexPath);
+            }
+        }
+    }
+
+    // Build alias map: import source → directory path
+    const aliasToDir = new Map<string, string>();
+    for (const alias of aliases) {
+        const cleanPath = alias.path.replace(/^\.\//, '');
+        const fullPath = join(sourceDir, cleanPath);
+        aliasToDir.set(alias.alias, fullPath);
     }
 
     // Extract what each index file actually exports
@@ -2784,20 +2804,38 @@ export async function findMissingBarrelExports(
         providedExportsByDir.set(dirPath, provided);
     }
 
-    // Extensions to try when resolving directory imports
-    const indexFiles = ['index.ts', 'index.tsx', 'index.js', 'index.jsx'];
-
     /**
-     * Resolve an import path to a directory if it points to one of our generated index files
+     * Resolve an import path to a directory if it points to one of our generated index files.
+     * Handles both relative imports and aliased imports.
      */
     function resolveToGeneratedIndex(
         importPath: string,
         fromDir: string,
     ): string | null {
-        if (!importPath.startsWith('.')) {
-            return null; // Not a relative import
+        // Check for aliased imports first (e.g., 'sarsaparilla')
+        if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
+            // Extract the base package name for aliased imports
+            // e.g., 'sarsaparilla' or 'sarsaparilla/subpath'
+            const slashIdx = importPath.indexOf('/');
+            const baseName =
+                slashIdx === -1 ? importPath : importPath.slice(0, slashIdx);
+
+            // Check if this is an aliased import
+            const aliasDir = aliasToDir.get(baseName);
+            if (aliasDir && indexByDir.has(aliasDir)) {
+                return aliasDir;
+            }
+
+            // Also try the full import path as alias
+            const fullAliasDir = aliasToDir.get(importPath);
+            if (fullAliasDir && indexByDir.has(fullAliasDir)) {
+                return fullAliasDir;
+            }
+
+            return null;
         }
 
+        // Handle relative imports
         const resolvedPath = resolve(fromDir, importPath);
 
         // Check if this resolves to a directory with a generated index
@@ -2961,9 +2999,14 @@ export async function findMissingBarrelExports(
 }
 
 /**
- * Appends stub exports to generated index files for missing named/type exports.
- * These are exports that are imported from the directory but not provided by any file.
- * Uses universal stub (Proxy-based) for value exports to handle any usage pattern.
+ * Appends resolved or stub exports to generated index files for missing named/type exports.
+ *
+ * Resolution order:
+ * 1. Try to find a source file that exports all required properties (namespace export)
+ * 2. Try to find a dependency that exports the name (re-export)
+ * 3. Fall back to stub with warning
+ *
+ * Uses universal stub (Proxy-based) for value exports when no resolution is found.
  */
 export async function appendMissingBarrelExports(
     sourceDir: string,
@@ -2971,10 +3014,28 @@ export async function appendMissingBarrelExports(
     options: {
         dryRun?: boolean;
         onProgress?: (message: string) => void;
+        onWarning?: (message: string) => void;
+        verbose?: boolean;
+        /** Alias mappings to determine package import source for usage analysis */
+        aliases?: AliasMapping[];
     } = {},
 ): Promise<number> {
-    const { dryRun = false, onProgress } = options;
+    const {
+        dryRun = false,
+        onProgress,
+        onWarning,
+        verbose = false,
+        aliases = [],
+    } = options;
     let count = 0;
+
+    // Build reverse alias map: directory path → import source
+    const dirToImportSource = new Map<string, string>();
+    for (const alias of aliases) {
+        const cleanPath = alias.path.replace(/^\.\//, '');
+        const fullPath = join(sourceDir, cleanPath);
+        dirToImportSource.set(fullPath, alias.alias);
+    }
 
     for (const [_dirPath, missing] of missingExports) {
         if (
@@ -2986,48 +3047,159 @@ export async function appendMissingBarrelExports(
 
         try {
             const currentContent = await readFile(missing.indexPath, 'utf-8');
+            const indexDir = dirname(missing.indexPath);
 
-            // Calculate the relative import path to the universal stub
-            const stubImportPath = getUniversalStubImportPath(
-                missing.indexPath,
-                sourceDir,
+            // Get the package path (parent of the index file's directory, or the directory itself)
+            // For src/index.ts, packagePath is the parent; for index.ts at root, it's the dir
+            const packagePath =
+                indexDir.endsWith('/src') || indexDir.endsWith('\\src')
+                    ? dirname(indexDir)
+                    : indexDir;
+
+            // Determine the import source for this package (e.g., 'sarsaparilla')
+            // This is used to analyze how consumers import from this package
+            const importSource =
+                dirToImportSource.get(packagePath) ??
+                dirToImportSource.get(indexDir) ??
+                basename(packagePath);
+
+            // Combine named and type exports for resolution
+            const allMissingNames = new Set([
+                ...missing.missingNamedExports,
+                ...missing.missingTypeExports,
+            ]);
+
+            // Use the export resolver to find resolutions
+            const resolutions = await resolvePackageMissingExports(
+                packagePath,
+                allMissingNames,
+                missing.importedBy,
+                importSource,
+                {
+                    onProgress,
+                    onWarning,
+                    verbose,
+                },
             );
 
-            const stubLines: string[] = [
-                '',
-                '// Stub exports for values imported but not found in source maps',
-                '// Using universal stub (Proxy-based) to handle any usage pattern',
-                '/* eslint-disable @typescript-eslint/no-explicit-any */',
-            ];
+            // Group resolutions by type
+            const { namespaces, reexports } =
+                groupResolutionsByType(resolutions);
 
-            // Add import for universal stub if we have named exports
-            if (missing.missingNamedExports.size > 0) {
-                stubLines.push(`import { __stub__ } from '${stubImportPath}';`);
-            }
+            // Build the lines to append
+            const appendLines: string[] = [];
 
-            // Add named export stubs using universal stub
-            for (const name of missing.missingNamedExports) {
-                stubLines.push(`export const ${name} = __stub__('${name}');`);
-            }
-
-            // Add type export stubs (types don't need universal stub)
-            for (const name of missing.missingTypeExports) {
-                stubLines.push(`export type ${name} = any;`);
-            }
-
-            stubLines.push('');
-
-            const newContent =
-                currentContent.trimEnd() + '\n' + stubLines.join('\n');
-
-            if (!dryRun) {
-                await writeFile(missing.indexPath, newContent, 'utf-8');
-                onProgress?.(
-                    `Added ${missing.missingNamedExports.size + missing.missingTypeExports.size} stub exports to ${relative(sourceDir, missing.indexPath)}`,
+            // Add namespace exports
+            if (namespaces.length > 0) {
+                appendLines.push('');
+                appendLines.push(
+                    '// Namespace exports (resolved from source files)',
                 );
+                for (const info of namespaces) {
+                    if (info.resolution?.type === 'namespace') {
+                        const statement = generateExportStatement(
+                            info.resolution,
+                        );
+                        if (statement) {
+                            appendLines.push(statement);
+                            // Remove from stub sets since we resolved it
+                            missing.missingNamedExports.delete(info.exportName);
+                            missing.missingTypeExports.delete(info.exportName);
+                        }
+                    }
+                }
             }
 
-            count++;
+            // Add re-exports from dependencies
+            if (reexports.length > 0) {
+                appendLines.push('');
+                appendLines.push('// Re-exports from dependencies');
+                for (const info of reexports) {
+                    if (info.resolution?.type === 'reexport') {
+                        const statement = generateExportStatement(
+                            info.resolution,
+                        );
+                        if (statement) {
+                            appendLines.push(statement);
+                            // Remove from stub sets since we resolved it
+                            missing.missingNamedExports.delete(info.exportName);
+                            missing.missingTypeExports.delete(info.exportName);
+                        }
+                    }
+                }
+            }
+
+            // Add stubs for anything we couldn't resolve
+            const remainingNamedExports = [...missing.missingNamedExports];
+            const remainingTypeExports = [...missing.missingTypeExports];
+
+            if (
+                remainingNamedExports.length > 0 ||
+                remainingTypeExports.length > 0
+            ) {
+                // Calculate the relative import path to the universal stub
+                const stubImportPath = getUniversalStubImportPath(
+                    missing.indexPath,
+                    sourceDir,
+                );
+
+                appendLines.push('');
+                appendLines.push(
+                    '// Stub exports for values imported but not found in source maps',
+                );
+                appendLines.push(
+                    '// Using universal stub (Proxy-based) to handle any usage pattern',
+                );
+                appendLines.push(
+                    '/* eslint-disable @typescript-eslint/no-explicit-any */',
+                );
+
+                // Add import for universal stub if we have named exports
+                if (remainingNamedExports.length > 0) {
+                    appendLines.push(
+                        `import { __stub__ } from '${stubImportPath}';`,
+                    );
+                }
+
+                // Add named export stubs using universal stub
+                for (const name of remainingNamedExports) {
+                    appendLines.push(
+                        `export const ${name} = __stub__('${name}');`,
+                    );
+                }
+
+                // Add type export stubs (types don't need universal stub)
+                for (const name of remainingTypeExports) {
+                    appendLines.push(`export type ${name} = any;`);
+                }
+            }
+
+            appendLines.push('');
+
+            if (appendLines.length > 1) {
+                // More than just the trailing empty line
+                const newContent =
+                    currentContent.trimEnd() + '\n' + appendLines.join('\n');
+
+                if (!dryRun) {
+                    await writeFile(missing.indexPath, newContent, 'utf-8');
+
+                    const resolvedCount = namespaces.length + reexports.length;
+                    const stubCount =
+                        remainingNamedExports.length +
+                        remainingTypeExports.length;
+                    const parts: string[] = [];
+                    if (resolvedCount > 0)
+                        parts.push(`${resolvedCount} resolved`);
+                    if (stubCount > 0) parts.push(`${stubCount} stubbed`);
+
+                    onProgress?.(
+                        `Added exports to ${relative(sourceDir, missing.indexPath)}: ${parts.join(', ')}`,
+                    );
+                }
+
+                count++;
+            }
         } catch {
             // File can't be read or written
         }
@@ -3054,6 +3226,8 @@ export async function generateStubFiles(
         generateMissingSourceStubs?: boolean;
         dryRun?: boolean;
         onProgress?: (message: string) => void;
+        onWarning?: (message: string) => void;
+        verbose?: boolean;
     } = {},
 ): Promise<{
     indexFilesGenerated: number;
@@ -3084,6 +3258,8 @@ export async function generateStubFiles(
         generateMissingSourceStubs: generateMissingSourceStubsOpt = true,
         dryRun = false,
         onProgress,
+        onWarning,
+        verbose = false,
     } = options;
 
     const result = {
@@ -3248,7 +3424,7 @@ export async function generateStubFiles(
         const missingBarrelExports = await findMissingBarrelExports(
             sourceDir,
             generatedIndexPaths,
-            { internalPackages, onProgress },
+            { internalPackages, aliases, onProgress },
         );
         if (missingBarrelExports.size > 0) {
             onProgress?.(
@@ -3257,7 +3433,7 @@ export async function generateStubFiles(
             result.missingBarrelExportsFixed = await appendMissingBarrelExports(
                 sourceDir,
                 missingBarrelExports,
-                { dryRun, onProgress },
+                { dryRun, onProgress, onWarning, verbose, aliases },
             );
         }
     }
