@@ -30,6 +30,10 @@ import {
     generateCssModuleDeclaration,
     generateGlobalCssDeclarations,
     recoverCssSources,
+    extractCssBaseName,
+    matchCssImportToBundle,
+    generateCssStubFromBundle,
+    type CapturedCssBundle,
 } from '../src/css-recovery.js';
 
 // ============================================================================
@@ -775,5 +779,257 @@ describe('recoverCssSources (Main Pipeline)', () => {
         expect(pageStub?.content).toContain('.content');
         expect(pageStub?.content).toContain('.footer');
         expect(pageStub?.content).toContain('.sidebar');
+    });
+});
+
+// ============================================================================
+// CAPTURED CSS BUNDLE UTILITIES
+// ============================================================================
+
+describe('Captured CSS Bundle Utilities', () => {
+    describe('extractCssBaseName', () => {
+        test('should extract base name from Vite-style hashed filename', () => {
+            expect(extractCssBaseName('index-CPeWLd_6.css')).toBe('index');
+        });
+
+        test('should extract base name from longer Vite hash', () => {
+            expect(extractCssBaseName('sarsaparilla-CAVT8XC2.css')).toBe(
+                'sarsaparilla',
+            );
+        });
+
+        test('should extract base name from Webpack-style hashed filename', () => {
+            expect(extractCssBaseName('main.abc123def0.css')).toBe('main');
+        });
+
+        test('should remove .min suffix', () => {
+            expect(extractCssBaseName('styles.min.css')).toBe('styles');
+        });
+
+        test('should remove .module suffix', () => {
+            expect(extractCssBaseName('button.module.scss')).toBe('button');
+        });
+
+        test('should handle combined .module and hash', () => {
+            expect(extractCssBaseName('button.module-abc123.css')).toBe(
+                'button.module',
+            );
+        });
+
+        test('should return name unchanged if no hash pattern', () => {
+            expect(extractCssBaseName('simple.css')).toBe('simple');
+        });
+
+        test('should handle different CSS extensions', () => {
+            expect(extractCssBaseName('theme-abc123.scss')).toBe('theme');
+            expect(extractCssBaseName('vars-xyz789.sass')).toBe('vars');
+            expect(extractCssBaseName('utils-def456.less')).toBe('utils');
+        });
+
+        test('should not remove short suffixes that are not hashes', () => {
+            // Hashes must be at least 6 characters
+            expect(extractCssBaseName('app-v2.css')).toBe('app-v2');
+        });
+    });
+
+    describe('matchCssImportToBundle', () => {
+        const bundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/navigation/index-abc123.css',
+                localPath: 'navigation/index-abc123.css',
+                content: '.nav { }',
+                filename: 'index-abc123.css',
+                baseName: 'index',
+            },
+            {
+                url: 'https://example.com/sarsaparilla-xyz789.css',
+                localPath: 'sarsaparilla-xyz789.css',
+                content: '.sarsa { }',
+                filename: 'sarsaparilla-xyz789.css',
+                baseName: 'sarsaparilla',
+            },
+            {
+                url: 'https://example.com/button-def456.css',
+                localPath: 'components/button-def456.css',
+                content: '.btn { }',
+                filename: 'button-def456.css',
+                baseName: 'button',
+            },
+        ];
+
+        test('should match import to bundle by base name', () => {
+            const match = matchCssImportToBundle(
+                './index.scss',
+                'src/App.tsx',
+                bundles,
+            );
+            expect(match).not.toBeNull();
+            expect(match?.baseName).toBe('index');
+        });
+
+        test('should match module import to bundle', () => {
+            const match = matchCssImportToBundle(
+                './button.module.scss',
+                'src/Button.tsx',
+                bundles,
+            );
+            expect(match).not.toBeNull();
+            expect(match?.baseName).toBe('button');
+        });
+
+        test('should return null when no bundle matches', () => {
+            const match = matchCssImportToBundle(
+                './unknown.scss',
+                'src/App.tsx',
+                bundles,
+            );
+            expect(match).toBeNull();
+        });
+
+        test('should return null for empty bundles array', () => {
+            const match = matchCssImportToBundle(
+                './index.scss',
+                'src/App.tsx',
+                [],
+            );
+            expect(match).toBeNull();
+        });
+
+        test('should prefer bundle with matching path context when multiple matches', () => {
+            const bundlesWithDupes: CapturedCssBundle[] = [
+                {
+                    url: 'https://example.com/a/index.css',
+                    localPath: 'a/index-123.css',
+                    content: '',
+                    filename: 'index-123.css',
+                    baseName: 'index',
+                },
+                {
+                    url: 'https://example.com/navigation/index.css',
+                    localPath: 'navigation/index-456.css',
+                    content: '',
+                    filename: 'index-456.css',
+                    baseName: 'index',
+                },
+            ];
+            const match = matchCssImportToBundle(
+                './index.scss',
+                'navigation/ui/App.tsx',
+                bundlesWithDupes,
+            );
+            expect(match?.localPath).toBe('navigation/index-456.css');
+        });
+
+        test('should return first match when no path context matches', () => {
+            const bundlesWithDupes: CapturedCssBundle[] = [
+                {
+                    url: 'https://example.com/a/index.css',
+                    localPath: 'a/index-123.css',
+                    content: '',
+                    filename: 'index-123.css',
+                    baseName: 'index',
+                },
+                {
+                    url: 'https://example.com/b/index.css',
+                    localPath: 'b/index-456.css',
+                    content: '',
+                    filename: 'index-456.css',
+                    baseName: 'index',
+                },
+            ];
+            const match = matchCssImportToBundle(
+                './index.scss',
+                'completely/different/path/App.tsx',
+                bundlesWithDupes,
+            );
+            // Should return one of them (first candidate)
+            expect(match).not.toBeNull();
+            expect(match?.baseName).toBe('index');
+        });
+    });
+
+    describe('generateCssStubFromBundle', () => {
+        const bundle: CapturedCssBundle = {
+            url: 'https://example.com/styles.css',
+            localPath: 'assets/styles-abc123.css',
+            content: '.foo{color:red}.bar{margin:0}',
+            filename: 'styles-abc123.css',
+            baseName: 'styles',
+        };
+
+        test('should inline content for CSS modules (useInlineContent=true)', () => {
+            const importInfo = {
+                importPath: './Button.module.scss',
+                sourceFile: 'src/Button.tsx',
+                variableName: 'styles',
+                usedClassNames: [],
+            };
+            const content = generateCssStubFromBundle(importInfo, bundle, true);
+
+            expect(content).toContain('.foo{color:red}.bar{margin:0}');
+            expect(content).toContain(
+                'Auto-generated from captured CSS bundle',
+            );
+            expect(content).toContain('https://example.com/styles.css');
+            expect(content).toContain('minified CSS');
+        });
+
+        test('should generate @import for global CSS (useInlineContent=false)', () => {
+            const importInfo = {
+                importPath: './index.scss',
+                sourceFile: 'src/main.tsx',
+                variableName: 'styles',
+                usedClassNames: [],
+            };
+            const content = generateCssStubFromBundle(
+                importInfo,
+                bundle,
+                false,
+                '../_server/static',
+            );
+
+            expect(content).toContain(
+                "@import '../_server/static/assets/styles-abc123.css'",
+            );
+            expect(content).toContain('imports captured CSS bundle');
+            expect(content).not.toContain('.foo{color:red}');
+        });
+
+        test('should use inline content when import is a module regardless of flag', () => {
+            const importInfo = {
+                importPath: './Component.module.scss',
+                sourceFile: 'src/Component.tsx',
+                variableName: 'styles',
+                usedClassNames: [],
+            };
+            // Even with useInlineContent=false, modules should inline
+            const content = generateCssStubFromBundle(
+                importInfo,
+                bundle,
+                false,
+                '../_server/static',
+            );
+
+            // For modules, it should inline the content
+            expect(content).toContain('.foo{color:red}');
+        });
+
+        test('should handle missing relativePathToStatic for @import', () => {
+            const importInfo = {
+                importPath: './global.scss',
+                sourceFile: 'src/main.tsx',
+                variableName: '',
+                usedClassNames: [],
+            };
+            const content = generateCssStubFromBundle(
+                importInfo,
+                bundle,
+                false,
+                undefined,
+            );
+
+            // Should use the localPath directly
+            expect(content).toContain("@import 'assets/styles-abc123.css'");
+        });
     });
 });

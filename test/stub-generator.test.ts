@@ -30,8 +30,10 @@ import {
     generateMissingSourceStubs,
     findMissingBarrelExports,
     appendMissingBarrelExports,
+    updateCssStubsWithCapturedBundles,
     type AliasMapping,
 } from '../src/stub-generator.js';
+import type { CapturedCssBundle } from '../src/css-recovery.js';
 
 // ============================================================================
 // TEST HELPERS
@@ -4052,5 +4054,387 @@ describe('findAndResolveAssetStubs', () => {
         expect(result.found).toBe(0);
         expect(result.resolved).toBe(0);
         expect(result.failed).toBe(0);
+    });
+});
+
+// ============================================================================
+// UPDATE CSS STUBS WITH CAPTURED BUNDLES
+// ============================================================================
+
+describe('updateCssStubsWithCapturedBundles', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+        tempDir = await createTempDir();
+    });
+
+    afterEach(async () => {
+        await rm(tempDir, { recursive: true, force: true });
+    });
+
+    test('should update CSS module stub with captured bundle content', async () => {
+        // Create a CSS module stub file (contains the marker comment)
+        await createFile(
+            tempDir,
+            'src/components/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */
+/* Imported by: src/components/Button.tsx */
+
+/* Add your styles here */
+`,
+        );
+
+        // Create captured bundle with matching base name
+        // Note: For "Button.module.scss", the stub base name is "Button.module"
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/assets/Button.module-abc123.css',
+                localPath: 'navigation/Button.module-abc123.css',
+                content:
+                    '.button { color: blue; } .button-icon { margin: 4px; }',
+                filename: 'Button.module-abc123.css',
+                baseName: 'Button.module',
+            },
+        ];
+
+        // Create the _server/static directory for relative path calculation
+        await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(1);
+
+        const content = await readFileContent(
+            join(tempDir, 'src/components/Button.module.scss'),
+        );
+        // Should contain the captured CSS content (inline for modules)
+        expect(content).toContain('.button { color: blue; }');
+        expect(content).toContain('Auto-generated from captured CSS bundle');
+        expect(content).toContain(
+            'https://example.com/assets/Button.module-abc123.css',
+        );
+    });
+
+    test('should update global CSS stub with @import reference', async () => {
+        // Create a non-module CSS stub file
+        await createFile(
+            tempDir,
+            'src/styles/index.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */
+/* Imported by: src/App.tsx */
+
+/* Add your styles here */
+`,
+        );
+
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/assets/index-xyz789.css',
+                localPath: 'navigation/index-xyz789.css',
+                content: 'body { margin: 0; } html { font-size: 16px; }',
+                filename: 'index-xyz789.css',
+                baseName: 'index',
+            },
+        ];
+
+        await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(1);
+
+        const content = await readFileContent(
+            join(tempDir, 'src/styles/index.scss'),
+        );
+        // Should use @import for non-module CSS
+        expect(content).toContain("@import '");
+        expect(content).toContain('navigation/index-xyz789.css');
+        expect(content).toContain(
+            'Auto-generated stub - imports captured CSS bundle',
+        );
+    });
+
+    test('should not update files that are not stubs', async () => {
+        // Create a regular CSS file (no stub marker)
+        await createFile(
+            tempDir,
+            'src/styles/existing.scss',
+            `.existing-class {
+  color: red;
+  background: white;
+}`,
+        );
+
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/assets/existing-abc.css',
+                localPath: 'existing-abc.css',
+                content: '.different { color: blue; }',
+                filename: 'existing-abc.css',
+                baseName: 'existing',
+            },
+        ];
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(0);
+
+        const content = await readFileContent(
+            join(tempDir, 'src/styles/existing.scss'),
+        );
+        // Should be unchanged
+        expect(content).toContain('.existing-class');
+        expect(content).not.toContain('.different');
+    });
+
+    test('should return 0 when no captured bundles provided', async () => {
+        await createFile(
+            tempDir,
+            'src/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        const count = await updateCssStubsWithCapturedBundles(tempDir, []);
+
+        expect(count).toBe(0);
+    });
+
+    test('should not update stub when no matching bundle found', async () => {
+        await createFile(
+            tempDir,
+            'src/components/Card.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */
+
+/* Add your styles here */
+`,
+        );
+
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/assets/Button-abc.css',
+                localPath: 'Button-abc.css',
+                content: '.button { color: blue; }',
+                filename: 'Button-abc.css',
+                baseName: 'Button', // No match for 'Card'
+            },
+        ];
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(0);
+
+        const content = await readFileContent(
+            join(tempDir, 'src/components/Card.module.scss'),
+        );
+        // Should be unchanged
+        expect(content).toContain('Auto-generated CSS module stub');
+        expect(content).toContain('Add your styles here');
+    });
+
+    test('should update multiple matching stubs', async () => {
+        // Create multiple stub files
+        await createFile(
+            tempDir,
+            'src/components/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        await createFile(
+            tempDir,
+            'src/components/Card.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        await createFile(
+            tempDir,
+            'src/styles/index.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // Note: baseName must match the filename without extension
+        // "Button.module.scss" -> "Button.module", "Card.module.scss" -> "Card.module", "index.scss" -> "index"
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/Button.module-abc.css',
+                localPath: 'Button.module-abc.css',
+                content: '.button { }',
+                filename: 'Button.module-abc.css',
+                baseName: 'Button.module',
+            },
+            {
+                url: 'https://example.com/Card.module-def.css',
+                localPath: 'Card.module-def.css',
+                content: '.card { }',
+                filename: 'Card.module-def.css',
+                baseName: 'Card.module',
+            },
+            {
+                url: 'https://example.com/index-ghi.css',
+                localPath: 'index-ghi.css',
+                content: 'body { }',
+                filename: 'index-ghi.css',
+                baseName: 'index',
+            },
+        ];
+
+        await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(3);
+    });
+
+    test('should skip node_modules and hidden directories', async () => {
+        // Create stub in node_modules (should be skipped)
+        await createFile(
+            tempDir,
+            'node_modules/some-pkg/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // Create stub in hidden directory (should be skipped)
+        await createFile(
+            tempDir,
+            '.hidden/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // Create stub in _server directory (should be skipped)
+        await createFile(
+            tempDir,
+            '_server/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/Button.css',
+                localPath: 'Button.css',
+                content: '.button { }',
+                filename: 'Button.css',
+                baseName: 'Button',
+            },
+        ];
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(0);
+    });
+
+    test('should call onProgress callback', async () => {
+        await createFile(
+            tempDir,
+            'src/Button.module.scss',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // baseName must match "Button.module" (filename without .scss extension)
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/Button.module.css',
+                localPath: 'Button.module.css',
+                content: '.button { }',
+                filename: 'Button.module.css',
+                baseName: 'Button.module',
+            },
+        ];
+
+        await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
+
+        const messages: string[] = [];
+        await updateCssStubsWithCapturedBundles(tempDir, capturedBundles, {
+            onProgress: (msg) => messages.push(msg),
+        });
+
+        expect(messages.length).toBeGreaterThan(0);
+        expect(messages.some((m) => m.includes('Updated CSS stub'))).toBe(true);
+    });
+
+    test('should handle different CSS file extensions', async () => {
+        // Test .css extension
+        await createFile(
+            tempDir,
+            'src/styles.css',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // Test .sass extension
+        await createFile(
+            tempDir,
+            'src/legacy.sass',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        // Test .less extension
+        await createFile(
+            tempDir,
+            'src/theme.less',
+            `/* Auto-generated CSS module stub */
+/* Original file was not available in source maps */`,
+        );
+
+        const capturedBundles: CapturedCssBundle[] = [
+            {
+                url: 'https://example.com/styles.css',
+                localPath: 'styles.css',
+                content: '.styles { }',
+                filename: 'styles.css',
+                baseName: 'styles',
+            },
+            {
+                url: 'https://example.com/legacy.css',
+                localPath: 'legacy.css',
+                content: '.legacy { }',
+                filename: 'legacy.css',
+                baseName: 'legacy',
+            },
+            {
+                url: 'https://example.com/theme.css',
+                localPath: 'theme.css',
+                content: '.theme { }',
+                filename: 'theme.css',
+                baseName: 'theme',
+            },
+        ];
+
+        await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
+
+        const count = await updateCssStubsWithCapturedBundles(
+            tempDir,
+            capturedBundles,
+        );
+
+        expect(count).toBe(3);
     });
 });
