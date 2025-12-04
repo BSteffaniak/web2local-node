@@ -27,7 +27,7 @@
 
 import { normalizePath } from './sourcemap.js';
 import { dirname, basename } from 'path';
-import { BROWSER_HEADERS } from './http.js';
+import { BROWSER_HEADERS, robustFetch } from './http.js';
 import {
     extractImportSourcesFromAST,
     extractMemberAccesses,
@@ -218,10 +218,12 @@ export async function extractCssSourceMap(
         // Get CSS content if not provided
         let content = cssContent;
         if (!content) {
-            const response = await fetch(cssUrl, { headers: BROWSER_HEADERS });
+            const response = await robustFetch(cssUrl, {
+                headers: BROWSER_HEADERS,
+            });
             if (!response.ok) {
                 result.errors.push(
-                    `Failed to fetch CSS from ${cssUrl}: ${response.status} ${response.statusText}`,
+                    `HTTP ${response.status} ${response.statusText} fetching CSS from ${cssUrl}`,
                 );
                 return result;
             }
@@ -260,12 +262,12 @@ export async function extractCssSourceMap(
             const fullSourceMapUrl = resolveSourceMapUrl(cssUrl, sourceMapUrl);
             result.sourceMapUrl = fullSourceMapUrl;
 
-            const response = await fetch(fullSourceMapUrl, {
+            const response = await robustFetch(fullSourceMapUrl, {
                 headers: BROWSER_HEADERS,
             });
             if (!response.ok) {
                 result.errors.push(
-                    `Failed to fetch CSS source map from ${fullSourceMapUrl}: ${response.status} ${response.statusText}`,
+                    `HTTP ${response.status} ${response.statusText} fetching CSS source map from ${fullSourceMapUrl}`,
                 );
                 return result;
             }

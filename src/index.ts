@@ -34,6 +34,7 @@ import {
     rebuild as runRebuild,
     extractAliasesFromTsConfig,
 } from './rebuild/index.js';
+import { FetchError } from './http.js';
 
 async function main() {
     const options = parseArgs();
@@ -72,7 +73,11 @@ async function main() {
         }
         spinner.succeed(statusMsg);
     } catch (error) {
-        spinner.fail(`Failed to fetch page: ${error}`);
+        if (error instanceof FetchError) {
+            spinner.fail(error.format(options.verbose));
+        } else {
+            spinner.fail(`Failed to fetch page: ${error}`);
+        }
         process.exit(1);
     }
 

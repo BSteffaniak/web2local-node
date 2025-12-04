@@ -29,6 +29,7 @@ import {
     detectEnvironmentAPIs,
     detectESFeatures,
 } from './ast-utils.js';
+import { robustFetch } from './http.js';
 
 export interface DependencyInfo {
     name: string;
@@ -528,11 +529,10 @@ export function matchBannerVersionsToDependencies(
  */
 async function fetchNpmVersion(packageName: string): Promise<string | null> {
     try {
-        const response = await fetch(
+        const response = await robustFetch(
             `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`,
             {
                 headers: { Accept: 'application/json' },
-                signal: AbortSignal.timeout(5000),
             },
         );
         if (!response.ok) {
@@ -599,11 +599,10 @@ export async function isPublicNpmPackage(
 
     // Fetch from npm registry using HEAD request for efficiency
     try {
-        const response = await fetch(
+        const response = await robustFetch(
             `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
             {
                 method: 'HEAD',
-                signal: AbortSignal.timeout(5000),
             },
         );
         const exists = response.ok;

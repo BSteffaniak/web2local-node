@@ -96,6 +96,12 @@ export async function createApp(options: ServerOptions): Promise<{
 
             // Check if this path matches a captured redirect
             for (const redirect of manifest.redirects!) {
+                // Skip self-redirects to prevent infinite loops
+                // (defensive check - these shouldn't be captured, but handle gracefully)
+                if (redirect.from === redirect.to) {
+                    continue;
+                }
+
                 if (path === redirect.from) {
                     // Perform the redirect with the original status code
                     return c.redirect(

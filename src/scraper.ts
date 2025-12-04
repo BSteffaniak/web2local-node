@@ -1,6 +1,6 @@
 import { parse as parseHTML } from 'node-html-parser';
 import { getCache } from './fingerprint-cache.js';
-import { BROWSER_HEADERS } from './http.js';
+import { BROWSER_HEADERS, robustFetch } from './http.js';
 
 export interface BundleInfo {
     url: string;
@@ -64,10 +64,10 @@ export async function extractBundleUrls(
         };
     }
 
-    const response = await fetch(pageUrl, { headers: BROWSER_HEADERS });
+    const response = await robustFetch(pageUrl, { headers: BROWSER_HEADERS });
     if (!response.ok) {
         throw new Error(
-            `Failed to fetch ${pageUrl}: ${response.status} ${response.statusText}`,
+            `HTTP ${response.status} ${response.statusText} fetching ${pageUrl}`,
         );
     }
 
@@ -190,7 +190,9 @@ export async function findSourceMapUrl(
     let sourceMapUrl: string | null = null;
 
     try {
-        const response = await fetch(bundleUrl, { headers: BROWSER_HEADERS });
+        const response = await robustFetch(bundleUrl, {
+            headers: BROWSER_HEADERS,
+        });
         if (!response.ok) {
             // Cache negative result
             await cache.setSourceMapDiscovery(bundleUrl, null);
@@ -225,7 +227,7 @@ export async function findSourceMapUrl(
 
         // Try appending .map as a fallback
         const mapUrl = bundleUrl + '.map';
-        const mapResponse = await fetch(mapUrl, {
+        const mapResponse = await robustFetch(mapUrl, {
             method: 'HEAD',
             headers: BROWSER_HEADERS,
         });

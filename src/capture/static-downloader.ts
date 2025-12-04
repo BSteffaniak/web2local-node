@@ -9,58 +9,52 @@ import { mkdir, writeFile } from 'fs/promises';
 import { dirname, join, extname } from 'path';
 import { createHash } from 'crypto';
 import type { CapturedAsset, ResourceType } from './types.js';
+import { robustFetch, FetchError } from '../http.js';
 
 /**
- * Direct HTTP fetch with proper streaming support.
+ * Direct HTTP fetch with proper streaming support and content verification.
  * Used as a fallback when Playwright's response.body() returns truncated data.
+ * Uses robustFetch for automatic retry on transient errors.
  */
-async function fetchWithRetry(
+async function fetchWithContentVerification(
     url: string,
-    maxRetries: number = 3,
-    timeout: number = 30000,
 ): Promise<Buffer | null> {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await robustFetch(url, {
+            headers: {
+                'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                Accept: '*/*',
+            },
+        });
 
-            const response = await fetch(url, {
-                signal: controller.signal,
-                headers: {
-                    'User-Agent':
-                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    Accept: '*/*',
-                },
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                return null;
-            }
-
-            const arrayBuffer = await response.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-
-            // Verify content length if header present
-            const contentLength = parseInt(
-                response.headers.get('content-length') || '0',
-                10,
-            );
-            if (contentLength > 0 && buffer.length !== contentLength) {
-                // Truncated, retry
-                continue;
-            }
-
-            return buffer;
-        } catch {
-            // Retry on error
-            if (attempt === maxRetries) {
-                return null;
-            }
+        if (!response.ok) {
+            return null;
         }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Verify content length if header present
+        const contentLength = parseInt(
+            response.headers.get('content-length') || '0',
+            10,
+        );
+        if (contentLength > 0 && buffer.length !== contentLength) {
+            // Truncated data - log warning but still return what we got
+            console.warn(
+                `Warning: Truncated response for ${url} (got ${buffer.length} bytes, expected ${contentLength})`,
+            );
+        }
+
+        return buffer;
+    } catch (error) {
+        // FetchError already has good error details
+        if (error instanceof FetchError) {
+            console.warn(`Failed to fetch ${url}: ${error.message}`);
+        }
+        return null;
     }
-    return null;
 }
 
 /**
@@ -402,19 +396,34 @@ export class StaticCapturer {
 
                         // Only record same-origin redirects (path changes)
                         if (origUrlObj.origin === finalUrlObj.origin) {
-                            // Get the redirect status from the original request's response
-                            const redirectResponse =
-                                await redirectedFrom.response();
-                            const status = redirectResponse?.status() || 301;
+                            const fromPath =
+                                origUrlObj.pathname + origUrlObj.search;
+                            const toPath =
+                                finalUrlObj.pathname + finalUrlObj.search;
 
-                            this.redirects.push({
-                                from: origUrlObj.pathname + origUrlObj.search,
-                                to: finalUrlObj.pathname + finalUrlObj.search,
-                                status,
-                            });
-                            this.log(
-                                `[Static] Detected redirect: ${origUrlObj.pathname} -> ${finalUrlObj.pathname} (${status})`,
-                            );
+                            // Skip self-redirects (same path redirecting to itself)
+                            // This can happen with HTTPS upgrades or www normalization
+                            // where the path stays the same but origin changes
+                            if (fromPath === toPath) {
+                                this.log(
+                                    `[Static] Skipping self-redirect: ${fromPath} -> ${toPath}`,
+                                );
+                            } else {
+                                // Get the redirect status from the original request's response
+                                const redirectResponse =
+                                    await redirectedFrom.response();
+                                const status =
+                                    redirectResponse?.status() || 301;
+
+                                this.redirects.push({
+                                    from: fromPath,
+                                    to: toPath,
+                                    status,
+                                });
+                                this.log(
+                                    `[Static] Detected redirect: ${fromPath} -> ${toPath} (${status})`,
+                                );
+                            }
                         }
                     } catch (error) {
                         this.log(`[Static] Error detecting redirect: ${error}`);
@@ -532,7 +541,7 @@ export class StaticCapturer {
                 );
 
                 // Try to recover with direct HTTP fetch
-                const recoveredBody = await fetchWithRetry(url);
+                const recoveredBody = await fetchWithContentVerification(url);
                 if (recoveredBody && recoveredBody.length === contentLength) {
                     this.log(
                         `[Static] Successfully recovered ${url} via direct fetch (${recoveredBody.length} bytes)`,

@@ -284,6 +284,60 @@ describe('Redirect Handling', () => {
                 '/search?default=true',
             );
         });
+
+        it('should skip self-redirects to prevent infinite loops', async () => {
+            // This tests the defensive check in the mock server
+            // Self-redirects (from === to) should be ignored
+            const redirects: CapturedRedirect[] = [
+                { from: '/', to: '/', status: 301 }, // Self-redirect - should be skipped
+                { from: '/valid', to: '/valid/', status: 301 }, // Valid redirect
+            ];
+            const manifest = createTestManifest(redirects);
+            const siteDir = await createTestSite(testDir, manifest);
+
+            const { app } = await createApp({
+                dir: siteDir,
+                port: 0,
+                host: 'localhost',
+            });
+
+            // Root should NOT redirect (self-redirect is skipped), should serve content
+            const rootResponse = await app.request('/');
+            expect(rootResponse.status).toBe(200);
+            const text = await rootResponse.text();
+            expect(text).toContain('Test');
+
+            // Valid redirect should still work
+            const validResponse = await app.request('/valid');
+            expect(validResponse.status).toBe(301);
+            expect(validResponse.headers.get('location')).toBe('/valid/');
+        });
+
+        it('should handle manifest with only self-redirects gracefully', async () => {
+            // Edge case: manifest contains only self-redirects
+            const redirects: CapturedRedirect[] = [
+                { from: '/', to: '/', status: 301 },
+                { from: '/games/snake', to: '/games/snake', status: 302 },
+            ];
+            const manifest = createTestManifest(redirects);
+            const siteDir = await createTestSite(testDir, manifest);
+
+            const { app } = await createApp({
+                dir: siteDir,
+                port: 0,
+                host: 'localhost',
+            });
+
+            // All self-redirects should be skipped, content should be served
+            const rootResponse = await app.request('/');
+            expect(rootResponse.status).toBe(200);
+
+            // /games/snake self-redirect is skipped, so it falls through to static
+            // Since the test site has /games/snake/index.html, it may serve via SPA fallback
+            // The key assertion is that we DON'T get a redirect (302) which would cause a loop
+            const snakeResponse = await app.request('/games/snake');
+            expect(snakeResponse.status).not.toBe(302); // Should NOT redirect to itself
+        });
     });
 
     describe('CapturedRedirect Type', () => {
