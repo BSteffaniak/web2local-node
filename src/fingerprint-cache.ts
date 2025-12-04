@@ -102,6 +102,14 @@ export interface PageScrapingCache {
     urlHash: string;
     /** Discovered bundle URLs */
     bundles: BundleInfo[];
+    /** Final URL after any redirects */
+    finalUrl?: string;
+    /** Redirect detected during fetch (if any) */
+    redirect?: {
+        from: string;
+        to: string;
+        status: number;
+    };
     fetchedAt: number;
 }
 
@@ -788,6 +796,8 @@ export class FingerprintCache {
     async setPageScraping(
         pageUrl: string,
         bundles: BundleInfo[],
+        finalUrl?: string,
+        redirect?: { from: string; to: string; status: number },
     ): Promise<PageScrapingCache> {
         const urlHash = createHash('md5').update(pageUrl).digest('hex');
 
@@ -795,6 +805,8 @@ export class FingerprintCache {
             pageUrl,
             urlHash,
             bundles,
+            finalUrl,
+            redirect,
             fetchedAt: Date.now(),
         };
 

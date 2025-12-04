@@ -123,6 +123,18 @@ export interface RouteConfig {
 }
 
 /**
+ * A redirect captured from the original site
+ */
+export interface CapturedRedirect {
+    /** Original requested path (without origin) */
+    from: string;
+    /** Final path after redirect (without origin) */
+    to: string;
+    /** HTTP status code (301, 302, 307, 308) */
+    status: number;
+}
+
+/**
  * Server manifest - main configuration file for mock-site-server
  */
 export interface ServerManifest {
@@ -149,7 +161,16 @@ export interface ServerManifest {
         entrypoint: string;
         /** Number of static assets captured */
         assetCount: number;
+        /**
+         * Path prefix from the original source URL.
+         * For example, if capturing https://example.com/games/snake/,
+         * pathPrefix would be "/games/snake/".
+         * Used to redirect root requests to the correct subpath.
+         */
+        pathPrefix?: string;
     };
+    /** Captured redirects to replay */
+    redirects?: CapturedRedirect[];
 }
 
 /**
@@ -179,6 +200,8 @@ export interface CaptureOptions {
     autoScroll: boolean;
     /** Verbose logging */
     verbose: boolean;
+    /** Redirects detected during scraping phase (to be included in manifest) */
+    scrapedRedirects?: CapturedRedirect[];
     /** Progress callback */
     onProgress?: (message: string) => void;
     /** Verbose log callback - use this instead of console.log when spinner is active */

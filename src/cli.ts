@@ -26,6 +26,8 @@ export interface CliOptions {
     prepareRebuild: boolean;
     rebuild: boolean;
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
+    // Fallback options
+    saveBundles: boolean;
 }
 
 export function parseArgs(): CliOptions {
@@ -137,6 +139,11 @@ export function parseArgs(): CliOptions {
             'Package manager to use for install/build (npm, pnpm, yarn, or auto for detection)',
             'auto',
         )
+        .option(
+            '--save-bundles',
+            'Save minified JS/CSS bundles even when no source maps are available',
+            false,
+        )
         .parse();
 
     const options = program.opts();
@@ -176,5 +183,7 @@ export function parseArgs(): CliOptions {
         prepareRebuild: options.prepareRebuild || false,
         rebuild: options.rebuild || false,
         packageManager: options.packageManager || 'auto',
+        // Fallback options
+        saveBundles: options.saveBundles || false,
     };
 }

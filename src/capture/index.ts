@@ -189,6 +189,20 @@ export async function captureWebsite(
         await browser.close();
     }
 
+    // Get detected redirects from browser capture
+    const browserRedirects = staticCapturer.getRedirects();
+
+    // Merge with scraped redirects (from initial HTTP fetch)
+    // Scraped redirects take priority as they're from the actual HTTP layer
+    const scrapedRedirects = opts.scrapedRedirects || [];
+
+    // Combine redirects, avoiding duplicates (prefer scraped over browser-detected)
+    const seenFromPaths = new Set(scrapedRedirects.map((r) => r.from));
+    const allRedirects = [
+        ...scrapedRedirects,
+        ...browserRedirects.filter((r) => !seenFromPaths.has(r.from)),
+    ];
+
     // Generate server manifest
     if (fixtures.length > 0 || assets.length > 0) {
         opts.onProgress?.('Generating server manifest...');
@@ -208,6 +222,8 @@ export async function captureWebsite(
                         minMs: 0,
                         maxMs: 0,
                     },
+                    redirects:
+                        allRedirects.length > 0 ? allRedirects : undefined,
                 },
             );
 

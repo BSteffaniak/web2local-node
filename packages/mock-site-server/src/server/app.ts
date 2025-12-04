@@ -89,6 +89,35 @@ export async function createApp(options: ServerOptions): Promise<{
         app.use('*', delayMiddleware(manifest.server.delay));
     }
 
+    // Add redirect handling from captured redirects
+    if (manifest.redirects && manifest.redirects.length > 0) {
+        app.use('*', async (c, next) => {
+            const path = new URL(c.req.url).pathname;
+
+            // Check if this path matches a captured redirect
+            for (const redirect of manifest.redirects!) {
+                if (path === redirect.from) {
+                    // Perform the redirect with the original status code
+                    return c.redirect(
+                        redirect.to,
+                        redirect.status as 301 | 302 | 303 | 307 | 308,
+                    );
+                }
+            }
+
+            return next();
+        });
+    }
+
+    // Add root redirect for subpath captures
+    // When a site is captured from a subpath (e.g., https://example.com/games/snake/),
+    // we need to redirect root requests to that subpath so relative URLs work correctly
+    if (manifest.static.pathPrefix && manifest.static.pathPrefix !== '/') {
+        app.get('/', (c) => {
+            return c.redirect(manifest.static.pathPrefix!, 302);
+        });
+    }
+
     // Load fixtures (unless static-only mode)
     let fixtureCount = 0;
     if (!options.staticOnly) {

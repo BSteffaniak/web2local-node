@@ -7,13 +7,16 @@ import {
     extractBundleUrls,
     findAllSourceMaps,
     type BundleInfo,
+    type ScrapedRedirect,
 } from './scraper.js';
 import { extractSourcesFromMap, type SourceFile } from './sourcemap.js';
 import {
     reconstructSources,
     writeManifest,
     getBundleName,
+    saveBundles,
     type BundleManifest,
+    type SavedBundle,
 } from './reconstructor.js';
 import {
     generateDependencyManifest,
@@ -53,11 +56,21 @@ async function main() {
     }).start();
 
     let bundles: BundleInfo[];
+    let scrapedRedirect: ScrapedRedirect | undefined;
+    let finalUrl: string;
     try {
-        bundles = await extractBundleUrls(options.url);
-        spinner.succeed(
-            `Found ${chalk.bold(bundles.length)} bundles (JS/CSS files)`,
-        );
+        const result = await extractBundleUrls(options.url);
+        bundles = result.bundles;
+        finalUrl = result.finalUrl;
+        scrapedRedirect = result.redirect;
+
+        let statusMsg = `Found ${chalk.bold(bundles.length)} bundles (JS/CSS files)`;
+        if (scrapedRedirect) {
+            statusMsg += chalk.gray(
+                ` (redirected: ${scrapedRedirect.from} -> ${scrapedRedirect.to})`,
+            );
+        }
+        spinner.succeed(statusMsg);
     } catch (error) {
         spinner.fail(`Failed to fetch page: ${error}`);
         process.exit(1);
@@ -71,6 +84,13 @@ async function main() {
     }
 
     if (options.verbose) {
+        if (scrapedRedirect) {
+            console.log(
+                chalk.gray(
+                    `\nRedirect detected: ${scrapedRedirect.from} -> ${scrapedRedirect.to} (${scrapedRedirect.status})`,
+                ),
+            );
+        }
         console.log(chalk.gray('\nBundles found:'));
         for (const bundle of bundles) {
             console.log(chalk.gray(`  - ${bundle.url}`));
@@ -84,29 +104,111 @@ async function main() {
         color: 'cyan',
     }).start();
 
-    const { bundlesWithMaps, vendorBundles } = await findAllSourceMaps(
-        bundles,
-        options.concurrency,
-        (completed, total) => {
-            mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
-        },
-    );
+    const { bundlesWithMaps, vendorBundles, bundlesWithoutMaps } =
+        await findAllSourceMaps(
+            bundles,
+            options.concurrency,
+            (completed, total) => {
+                mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
+            },
+        );
+
+    const hostname = new URL(options.url).hostname;
+    let savedBundles: SavedBundle[] = [];
 
     if (bundlesWithMaps.length === 0) {
-        mapSpinner.fail('No source maps found for any bundles');
-        console.log(
-            chalk.yellow(
-                '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.',
-            ),
-        );
-        process.exit(0);
+        if (bundlesWithoutMaps.length > 0 && options.saveBundles) {
+            mapSpinner.warn(
+                'No source maps found - saving minified bundles as fallback',
+            );
+        } else {
+            mapSpinner.fail('No source maps found for any bundles');
+            console.log(
+                chalk.yellow(
+                    '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.' +
+                        (bundlesWithoutMaps.length > 0
+                            ? '\n\nTip: Use --save-bundles to save minified JS/CSS files anyway.'
+                            : ''),
+                ),
+            );
+            process.exit(0);
+        }
+    } else {
+        let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
+        if (vendorBundles.length > 0) {
+            mapStatusMsg += chalk.gray(
+                ` + ${vendorBundles.length} vendor bundles`,
+            );
+        }
+        mapSpinner.succeed(mapStatusMsg);
     }
 
-    let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
-    if (vendorBundles.length > 0) {
-        mapStatusMsg += chalk.gray(` + ${vendorBundles.length} vendor bundles`);
+    // Save bundles when --save-bundles is enabled
+    if (bundlesWithoutMaps.length > 0 && options.saveBundles) {
+        const bundleSpinner = ora({
+            text: 'Saving minified bundles...',
+            color: 'cyan',
+        }).start();
+
+        try {
+            const result = await saveBundles(bundlesWithoutMaps, {
+                outputDir: options.output,
+                siteHostname: hostname,
+            });
+            savedBundles = result.saved;
+
+            if (result.errors.length > 0) {
+                bundleSpinner.warn(
+                    `Saved ${result.saved.length} bundles with ${result.errors.length} errors`,
+                );
+                if (options.verbose) {
+                    for (const error of result.errors) {
+                        console.log(chalk.red(`    ${error}`));
+                    }
+                }
+            } else {
+                bundleSpinner.succeed(
+                    `Saved ${chalk.bold(result.saved.length)} minified bundles to ${chalk.cyan('_bundles/')}`,
+                );
+            }
+
+            if (options.verbose) {
+                console.log(chalk.gray('\nBundles saved:'));
+                for (const bundle of result.saved) {
+                    const sizeStr = formatBytes(bundle.size);
+                    console.log(
+                        chalk.gray(`  - ${bundle.localPath} (${sizeStr})`),
+                    );
+                }
+            }
+        } catch (error) {
+            bundleSpinner.fail(`Failed to save bundles: ${error}`);
+        }
     }
-    mapSpinner.succeed(mapStatusMsg);
+
+    // If no source maps found, skip source extraction but continue to summary
+    if (bundlesWithMaps.length === 0) {
+        // Summary for bundle-only mode
+        console.log(chalk.gray('\n  ' + '─'.repeat(20)));
+        console.log(chalk.bold('\n  Summary:'));
+        if (savedBundles.length > 0) {
+            const totalSize = savedBundles.reduce((sum, b) => sum + b.size, 0);
+            console.log(
+                `    ${chalk.green('✓')} Bundles saved: ${chalk.bold(savedBundles.length)} (${formatBytes(totalSize)})`,
+            );
+        }
+        console.log(
+            `    ${chalk.blue('→')} Output directory: ${chalk.cyan(options.output)}`,
+        );
+        console.log();
+
+        // Still allow API capture even without source maps
+        if (options.captureApi) {
+            // Continue to API capture section below
+        } else {
+            process.exit(0);
+        }
+    }
 
     if (options.verbose) {
         console.log(chalk.gray('\nSource maps found:'));
@@ -126,7 +228,6 @@ async function main() {
     }
 
     // Step 3: Extract sources from each source map
-    const hostname = new URL(options.url).hostname;
     const manifestBundles: BundleManifest[] = [];
     let totalFilesWritten = 0;
     let totalFilesSkipped = 0;
@@ -665,6 +766,10 @@ async function main() {
                 browseTimeout: options.browseTimeout,
                 autoScroll: options.autoScroll,
                 verbose: options.verbose,
+                // Pass scraped redirect to include in manifest
+                scrapedRedirects: scrapedRedirect
+                    ? [scrapedRedirect]
+                    : undefined,
                 onProgress: (message) => {
                     captureSpinner.text = message;
                 },

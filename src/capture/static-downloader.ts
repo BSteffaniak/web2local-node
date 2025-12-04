@@ -269,6 +269,12 @@ export class StaticCapturer {
     }> = [];
     /** Track files that were recovered via direct fetch */
     private recoveredFiles: string[] = [];
+    /** Track redirects detected during capture */
+    private redirects: Array<{
+        from: string;
+        to: string;
+        status: number;
+    }> = [];
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -295,6 +301,13 @@ export class StaticCapturer {
      */
     getBaseOrigin(): string | null {
         return this.baseOrigin;
+    }
+
+    /**
+     * Get redirects detected during capture
+     */
+    getRedirects(): Array<{ from: string; to: string; status: number }> {
+        return [...this.redirects];
     }
 
     /**
@@ -343,10 +356,11 @@ export class StaticCapturer {
         page.on('response', async (response) => {
             const request = response.request();
             const resourceType = request.resourceType() as ResourceType;
-            const url = request.url();
+            const requestUrl = request.url();
+            const responseUrl = response.url();
 
             // Skip data URLs
-            if (url.startsWith('data:')) {
+            if (requestUrl.startsWith('data:')) {
                 return;
             }
 
@@ -368,13 +382,48 @@ export class StaticCapturer {
                 const isMainFrame = frame && frame.parentFrame() === null;
 
                 if (!isMainFrame) {
-                    this.log(`[Static] Skipping iframe document: ${url}`);
+                    this.log(
+                        `[Static] Skipping iframe document: ${requestUrl}`,
+                    );
                     return;
+                }
+
+                // Detect redirects by checking if this request was redirected from another
+                // When Playwright follows a redirect:
+                // 1. First response event: 301 from /path (we skip this, not a 200)
+                // 2. Second response event: 200 from /path/ with redirectedFrom pointing to /path
+                const redirectedFrom = request.redirectedFrom();
+                if (redirectedFrom && response.ok()) {
+                    try {
+                        const originalUrl = redirectedFrom.url();
+                        const finalUrl = responseUrl;
+                        const origUrlObj = new URL(originalUrl);
+                        const finalUrlObj = new URL(finalUrl);
+
+                        // Only record same-origin redirects (path changes)
+                        if (origUrlObj.origin === finalUrlObj.origin) {
+                            // Get the redirect status from the original request's response
+                            const redirectResponse =
+                                await redirectedFrom.response();
+                            const status = redirectResponse?.status() || 301;
+
+                            this.redirects.push({
+                                from: origUrlObj.pathname + origUrlObj.search,
+                                to: finalUrlObj.pathname + finalUrlObj.search,
+                                status,
+                            });
+                            this.log(
+                                `[Static] Detected redirect: ${origUrlObj.pathname} -> ${finalUrlObj.pathname} (${status})`,
+                            );
+                        }
+                    } catch (error) {
+                        this.log(`[Static] Error detecting redirect: ${error}`);
+                    }
                 }
 
                 if (this.options.captureRenderedHtml) {
                     this.log(
-                        `[Static] Skipping navigation document (will capture rendered version later): ${url}`,
+                        `[Static] Skipping navigation document (will capture rendered version later): ${responseUrl}`,
                     );
                     return;
                 }
@@ -386,9 +435,9 @@ export class StaticCapturer {
                     try {
                         const body = await response.body();
                         this.originalDocumentHtml = body.toString('utf-8');
-                        this.originalDocumentUrl = url;
+                        this.originalDocumentUrl = responseUrl;
                         this.log(
-                            `[Static] Captured original document HTML: ${url} (${body.length} bytes)`,
+                            `[Static] Captured original document HTML: ${responseUrl} (${body.length} bytes)`,
                         );
                     } catch (error) {
                         this.log(
@@ -397,11 +446,14 @@ export class StaticCapturer {
                     }
                 } else {
                     this.log(
-                        `[Static] Skipping duplicate main document: ${url}`,
+                        `[Static] Skipping duplicate main document: ${responseUrl}`,
                     );
                 }
                 return;
             }
+
+            // Use request URL for asset tracking (consistent with previous behavior)
+            const url = requestUrl;
 
             // Skip if already downloaded
             if (this.downloadedUrls.has(url)) {

@@ -37,6 +37,18 @@ export interface RouteConfig {
 }
 
 /**
+ * A redirect captured from the original site
+ */
+export interface CapturedRedirect {
+    /** Original requested path (without origin) */
+    from: string;
+    /** Final path after redirect (without origin) */
+    to: string;
+    /** HTTP status code (301, 302, 307, 308) */
+    status: number;
+}
+
+/**
  * Server manifest - main configuration file
  */
 export interface ServerManifest {
@@ -53,7 +65,16 @@ export interface ServerManifest {
         enabled: boolean;
         entrypoint: string;
         assetCount: number;
+        /**
+         * Path prefix from the original source URL.
+         * For example, if capturing https://example.com/games/snake/,
+         * pathPrefix would be "/games/snake/".
+         * Used to redirect root requests to the correct subpath.
+         */
+        pathPrefix?: string;
     };
+    /** Captured redirects to replay */
+    redirects?: CapturedRedirect[];
 }
 
 /**
