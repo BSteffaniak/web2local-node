@@ -3209,9 +3209,11 @@ describe('generateMissingSourceStubs', () => {
         const stubContent = await readFileContent(
             join(tempDir, 'src/helpers.tsx'),
         );
-        expect(stubContent).toContain('export const foo: any');
-        expect(stubContent).toContain('export const bar: any');
-        expect(stubContent).toContain('export const baz: any');
+        // Now using universal stub (Proxy-based) instead of plain any
+        expect(stubContent).toContain("export const foo = __stub__('foo')");
+        expect(stubContent).toContain("export const bar = __stub__('bar')");
+        expect(stubContent).toContain("export const baz = __stub__('baz')");
+        expect(stubContent).toContain('import { __stub__ } from');
     });
 
     test('should generate stub with type exports', async () => {
@@ -3255,7 +3257,10 @@ describe('generateMissingSourceStubs', () => {
             join(tempDir, 'src/Widget.tsx'),
         );
         expect(stubContent).toContain('export default');
-        expect(stubContent).toContain('export const helper: any');
+        // Now using universal stub (Proxy-based) instead of plain any
+        expect(stubContent).toContain(
+            "export const helper = __stub__('helper')",
+        );
         expect(stubContent).toContain('export type WidgetProps = any');
     });
 
@@ -3629,12 +3634,14 @@ export const x = FOO;`,
         await appendMissingBarrelExports(tempDir, missing);
 
         const content = await readFileContent(indexPath);
+        // Now using universal stub (Proxy-based) instead of plain undefined
         expect(content).toContain(
-            'export const DEFAULT_TIMEZONE: any = undefined;',
+            "export const DEFAULT_TIMEZONE = __stub__('DEFAULT_TIMEZONE')",
         );
         expect(content).toContain(
             'Stub exports for values imported but not found in source maps',
         );
+        expect(content).toContain('import { __stub__ } from');
     });
 
     test('should append stub type exports for missing type exports', async () => {
@@ -3694,8 +3701,9 @@ export const x = existingValue + missingValue;`,
         await appendMissingBarrelExports(tempDir, missing);
 
         const content = await readFileContent(indexPath);
+        // Now using universal stub (Proxy-based) instead of plain undefined
         expect(content).toContain(
-            'export const missingValue: any = undefined;',
+            "export const missingValue = __stub__('missingValue')",
         );
         expect(content).toContain('export type MissingType = any;');
     });
