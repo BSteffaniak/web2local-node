@@ -182,6 +182,7 @@ export async function createApp(options: ServerOptions): Promise<{
     // Serve static files (unless api-only mode)
     if (!options.apiOnly && manifest.static.enabled) {
         const staticDir = getStaticDir(options.dir, options.useRebuilt);
+        const capturedStaticDir = getStaticDir(options.dir, false); // Always get the captured static dir
 
         if (await directoryExists(staticDir)) {
             // Serve static files using Hono's serveStatic
@@ -192,6 +193,21 @@ export async function createApp(options: ServerOptions): Promise<{
                     rewriteRequestPath: (path) => path,
                 }),
             );
+
+            // When using rebuilt bundles, also serve from captured static dir
+            // This ensures fonts, images, and other assets are available
+            if (
+                options.useRebuilt &&
+                (await directoryExists(capturedStaticDir))
+            ) {
+                app.use(
+                    '/*',
+                    serveStatic({
+                        root: capturedStaticDir,
+                        rewriteRequestPath: (path) => path,
+                    }),
+                );
+            }
 
             // Fallback to index.html for SPA routing
             app.get('*', async (c) => {

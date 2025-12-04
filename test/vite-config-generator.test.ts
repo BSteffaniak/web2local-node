@@ -44,7 +44,7 @@ describe('generateViteConfig', () => {
         });
 
         expect(config).toContain(
-            "import { defineConfig, loadEnv } from 'vite'",
+            "import { defineConfig, loadEnv, type Plugin } from 'vite'",
         );
         expect(config).toContain('export default defineConfig(({ mode }) => {');
         expect(config).toContain(
@@ -99,7 +99,8 @@ describe('generateViteConfig', () => {
         });
 
         expect(config).toContain("import react from '@vitejs/plugin-react'");
-        expect(config).toContain('plugins: [react()]');
+        // CSS module stub plugin is always first, followed by framework plugin
+        expect(config).toContain('plugins: [cssModuleStubPlugin(), react()]');
     });
 
     test('should include Vue plugin for Vue framework', () => {
@@ -113,7 +114,8 @@ describe('generateViteConfig', () => {
         });
 
         expect(config).toContain("import vue from '@vitejs/plugin-vue'");
-        expect(config).toContain('plugins: [vue()]');
+        // CSS module stub plugin is always first, followed by framework plugin
+        expect(config).toContain('plugins: [cssModuleStubPlugin(), vue()]');
     });
 
     test('should include aliases sorted by specificity', () => {
