@@ -5,7 +5,7 @@
  */
 
 import { join } from 'path';
-import { stat, writeFile } from 'fs/promises';
+import { stat, writeFile, readFile } from 'fs/promises';
 import type {
     PrepareRebuildOptions,
     PrepareResult,
@@ -35,6 +35,14 @@ import { enhancePackageJson, fixUnknownVersions } from './package-enhancer.js';
 
 import { runBuild, hasBuildOutput } from './build-runner.js';
 
+import {
+    injectGlobalCss,
+    needsGlobalCssInjection,
+    type GlobalCssInjectionResult,
+} from './global-css-injector.js';
+
+import type { CapturedCssBundle } from '../css-recovery.js';
+
 // Re-export types
 export * from './types.js';
 
@@ -54,6 +62,10 @@ export {
     installDependencies,
     parseBuildErrors,
 } from './build-runner.js';
+export {
+    injectGlobalCss,
+    needsGlobalCssInjection,
+} from './global-css-injector.js';
 
 /**
  * Analyze a project and return its configuration
@@ -144,6 +156,81 @@ async function hasTypeScript(projectDir: string): Promise<boolean> {
         return true;
     } catch {
         return false;
+    }
+}
+
+/**
+ * Read server manifest and check if global CSS injection is needed.
+ * The server manifest is populated during capture with info about
+ * unmatched CSS stubs and unused bundles.
+ */
+async function checkAndInjectGlobalCss(
+    projectDir: string,
+    entryPoints: import('./types.js').EntryPoint[],
+    onProgress?: (message: string) => void,
+): Promise<GlobalCssInjectionResult> {
+    const manifestPath = join(projectDir, '_server', 'manifest.json');
+
+    try {
+        const manifestContent = await readFile(manifestPath, 'utf-8');
+        const manifest = JSON.parse(manifestContent);
+
+        // Check if manifest has the CSS info we need
+        const unmatchedStubs: string[] = manifest.unmatchedCssStubs || [];
+        const unusedBundleInfo: Array<{
+            url: string;
+            localPath: string;
+            filename: string;
+            baseName: string;
+        }> = manifest.unusedCssBundles || [];
+
+        // Convert bundle info back to CapturedCssBundle format (need to read content)
+        const unusedBundles: CapturedCssBundle[] = [];
+        for (const info of unusedBundleInfo) {
+            try {
+                const bundlePath = join(
+                    projectDir,
+                    '_server',
+                    'static',
+                    info.localPath,
+                );
+                const content = await readFile(bundlePath, 'utf-8');
+                unusedBundles.push({
+                    ...info,
+                    content,
+                });
+            } catch {
+                // Bundle file not found, skip
+            }
+        }
+
+        // Check if injection is needed
+        if (!needsGlobalCssInjection(unmatchedStubs, unusedBundles)) {
+            return {
+                injected: false,
+                includedBundles: [],
+                errors: [],
+            };
+        }
+
+        onProgress?.(
+            `Found ${unmatchedStubs.length} unmatched CSS stubs, ${unusedBundles.length} unused bundles`,
+        );
+
+        // Perform the injection
+        return await injectGlobalCss({
+            projectDir,
+            unusedBundles,
+            entryPoints,
+            onProgress,
+        });
+    } catch {
+        // No manifest or no CSS info - no injection needed
+        return {
+            injected: false,
+            includedBundles: [],
+            errors: [],
+        };
     }
 }
 
@@ -289,6 +376,31 @@ export async function prepareRebuild(
         }
     } catch (error) {
         errors.push(`Failed to update package.json: ${error}`);
+    }
+
+    // Check for global CSS injection (when CSS source maps weren't available)
+    onProgress?.('Checking for global CSS injection...');
+    try {
+        const cssInjectionResult = await checkAndInjectGlobalCss(
+            projectDir,
+            config.entryPoints,
+            verbose ? onProgress : undefined,
+        );
+
+        if (cssInjectionResult.injected) {
+            generatedFiles.push('_captured-styles.css');
+            if (verbose) {
+                onProgress?.(
+                    `Injected global CSS with ${cssInjectionResult.includedBundles.length} bundle(s)`,
+                );
+            }
+        }
+
+        if (cssInjectionResult.errors.length > 0) {
+            warnings.push(...cssInjectionResult.errors);
+        }
+    } catch (error) {
+        warnings.push(`Failed to check global CSS injection: ${error}`);
     }
 
     const success = errors.length === 0;

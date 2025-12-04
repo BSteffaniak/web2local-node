@@ -4101,12 +4101,14 @@ describe('updateCssStubsWithCapturedBundles', () => {
         // Create the _server/static directory for relative path calculation
         await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(1);
+        expect(result.updatedCount).toBe(1);
+        expect(result.unusedBundles).toHaveLength(0);
+        expect(result.unmatchedStubs).toHaveLength(0);
 
         const content = await readFileContent(
             join(tempDir, 'src/components/Button.module.scss'),
@@ -4144,12 +4146,12 @@ describe('updateCssStubsWithCapturedBundles', () => {
 
         await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(1);
+        expect(result.updatedCount).toBe(1);
 
         const content = await readFileContent(
             join(tempDir, 'src/styles/index.scss'),
@@ -4183,12 +4185,14 @@ describe('updateCssStubsWithCapturedBundles', () => {
             },
         ];
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(0);
+        expect(result.updatedCount).toBe(0);
+        // The regular CSS file should not be in allStubs since it doesn't have the marker
+        expect(result.allStubs).toHaveLength(0);
 
         const content = await readFileContent(
             join(tempDir, 'src/styles/existing.scss'),
@@ -4206,9 +4210,9 @@ describe('updateCssStubsWithCapturedBundles', () => {
 /* Original file was not available in source maps */`,
         );
 
-        const count = await updateCssStubsWithCapturedBundles(tempDir, []);
+        const result = await updateCssStubsWithCapturedBundles(tempDir, []);
 
-        expect(count).toBe(0);
+        expect(result.updatedCount).toBe(0);
     });
 
     test('should not update stub when no matching bundle found', async () => {
@@ -4232,12 +4236,18 @@ describe('updateCssStubsWithCapturedBundles', () => {
             },
         ];
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(0);
+        expect(result.updatedCount).toBe(0);
+        // Should report unmatched stub and unused bundle
+        expect(result.unmatchedStubs).toContain(
+            'src/components/Card.module.scss',
+        );
+        expect(result.unusedBundles).toHaveLength(1);
+        expect(result.unusedBundles[0].baseName).toBe('Button');
 
         const content = await readFileContent(
             join(tempDir, 'src/components/Card.module.scss'),
@@ -4298,12 +4308,14 @@ describe('updateCssStubsWithCapturedBundles', () => {
 
         await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(3);
+        expect(result.updatedCount).toBe(3);
+        expect(result.unusedBundles).toHaveLength(0);
+        expect(result.unmatchedStubs).toHaveLength(0);
     });
 
     test('should skip node_modules and hidden directories', async () => {
@@ -4341,12 +4353,14 @@ describe('updateCssStubsWithCapturedBundles', () => {
             },
         ];
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(0);
+        expect(result.updatedCount).toBe(0);
+        // All stubs should be skipped (node_modules, hidden, _server dirs)
+        expect(result.allStubs).toHaveLength(0);
     });
 
     test('should call onProgress callback', async () => {
@@ -4430,11 +4444,13 @@ describe('updateCssStubsWithCapturedBundles', () => {
 
         await mkdir(join(tempDir, '_server', 'static'), { recursive: true });
 
-        const count = await updateCssStubsWithCapturedBundles(
+        const result = await updateCssStubsWithCapturedBundles(
             tempDir,
             capturedBundles,
         );
 
-        expect(count).toBe(3);
+        expect(result.updatedCount).toBe(3);
+        expect(result.unusedBundles).toHaveLength(0);
+        expect(result.unmatchedStubs).toHaveLength(0);
     });
 });

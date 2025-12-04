@@ -1371,9 +1371,29 @@ export async function generateMissingCssModuleStubs(
 }
 
 /**
+ * Result from updating CSS stubs with captured bundles.
+ * Provides detailed information about what was matched and what wasn't,
+ * enabling fallback to global CSS injection when source maps aren't available.
+ */
+export interface CssStubUpdateResult {
+    /** Number of stubs successfully updated with bundle content */
+    updatedCount: number;
+    /** Stubs that couldn't be matched to any captured bundle (relative paths) */
+    unmatchedStubs: string[];
+    /** Captured bundles that weren't used by any stub */
+    unusedBundles: CapturedCssBundle[];
+    /** All CSS stubs found (relative paths) */
+    allStubs: string[];
+}
+
+/**
  * Updates existing CSS stub files with content from captured CSS bundles.
  * This is called after API/static capture to enhance previously generated
  * empty CSS stubs with actual minified CSS content.
+ *
+ * Returns detailed information about matched/unmatched stubs and bundles,
+ * which can be used to determine if global CSS injection is needed
+ * (when source maps aren't available, bundles won't match individual module stubs).
  */
 export async function updateCssStubsWithCapturedBundles(
     sourceDir: string,
@@ -1381,12 +1401,17 @@ export async function updateCssStubsWithCapturedBundles(
     options: {
         onProgress?: (message: string) => void;
     } = {},
-): Promise<number> {
+): Promise<CssStubUpdateResult> {
     const { onProgress } = options;
-    let count = 0;
+    const result: CssStubUpdateResult = {
+        updatedCount: 0,
+        unmatchedStubs: [],
+        unusedBundles: [...capturedCssBundles], // Start with all, remove as we match
+        allStubs: [],
+    };
 
     if (capturedCssBundles.length === 0) {
-        return 0;
+        return result;
     }
 
     // Find all CSS/SCSS files that are stubs (contain the stub marker comment)
@@ -1441,17 +1466,21 @@ export async function updateCssStubsWithCapturedBundles(
     }
 
     const stubFiles = await scanForCssStubs(sourceDir);
+    result.allStubs = stubFiles.map((s) => relative(sourceDir, s));
 
     for (const stubPath of stubFiles) {
         const filename = basename(stubPath);
         const stubBaseName = filename.replace(/\.(css|scss|sass|less)$/i, '');
+        const relativeStubPath = relative(sourceDir, stubPath);
 
         // Try to find a matching captured bundle
-        const matchedBundle = capturedCssBundles.find(
+        const matchedBundleIndex = result.unusedBundles.findIndex(
             (bundle) => bundle.baseName === stubBaseName,
         );
 
-        if (matchedBundle) {
+        if (matchedBundleIndex !== -1) {
+            const matchedBundle = result.unusedBundles[matchedBundleIndex];
+
             // Determine if this is a CSS module
             const isModule = stubPath.includes('.module.');
 
@@ -1483,13 +1512,19 @@ export async function updateCssStubsWithCapturedBundles(
 
             await writeFile(stubPath, newContent, 'utf-8');
             onProgress?.(
-                `Updated CSS stub with captured content: ${relative(sourceDir, stubPath)}`,
+                `Updated CSS stub with captured content: ${relativeStubPath}`,
             );
-            count++;
+            result.updatedCount++;
+
+            // Remove from unused bundles
+            result.unusedBundles.splice(matchedBundleIndex, 1);
+        } else {
+            // No matching bundle found for this stub
+            result.unmatchedStubs.push(relativeStubPath);
         }
     }
 
-    return count;
+    return result;
 }
 
 /**

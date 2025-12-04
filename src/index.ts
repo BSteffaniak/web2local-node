@@ -28,6 +28,7 @@ import {
 import {
     generateStubFiles,
     updateCssStubsWithCapturedBundles,
+    type CssStubUpdateResult,
 } from './stub-generator.js';
 import { type CapturedCssBundle, extractCssBaseName } from './css-recovery.js';
 import { initCache } from './fingerprint-cache.js';
@@ -40,6 +41,7 @@ import {
     extractAliasesFromTsConfig,
 } from './rebuild/index.js';
 import { FetchError } from './http.js';
+import { needsGlobalCssInjection } from './rebuild/global-css-injector.js';
 
 async function main() {
     const options = parseArgs();
@@ -136,9 +138,9 @@ async function main() {
             console.log(
                 chalk.yellow(
                     '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.' +
-                        (bundlesWithoutMaps.length > 0
-                            ? '\n\nTip: Use --save-bundles to save minified JS/CSS files anyway.'
-                            : ''),
+                    (bundlesWithoutMaps.length > 0
+                        ? '\n\nTip: Use --save-bundles to save minified JS/CSS files anyway.'
+                        : ''),
                 ),
             );
             process.exit(0);
@@ -383,11 +385,11 @@ async function main() {
 
             reconstructSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
-                    (reconstructResult.filesSkipped > 0
-                        ? chalk.gray(
-                              ` (${reconstructResult.filesSkipped} skipped)`,
-                          )
-                        : ''),
+                (reconstructResult.filesSkipped > 0
+                    ? chalk.gray(
+                        ` (${reconstructResult.filesSkipped} skipped)`,
+                    )
+                    : ''),
             );
 
             if (reconstructResult.errors.length > 0 && options.verbose) {
@@ -438,8 +440,8 @@ async function main() {
                     {
                         onProgress: options.verbose
                             ? (file) => {
-                                  depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
-                              }
+                                depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
+                            }
                             : undefined,
                         onVersionProgress: (stage, packageName, result) => {
                             switch (stage) {
@@ -786,11 +788,11 @@ async function main() {
                 // Verbose logging that works with the spinner
                 onVerbose: options.verbose
                     ? (message) => {
-                          // Clear spinner, log message, re-render spinner
-                          captureSpinner.clear();
-                          console.log(chalk.gray(`  ${message}`));
-                          captureSpinner.render();
-                      }
+                        // Clear spinner, log message, re-render spinner
+                        captureSpinner.clear();
+                        console.log(chalk.gray(`  ${message}`));
+                        captureSpinner.render();
+                    }
                     : undefined,
             });
 
@@ -843,10 +845,10 @@ async function main() {
                     const color = status.startsWith('2')
                         ? chalk.green
                         : status.startsWith('4')
-                          ? chalk.yellow
-                          : status.startsWith('5')
-                            ? chalk.red
-                            : chalk.gray;
+                            ? chalk.yellow
+                            : status.startsWith('5')
+                                ? chalk.red
+                                : chalk.gray;
                     return color(`${status}: ${count}`);
                 })
                 .join(', ');
@@ -899,24 +901,73 @@ async function main() {
 
                     if (capturedCssBundles.length > 0) {
                         const sourceDir = join(options.output, hostname);
-                        const updatedCount =
+                        const cssStubResult =
                             await updateCssStubsWithCapturedBundles(
                                 sourceDir,
                                 capturedCssBundles,
                                 {
                                     onProgress: options.verbose
                                         ? (msg) =>
-                                              console.log(
-                                                  chalk.gray(`    ${msg}`),
-                                              )
+                                            console.log(
+                                                chalk.gray(`    ${msg}`),
+                                            )
                                         : undefined,
                                 },
                             );
 
-                        if (updatedCount > 0) {
+                        if (cssStubResult.updatedCount > 0) {
                             console.log(
-                                `    ${chalk.green('✓')} Updated ${chalk.bold(updatedCount)} CSS stubs with captured bundle content`,
+                                `    ${chalk.green('✓')} Updated ${chalk.bold(cssStubResult.updatedCount)} CSS stubs with captured bundle content`,
                             );
+                        }
+
+                        // Check if we need global CSS injection (source maps weren't available)
+                        if (
+                            needsGlobalCssInjection(
+                                cssStubResult.unmatchedStubs,
+                                cssStubResult.unusedBundles,
+                            )
+                        ) {
+                            console.log(
+                                `    ${chalk.yellow('!')} ${chalk.bold(cssStubResult.unmatchedStubs.length)} CSS stubs couldn't be matched to captured bundles`,
+                            );
+                            console.log(
+                                chalk.gray(
+                                    `      Global CSS injection will be applied during rebuild`,
+                                ),
+                            );
+
+                            // Store the unused bundles info in the server manifest for rebuild to use
+                            const manifestPath = join(
+                                sourceDir,
+                                '_server',
+                                'manifest.json',
+                            );
+                            try {
+                                const manifestContent = await readFile(
+                                    manifestPath,
+                                    'utf-8',
+                                );
+                                const manifest = JSON.parse(manifestContent);
+                                manifest.unusedCssBundles =
+                                    cssStubResult.unusedBundles.map((b) => ({
+                                        url: b.url,
+                                        localPath: b.localPath,
+                                        filename: b.filename,
+                                        baseName: b.baseName,
+                                    }));
+                                manifest.unmatchedCssStubs =
+                                    cssStubResult.unmatchedStubs;
+                                await import('fs/promises').then((fs) =>
+                                    fs.writeFile(
+                                        manifestPath,
+                                        JSON.stringify(manifest, null, 2),
+                                        'utf-8',
+                                    ),
+                                );
+                            } catch {
+                                // Manifest may not exist yet, that's fine
+                            }
                         }
                     }
                 }
