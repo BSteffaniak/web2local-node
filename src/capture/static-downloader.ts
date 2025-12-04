@@ -11,6 +11,59 @@ import { createHash } from 'crypto';
 import type { CapturedAsset, ResourceType } from './types.js';
 
 /**
+ * Direct HTTP fetch with proper streaming support.
+ * Used as a fallback when Playwright's response.body() returns truncated data.
+ */
+async function fetchWithRetry(
+    url: string,
+    maxRetries: number = 3,
+    timeout: number = 30000,
+): Promise<Buffer | null> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            const response = await fetch(url, {
+                signal: controller.signal,
+                headers: {
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    Accept: '*/*',
+                },
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            // Verify content length if header present
+            const contentLength = parseInt(
+                response.headers.get('content-length') || '0',
+                10,
+            );
+            if (contentLength > 0 && buffer.length !== contentLength) {
+                // Truncated, retry
+                continue;
+            }
+
+            return buffer;
+        } catch {
+            // Retry on error
+            if (attempt === maxRetries) {
+                return null;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Options for static asset capture
  */
 export interface StaticCaptureOptions {
@@ -100,35 +153,6 @@ function shouldCaptureResourceType(
  */
 function getBaseDomain(host: string): string {
     return host.replace(/^www\./, '');
-}
-
-/**
- * Check if a URL is same-site (same domain or CDN subdomain)
- */
-function isSameSite(urlObj: URL, baseUrlObj: URL): boolean {
-    // Exact origin match
-    if (urlObj.origin === baseUrlObj.origin) {
-        return true;
-    }
-
-    const baseDomain = getBaseDomain(baseUrlObj.host);
-    const urlHost = urlObj.host;
-
-    // Check for common subdomains of the same domain
-    // e.g., cdn.bob.com, api.bob.com, www.bob.com
-    if (
-        urlHost === baseDomain ||
-        urlHost === `www.${baseDomain}` ||
-        urlHost === `cdn.${baseDomain}` ||
-        urlHost === `static.${baseDomain}` ||
-        urlHost === `assets.${baseDomain}` ||
-        urlHost === `images.${baseDomain}` ||
-        urlHost === `media.${baseDomain}`
-    ) {
-        return true;
-    }
-
-    return false;
 }
 
 /**
@@ -237,6 +261,14 @@ export class StaticCapturer {
     private originalDocumentHtml: string | null = null;
     /** URL of the original document */
     private originalDocumentUrl: string | null = null;
+    /** Track truncated files that couldn't be recovered */
+    private truncatedFiles: Array<{
+        url: string;
+        expectedSize: number;
+        actualSize: number;
+    }> = [];
+    /** Track files that were recovered via direct fetch */
+    private recoveredFiles: string[] = [];
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -413,9 +445,10 @@ export class StaticCapturer {
         _resourceType: ResourceType,
     ): Promise<void> {
         try {
+            const headers = response.headers();
             // Check content length header first
             const contentLength = parseInt(
-                response.headers()['content-length'] || '0',
+                headers['content-length'] || '0',
                 10,
             );
             if (contentLength > this.options.maxFileSize) {
@@ -425,7 +458,7 @@ export class StaticCapturer {
                 return;
             }
 
-            // Get the body
+            // Get the body from Playwright
             let body: Buffer;
             try {
                 body = await response.body();
@@ -433,6 +466,49 @@ export class StaticCapturer {
                 // Response body may not be available (e.g., redirects, cached responses)
                 this.log(`[Static] Could not get body for ${url}: ${error}`);
                 return;
+            }
+
+            // Verify content length matches (if header was present and non-zero)
+            // This detects truncated responses from chunked transfers or aborted connections
+            // Note: We only check for body.length < contentLength (truncation)
+            // body.length > contentLength is normal for compressed responses (gzip/br)
+            // where Content-Length is the compressed size but body() returns decompressed
+            if (contentLength > 0 && body.length < contentLength) {
+                this.log(
+                    `[Static] Truncated response detected for ${url}: ` +
+                        `expected ${contentLength} bytes, got ${body.length} bytes. Retrying with direct fetch...`,
+                );
+
+                // Try to recover with direct HTTP fetch
+                const recoveredBody = await fetchWithRetry(url);
+                if (recoveredBody && recoveredBody.length === contentLength) {
+                    this.log(
+                        `[Static] Successfully recovered ${url} via direct fetch (${recoveredBody.length} bytes)`,
+                    );
+                    body = recoveredBody;
+                    this.recoveredFiles.push(url);
+                } else if (
+                    recoveredBody &&
+                    recoveredBody.length > body.length
+                ) {
+                    // Got more data than before, use it even if not complete
+                    this.log(
+                        `[Static] Partial recovery for ${url}: got ${recoveredBody.length} bytes (expected ${contentLength})`,
+                    );
+                    body = recoveredBody;
+                    this.recoveredFiles.push(url);
+                } else {
+                    // Could not recover, track as truncated
+                    this.log(
+                        `[Static] WARNING: Could not recover truncated file ${url}`,
+                    );
+                    this.truncatedFiles.push({
+                        url,
+                        expectedSize: contentLength,
+                        actualSize: body.length,
+                    });
+                    // Still save what we have - it might be partially usable
+                }
             }
 
             // Double-check size
@@ -622,6 +698,8 @@ export class StaticCapturer {
         totalAssets: number;
         totalBytes: number;
         byType: Record<string, { count: number; bytes: number }>;
+        truncatedFiles: number;
+        recoveredFiles: number;
     } {
         const byType: Record<string, { count: number; bytes: number }> = {};
 
@@ -638,7 +716,27 @@ export class StaticCapturer {
             totalAssets: this.assets.length,
             totalBytes: this.assets.reduce((sum, a) => sum + a.size, 0),
             byType,
+            truncatedFiles: this.truncatedFiles.length,
+            recoveredFiles: this.recoveredFiles.length,
         };
+    }
+
+    /**
+     * Get list of truncated files that couldn't be fully recovered
+     */
+    getTruncatedFiles(): Array<{
+        url: string;
+        expectedSize: number;
+        actualSize: number;
+    }> {
+        return this.truncatedFiles;
+    }
+
+    /**
+     * Get list of files that were recovered via direct fetch
+     */
+    getRecoveredFiles(): string[] {
+        return this.recoveredFiles;
     }
 
     /**
@@ -652,6 +750,8 @@ export class StaticCapturer {
         this.baseOrigin = null;
         this.originalDocumentHtml = null;
         this.originalDocumentUrl = null;
+        this.truncatedFiles = [];
+        this.recoveredFiles = [];
     }
 }
 
