@@ -252,19 +252,66 @@ describe('findDependencyReexport', () => {
 });
 
 describe('generateExportStatement', () => {
-    it('should generate namespace export statement', () => {
+    it('should generate namespace export statement with simple path', () => {
         const resolution: ExportResolution = {
             type: 'namespace',
             sourcePath: 'src/components/InventoryTag.tsx',
             exportName: 'InventoryTag',
         };
 
+        // Without index file path, uses sourcePath directly
         const result = generateExportStatement(resolution);
 
         expect(result).toContain(
             "import * as InventoryTag from './src/components/InventoryTag'",
         );
         expect(result).toContain('export { InventoryTag }');
+    });
+
+    it('should generate namespace export with correct relative path from index file', () => {
+        const resolution: ExportResolution = {
+            type: 'namespace',
+            sourcePath: 'src/js/components/InventoryTag.tsx',
+            exportName: 'InventoryTag',
+        };
+
+        // When index is in src/, the path should be relative to src/
+        // packagePath = /pkg, indexFilePath = /pkg/src/index.ts
+        // sourcePath = src/js/components/InventoryTag.tsx
+        // Expected: ./js/components/InventoryTag
+        const result = generateExportStatement(
+            resolution,
+            '/pkg/src/index.ts',
+            '/pkg',
+        );
+
+        expect(result).toContain(
+            "import * as InventoryTag from './js/components/InventoryTag'",
+        );
+        expect(result).toContain('export { InventoryTag }');
+    });
+
+    it('should generate namespace export with correct relative path when index is at package root', () => {
+        const resolution: ExportResolution = {
+            type: 'namespace',
+            sourcePath: 'lib/helpers/Utils.tsx',
+            exportName: 'Utils',
+        };
+
+        // When index is at package root
+        // packagePath = /pkg, indexFilePath = /pkg/index.ts
+        // sourcePath = lib/helpers/Utils.tsx
+        // Expected: ./lib/helpers/Utils
+        const result = generateExportStatement(
+            resolution,
+            '/pkg/index.ts',
+            '/pkg',
+        );
+
+        expect(result).toContain(
+            "import * as Utils from './lib/helpers/Utils'",
+        );
+        expect(result).toContain('export { Utils }');
     });
 
     it('should generate re-export statement', () => {

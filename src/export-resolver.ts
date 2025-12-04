@@ -8,7 +8,7 @@
  */
 
 import { readdir, readFile, stat } from 'fs/promises';
-import { join, basename, relative, extname } from 'path';
+import { join, basename, relative, extname, dirname } from 'path';
 import { extractExportsFromSource } from './export-extractor.js';
 import {
     extractImportsFromSource,
@@ -495,11 +495,15 @@ export async function resolvePackageMissingExports(
 /**
  * Generates the export statement for a resolution.
  * Returns the code to add to the index file.
+ *
+ * @param resolution - The resolution to generate an export for
+ * @param indexFilePath - The path to the index file where the export will be added
+ * @param packagePath - The package root path (used to resolve sourcePath)
  */
 export function generateExportStatement(
     resolution: ExportResolution,
-    _indexDir?: string,
-    _sourceDir?: string,
+    indexFilePath?: string,
+    packagePath?: string,
 ): string {
     switch (resolution.type) {
         case 'namespace': {
@@ -509,10 +513,22 @@ export function generateExportStatement(
             // Remove extension for import
             importPath = importPath.replace(/\.(tsx?|jsx?)$/, '');
 
+            // If we have the index file path and package path, compute the correct relative path
+            if (indexFilePath && packagePath) {
+                const indexDir = dirname(indexFilePath);
+                // sourcePath is relative to packagePath, so get the absolute path first
+                const absoluteSourcePath = join(packagePath, importPath);
+                // Then compute the relative path from the index file's directory
+                importPath = relative(indexDir, absoluteSourcePath);
+            }
+
             // Ensure it starts with ./
             if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
                 importPath = './' + importPath;
             }
+
+            // Normalize path separators for imports (use forward slashes)
+            importPath = importPath.replace(/\\/g, '/');
 
             return [
                 `import * as ${resolution.exportName} from '${importPath}';`,

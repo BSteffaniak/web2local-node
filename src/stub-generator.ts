@@ -522,13 +522,28 @@ export async function generateIndexFile(
     let adjustedImportLines = importLines;
     let adjustedNamespaceExportLines = namespaceExportLines;
     if (hasSrc) {
-        adjustedExportLines = exportLines.map((line) => {
-            // Change './src/...' to './' since index will be in src/
-            return line.replace(/from '\.\/(src\/)?/g, "from './");
-        });
-        adjustedImportLines = importLines.map((line) => {
-            return line.replace(/from '\.\/(src\/)?/g, "from './");
-        });
+        // Helper to adjust paths for index in src/
+        const adjustPath = (line: string): string => {
+            // Match the path in from '...' or from "..."
+            return line.replace(
+                /from ['"](\.[^'"]+)['"]/g,
+                (match, path: string) => {
+                    // './src/foo' → './foo' (file is in src/, index is in src/)
+                    if (path.startsWith('./src/')) {
+                        return `from '${path.replace('./src/', './')}'`;
+                    }
+                    // './foo' where foo is at package root → '../foo'
+                    // (file is at package root, index is in src/)
+                    if (path.startsWith('./') && !path.startsWith('./src/')) {
+                        return `from '${path.replace('./', '../')}'`;
+                    }
+                    return match;
+                },
+            );
+        };
+        adjustedExportLines = exportLines.map(adjustPath);
+        adjustedImportLines = importLines.map(adjustPath);
+        adjustedNamespaceExportLines = namespaceExportLines.map(adjustPath);
     }
 
     // Build content with namespace imports at the top, then regular exports, then namespace exports
@@ -3099,6 +3114,8 @@ export async function appendMissingBarrelExports(
                     if (info.resolution?.type === 'namespace') {
                         const statement = generateExportStatement(
                             info.resolution,
+                            missing.indexPath,
+                            packagePath,
                         );
                         if (statement) {
                             appendLines.push(statement);
@@ -3118,6 +3135,8 @@ export async function appendMissingBarrelExports(
                     if (info.resolution?.type === 'reexport') {
                         const statement = generateExportStatement(
                             info.resolution,
+                            missing.indexPath,
+                            packagePath,
                         );
                         if (statement) {
                             appendLines.push(statement);
