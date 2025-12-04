@@ -3731,3 +3731,318 @@ export { FOO } from './values';
         expect(newContent).toBe(originalContent);
     });
 });
+
+// ============================================================================
+// ASSET STUB RESOLVER
+// ============================================================================
+
+import {
+    analyzeAssetStub,
+    generatePlaceholderContent,
+    findAssetStubs,
+    resolveAssetStubs,
+    findAndResolveAssetStubs,
+} from '../src/asset-stub-resolver.js';
+
+describe('analyzeAssetStub', () => {
+    test('should detect Vite asset stub pattern', () => {
+        const content = 'export default "__VITE_ASSET__DmmghgNB__"';
+        const result = analyzeAssetStub(content, 'icon.svg');
+
+        expect(result).not.toBeNull();
+        expect(result?.bundler).toBe('vite');
+        expect(result?.assetId).toBe('DmmghgNB');
+        expect(result?.extension).toBe('.svg');
+        expect(result?.stubValue).toBe('__VITE_ASSET__DmmghgNB__');
+    });
+
+    test('should detect Vite asset stub with special characters in hash', () => {
+        const content = 'export default "__VITE_ASSET__B_uop8$S__"';
+        const result = analyzeAssetStub(content, 'image.webp');
+
+        expect(result).not.toBeNull();
+        expect(result?.bundler).toBe('vite');
+        expect(result?.assetId).toBe('B_uop8$S');
+        expect(result?.extension).toBe('.webp');
+    });
+
+    test('should detect Vite public asset stub pattern', () => {
+        const content = 'export default "__VITE_PUBLIC_ASSET__abc123__"';
+        const result = analyzeAssetStub(content, 'logo.png');
+
+        expect(result).not.toBeNull();
+        expect(result?.bundler).toBe('vite');
+        expect(result?.assetId).toBe('abc123');
+    });
+
+    test('should handle variable reference pattern', () => {
+        const content = `const asset = "__VITE_ASSET__xyz789__";
+export default asset;`;
+        const result = analyzeAssetStub(content, 'photo.jpg');
+
+        expect(result).not.toBeNull();
+        expect(result?.bundler).toBe('vite');
+        expect(result?.assetId).toBe('xyz789');
+    });
+
+    test('should return null for non-asset files', () => {
+        const content = 'export default "__VITE_ASSET__abc123__"';
+        const result = analyzeAssetStub(content, 'utils.ts');
+
+        expect(result).toBeNull();
+    });
+
+    test('should return null for regular TypeScript files', () => {
+        const content = `export const foo = "bar";
+export default foo;`;
+        const result = analyzeAssetStub(content, 'config.svg');
+
+        expect(result).toBeNull();
+    });
+
+    test('should return null for data URI exports', () => {
+        const content =
+            'export default "data:image/svg+xml;base64,PHN2ZyB4bWxucz0..."';
+        const result = analyzeAssetStub(content, 'icon.svg');
+
+        expect(result).toBeNull();
+    });
+
+    test('should return null for URL exports', () => {
+        const content = 'export default "/assets/image.png"';
+        const result = analyzeAssetStub(content, 'image.png');
+
+        expect(result).toBeNull();
+    });
+});
+
+describe('generatePlaceholderContent', () => {
+    test('should generate valid SVG placeholder', () => {
+        const content = generatePlaceholderContent('.svg');
+        expect(content).not.toBeNull();
+        expect(typeof content).toBe('string');
+        expect(content).toContain('<svg');
+        expect(content).toContain('xmlns');
+    });
+
+    test('should generate PNG placeholder as Buffer', () => {
+        const content = generatePlaceholderContent('.png');
+        expect(content).not.toBeNull();
+        expect(Buffer.isBuffer(content)).toBe(true);
+        // PNG magic bytes
+        expect((content as Buffer)[0]).toBe(0x89);
+        expect((content as Buffer)[1]).toBe(0x50);
+    });
+
+    test('should generate JPG placeholder as Buffer', () => {
+        const content = generatePlaceholderContent('.jpg');
+        expect(content).not.toBeNull();
+        expect(Buffer.isBuffer(content)).toBe(true);
+        // JPG magic bytes (0xFF 0xD8)
+        expect((content as Buffer)[0]).toBe(0xff);
+        expect((content as Buffer)[1]).toBe(0xd8);
+    });
+
+    test('should generate WebP placeholder as Buffer', () => {
+        const content = generatePlaceholderContent('.webp');
+        expect(content).not.toBeNull();
+        expect(Buffer.isBuffer(content)).toBe(true);
+        // RIFF header
+        expect((content as Buffer).slice(0, 4).toString()).toBe('RIFF');
+    });
+
+    test('should generate GIF placeholder as Buffer', () => {
+        const content = generatePlaceholderContent('.gif');
+        expect(content).not.toBeNull();
+        expect(Buffer.isBuffer(content)).toBe(true);
+        // GIF magic bytes
+        expect((content as Buffer).slice(0, 3).toString()).toBe('GIF');
+    });
+
+    test('should return null for unknown extension', () => {
+        const content = generatePlaceholderContent('.xyz');
+        expect(content).toBeNull();
+    });
+});
+
+describe('findAssetStubs', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+        tempDir = await createTempDir();
+    });
+
+    afterEach(async () => {
+        await rm(tempDir, { recursive: true, force: true });
+    });
+
+    test('should find Vite asset stubs in directory', async () => {
+        await createFile(
+            tempDir,
+            'images/icon.svg',
+            'export default "__VITE_ASSET__abc123__"',
+        );
+        await createFile(
+            tempDir,
+            'images/photo.jpg',
+            'export default "__VITE_ASSET__def456__"',
+        );
+        await createFile(tempDir, 'utils.ts', 'export const foo = "bar";');
+
+        const stubs = await findAssetStubs(tempDir);
+
+        expect(stubs.size).toBe(2);
+        expect(stubs.has(join(tempDir, 'images/icon.svg'))).toBe(true);
+        expect(stubs.has(join(tempDir, 'images/photo.jpg'))).toBe(true);
+    });
+
+    test('should not include regular TypeScript files', async () => {
+        await createFile(
+            tempDir,
+            'component.tsx',
+            'export default () => null;',
+        );
+        await createFile(
+            tempDir,
+            'icon.svg',
+            'export default "__VITE_ASSET__abc123__"',
+        );
+
+        const stubs = await findAssetStubs(tempDir);
+
+        expect(stubs.size).toBe(1);
+        expect(stubs.has(join(tempDir, 'icon.svg'))).toBe(true);
+    });
+});
+
+describe('resolveAssetStubs', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+        tempDir = await createTempDir();
+    });
+
+    afterEach(async () => {
+        await rm(tempDir, { recursive: true, force: true });
+    });
+
+    test('should replace SVG stub with placeholder', async () => {
+        const svgPath = await createFile(
+            tempDir,
+            'icon.svg',
+            'export default "__VITE_ASSET__abc123__"',
+        );
+
+        const stubs = await findAssetStubs(tempDir);
+        await resolveAssetStubs(tempDir, stubs);
+
+        const content = await readFileContent(svgPath);
+        expect(content).toContain('<svg');
+        expect(content).not.toContain('__VITE_ASSET__');
+    });
+
+    test('should replace PNG stub with placeholder', async () => {
+        const pngPath = await createFile(
+            tempDir,
+            'image.png',
+            'export default "__VITE_ASSET__def456__"',
+        );
+
+        const stubs = await findAssetStubs(tempDir);
+        await resolveAssetStubs(tempDir, stubs);
+
+        const content = await readFile(pngPath);
+        // PNG magic bytes
+        expect(content[0]).toBe(0x89);
+        expect(content[1]).toBe(0x50);
+    });
+
+    test('should not modify files in dry run mode', async () => {
+        const svgPath = await createFile(
+            tempDir,
+            'icon.svg',
+            'export default "__VITE_ASSET__abc123__"',
+        );
+        const originalContent = await readFileContent(svgPath);
+
+        const stubs = await findAssetStubs(tempDir);
+        await resolveAssetStubs(tempDir, stubs, { dryRun: true });
+
+        const content = await readFileContent(svgPath);
+        expect(content).toBe(originalContent);
+    });
+
+    test('should return correct counts', async () => {
+        await createFile(
+            tempDir,
+            'icon.svg',
+            'export default "__VITE_ASSET__abc__"',
+        );
+        await createFile(
+            tempDir,
+            'photo.jpg',
+            'export default "__VITE_ASSET__def__"',
+        );
+        await createFile(
+            tempDir,
+            'logo.png',
+            'export default "__VITE_ASSET__ghi__"',
+        );
+
+        const stubs = await findAssetStubs(tempDir);
+        const result = await resolveAssetStubs(tempDir, stubs);
+
+        expect(result.resolved).toBe(3);
+        expect(result.failed).toBe(0);
+        expect(result.byExtension['.svg']).toBe(1);
+        expect(result.byExtension['.jpg']).toBe(1);
+        expect(result.byExtension['.png']).toBe(1);
+    });
+});
+
+describe('findAndResolveAssetStubs', () => {
+    let tempDir: string;
+
+    beforeEach(async () => {
+        tempDir = await createTempDir();
+    });
+
+    afterEach(async () => {
+        await rm(tempDir, { recursive: true, force: true });
+    });
+
+    test('should find and resolve all asset stubs', async () => {
+        await createFile(
+            tempDir,
+            'assets/icon.svg',
+            'export default "__VITE_ASSET__abc__"',
+        );
+        await createFile(
+            tempDir,
+            'assets/bg.webp',
+            'export default "__VITE_ASSET__def__"',
+        );
+
+        const result = await findAndResolveAssetStubs(tempDir);
+
+        expect(result.found).toBe(2);
+        expect(result.resolved).toBe(2);
+        expect(result.failed).toBe(0);
+
+        // Verify files were actually replaced
+        const svgContent = await readFileContent(
+            join(tempDir, 'assets/icon.svg'),
+        );
+        expect(svgContent).toContain('<svg');
+    });
+
+    test('should return zeros when no stubs found', async () => {
+        await createFile(tempDir, 'app.ts', 'export const x = 1;');
+
+        const result = await findAndResolveAssetStubs(tempDir);
+
+        expect(result.found).toBe(0);
+        expect(result.resolved).toBe(0);
+        expect(result.failed).toBe(0);
+    });
+});

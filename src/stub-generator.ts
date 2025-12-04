@@ -17,8 +17,8 @@ import {
 import {
     extractNamedImportsForSource,
     extractProcessEnvAccesses,
-    extractMemberAccesses,
 } from './ast-utils.js';
+import { findAndResolveAssetStubs } from './asset-stub-resolver.js';
 
 /**
  * Information about a package that needs stub files
@@ -2930,6 +2930,7 @@ export async function generateStubFiles(
     typeFileStubsGenerated: number;
     missingSourceStubsGenerated: number;
     missingBarrelExportsFixed: number;
+    assetStubsResolved: number;
     duplicateExportsFixed: number;
     envDeclarationsGenerated: boolean;
     envVars: string[];
@@ -2959,6 +2960,7 @@ export async function generateStubFiles(
         typeFileStubsGenerated: 0,
         missingSourceStubsGenerated: 0,
         missingBarrelExportsFixed: 0,
+        assetStubsResolved: 0,
         duplicateExportsFixed: 0,
         envDeclarationsGenerated: false,
         envVars: [] as string[],
@@ -3118,6 +3120,15 @@ export async function generateStubFiles(
             );
         }
     }
+
+    // Resolve asset stubs (bundler-generated placeholders like __VITE_ASSET__)
+    onProgress?.('Resolving asset stubs...');
+    const assetStubResult = await findAndResolveAssetStubs(sourceDir, {
+        internalPackages,
+        dryRun,
+        onProgress,
+    });
+    result.assetStubsResolved = assetStubResult.resolved;
 
     // Fix duplicate exports in generated index files
     onProgress?.('Fixing duplicate exports in generated index files...');
