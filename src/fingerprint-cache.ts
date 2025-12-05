@@ -187,6 +187,18 @@ export interface NpmPackageExistenceCache {
     fetchedAt: number;
 }
 
+/**
+ * Cache for npm version validation checks
+ * Used to verify if a specific version of a package exists on npm
+ */
+export interface NpmVersionValidationCache {
+    packageName: string;
+    version: string;
+    /** true = this version exists on npm, false = version not found */
+    valid: boolean;
+    fetchedAt: number;
+}
+
 export interface CacheOptions {
     cacheDir?: string;
     ttl?: number;
@@ -210,6 +222,7 @@ export class FingerprintCache {
         | DependencyManifestCache
         | PackageFileListCache
         | NpmPackageExistenceCache
+        | NpmVersionValidationCache
     > = new Map();
 
     constructor(options: CacheOptions = {}) {
@@ -245,6 +258,9 @@ export class FingerprintCache {
             await mkdir(join(this.cacheDir, 'manifests'), { recursive: true });
             await mkdir(join(this.cacheDir, 'file-lists'), { recursive: true });
             await mkdir(join(this.cacheDir, 'npm-existence'), {
+                recursive: true,
+            });
+            await mkdir(join(this.cacheDir, 'npm-version-validation'), {
                 recursive: true,
             });
         } catch {
@@ -1254,6 +1270,94 @@ export class FingerprintCache {
 
         try {
             const filePath = this.getNpmExistencePath(cache.packageName);
+            await writeFile(filePath, JSON.stringify(cache, null, 2), 'utf-8');
+        } catch {
+            // Ignore write errors
+        }
+    }
+
+    // ============================================
+    // NPM VERSION VALIDATION CACHE
+    // ============================================
+
+    /**
+     * Gets the cache file path for npm version validation check
+     */
+    private getNpmVersionValidationPath(
+        packageName: string,
+        version: string,
+    ): string {
+        const safeName = packageName.replace(/\//g, '__');
+        const safeVersion = version.replace(/[/\\:*?"<>|]/g, '_');
+        return join(
+            this.cacheDir,
+            'npm-version-validation',
+            `${safeName}@${safeVersion}.json`,
+        );
+    }
+
+    /**
+     * Gets cached npm version validation check result
+     * Uses longer TTL (30 days) since version existence rarely changes
+     */
+    async getNpmVersionValidation(
+        packageName: string,
+        version: string,
+    ): Promise<NpmVersionValidationCache | null> {
+        if (this.disabled) return null;
+
+        const memKey = `npmver:${packageName}@${version}`;
+        if (this.memoryCache.has(memKey)) {
+            const cached = this.memoryCache.get(
+                memKey,
+            ) as NpmVersionValidationCache;
+            // Use 30 day TTL for version validation checks
+            const npmVersionTtl = 30 * 24 * 60 * 60 * 1000;
+            if (Date.now() - cached.fetchedAt < npmVersionTtl) {
+                return cached;
+            }
+            this.memoryCache.delete(memKey);
+        }
+
+        try {
+            const filePath = this.getNpmVersionValidationPath(
+                packageName,
+                version,
+            );
+            const content = await readFile(filePath, 'utf-8');
+            const cached: NpmVersionValidationCache = JSON.parse(content);
+
+            // Use 30 day TTL for version validation checks
+            const npmVersionTtl = 30 * 24 * 60 * 60 * 1000;
+            if (Date.now() - cached.fetchedAt < npmVersionTtl) {
+                this.memoryCache.set(memKey, cached);
+                return cached;
+            }
+
+            await unlink(filePath).catch(() => {});
+        } catch {
+            // Cache miss
+        }
+
+        return null;
+    }
+
+    /**
+     * Saves npm version validation check result to cache
+     */
+    async setNpmVersionValidation(
+        cache: NpmVersionValidationCache,
+    ): Promise<void> {
+        if (this.disabled) return;
+
+        const memKey = `npmver:${cache.packageName}@${cache.version}`;
+        this.memoryCache.set(memKey, cache);
+
+        try {
+            const filePath = this.getNpmVersionValidationPath(
+                cache.packageName,
+                cache.version,
+            );
             await writeFile(filePath, JSON.stringify(cache, null, 2), 'utf-8');
         } catch {
             // Ignore write errors

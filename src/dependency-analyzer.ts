@@ -623,6 +623,106 @@ export async function isPublicNpmPackage(
 }
 
 /**
+ * Validates if a specific version of a package exists on npm registry (cached)
+ * Returns true if version exists, false if not found
+ */
+export async function validateNpmVersion(
+    packageName: string,
+    version: string,
+): Promise<boolean> {
+    const cache = getCache();
+
+    // Check cache first
+    const cached = await cache.getNpmVersionValidation(packageName, version);
+    if (cached) {
+        return cached.valid;
+    }
+
+    // Fetch from npm registry - check if this specific version exists
+    try {
+        const response = await robustFetch(
+            `https://registry.npmjs.org/${encodeURIComponent(packageName)}/${encodeURIComponent(version)}`,
+            {
+                method: 'HEAD',
+            },
+        );
+        const valid = response.ok;
+
+        // Cache the result
+        await cache.setNpmVersionValidation({
+            packageName,
+            version,
+            valid,
+            fetchedAt: Date.now(),
+        });
+
+        return valid;
+    } catch {
+        // Network error - don't cache, assume valid to be safe
+        return true;
+    }
+}
+
+/**
+ * Validates versions for multiple packages in batches
+ * Returns a map of package@version -> isValid
+ * Also returns replacement versions for invalid ones (fetched from npm latest)
+ */
+export async function validateNpmVersionsBatch(
+    packages: Array<{ name: string; version: string }>,
+    concurrency: number = 10,
+    onProgress?: (
+        completed: number,
+        total: number,
+        packageName: string,
+        version: string,
+        valid: boolean,
+    ) => void,
+): Promise<{
+    validations: Map<string, boolean>;
+    replacements: Map<string, string>;
+}> {
+    const validations = new Map<string, boolean>();
+    const invalidPackages: string[] = [];
+    let completed = 0;
+
+    // Process validation in batches
+    for (let i = 0; i < packages.length; i += concurrency) {
+        const batch = packages.slice(i, i + concurrency);
+        const results = await Promise.all(
+            batch.map(async ({ name, version }) => {
+                const valid = await validateNpmVersion(name, version);
+                completed++;
+                onProgress?.(completed, packages.length, name, version, valid);
+                return { name, version, valid };
+            }),
+        );
+
+        for (const { name, version, valid } of results) {
+            const key = `${name}@${version}`;
+            validations.set(key, valid);
+            if (!valid) {
+                invalidPackages.push(name);
+            }
+        }
+    }
+
+    // Fetch latest versions for invalid packages
+    const replacements = new Map<string, string>();
+    if (invalidPackages.length > 0) {
+        const latestVersions = await fetchNpmVersions(
+            invalidPackages,
+            concurrency,
+        );
+        for (const [name, latestVersion] of latestVersions) {
+            replacements.set(name, latestVersion);
+        }
+    }
+
+    return { validations, replacements };
+}
+
+/**
  * Extracts unique package names from node_modules paths in source files
  */
 export function extractNodeModulesPackages(
@@ -2696,6 +2796,70 @@ export async function generateDependencyManifest(
                     dep.versionSource = 'npm-latest';
                     stats.bySource.npmLatest++;
                     stats.byConfidence.unverified++;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------
+    // VERSION VALIDATION: Verify detected versions exist on npm
+    // This catches cases where version detection incorrectly applies
+    // a version from one package to another (e.g., @firebase/app getting
+    // the firebase version 11.x when @firebase/app is actually at 0.x)
+    // -----------------------------------------
+    const packagesWithVersions = Array.from(analysis.dependencies.entries())
+        .filter(([_, info]) => info.version && !info.isPrivate)
+        .map(([name, info]) => ({ name, version: info.version! }));
+
+    if (packagesWithVersions.length > 0) {
+        onVersionProgress?.(
+            'validating',
+            `Validating ${packagesWithVersions.length} detected versions...`,
+        );
+
+        const { validations, replacements } = await validateNpmVersionsBatch(
+            packagesWithVersions,
+            10,
+            (completed, total, packageName, version, valid) => {
+                if (!valid) {
+                    onVersionProgress?.(
+                        'invalid-version',
+                        `${packageName}@${version} not found on npm`,
+                    );
+                }
+            },
+        );
+
+        // Replace invalid versions with latest
+        for (const [name, info] of analysis.dependencies) {
+            if (info.version && !info.isPrivate) {
+                const key = `${name}@${info.version}`;
+                const isValid = validations.get(key);
+                if (isValid === false) {
+                    const replacement = replacements.get(name);
+                    if (replacement) {
+                        onVersionProgress?.(
+                            'version-replaced',
+                            `${name}: ${info.version} -> ${replacement} (original version not found on npm)`,
+                        );
+                        info.version = replacement;
+                        info.confidence = 'unverified';
+                        info.versionSource = 'npm-latest';
+                        // Update stats
+                        stats.bySource.npmLatest =
+                            (stats.bySource.npmLatest || 0) + 1;
+                        stats.byConfidence.unverified =
+                            (stats.byConfidence.unverified || 0) + 1;
+                    } else {
+                        // Could not get replacement, clear the version
+                        onVersionProgress?.(
+                            'version-cleared',
+                            `${name}: ${info.version} cleared (not found on npm, no replacement available)`,
+                        );
+                        info.version = null;
+                        info.confidence = undefined;
+                        info.versionSource = undefined;
+                    }
                 }
             }
         }
