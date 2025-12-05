@@ -43,6 +43,10 @@ import {
 } from './rebuild/index.js';
 import { FetchError } from './http.js';
 import { needsGlobalCssInjection } from './rebuild/global-css-injector.js';
+import {
+    resolveMissingDynamicImports,
+    updateManifestWithResolvedFiles,
+} from './dynamic-import-resolver.js';
 
 async function main() {
     const options = parseArgs();
@@ -1078,6 +1082,79 @@ async function main() {
             }
         } catch (error) {
             syncSpinner.warn(`Failed to sync dynamic bundles: ${error}`);
+        }
+
+        // Step 6.6: Resolve missing dynamic imports from bundles
+        // This parses JS/CSS bundles to find import() calls and @import rules,
+        // then fetches any missing files from the original server
+        const resolveSpinner = ora({
+            text: 'Resolving dynamic imports...',
+            color: 'cyan',
+        }).start();
+
+        try {
+            const resolveResult = await resolveMissingDynamicImports({
+                bundlesDir: join(sourceDir, '_bundles'),
+                staticDir: join(sourceDir, '_server', 'static'),
+                baseUrl: finalUrl,
+                maxIterations: options.resolveMaxIterations,
+                verbose: options.verbose,
+                onProgress: (msg) => {
+                    resolveSpinner.text = msg;
+                },
+            });
+
+            if (
+                resolveResult.fetchedFiles > 0 ||
+                resolveResult.copiedFiles > 0
+            ) {
+                const parts: string[] = [];
+                if (resolveResult.fetchedFiles > 0) {
+                    parts.push(`${resolveResult.fetchedFiles} fetched`);
+                }
+                if (resolveResult.copiedFiles > 0) {
+                    parts.push(`${resolveResult.copiedFiles} copied`);
+                }
+                resolveSpinner.succeed(
+                    `Resolved ${parts.join(', ')} dynamic imports (${resolveResult.iterations} iteration${resolveResult.iterations !== 1 ? 's' : ''})`,
+                );
+
+                // Update manifest with resolved files
+                const manifestPath = join(
+                    sourceDir,
+                    '_server',
+                    'manifest.json',
+                );
+                await updateManifestWithResolvedFiles(
+                    manifestPath,
+                    resolveResult.resolvedFiles,
+                );
+            } else {
+                resolveSpinner.info('No missing dynamic imports to resolve');
+            }
+
+            // Show warnings (404s, etc.)
+            if (resolveResult.warnings.length > 0) {
+                if (options.verbose) {
+                    for (const warning of resolveResult.warnings) {
+                        console.log(chalk.yellow(`    ${warning}`));
+                    }
+                } else if (resolveResult.warnings.length <= 5) {
+                    for (const warning of resolveResult.warnings) {
+                        console.log(chalk.yellow(`    ${warning}`));
+                    }
+                } else {
+                    console.log(
+                        chalk.yellow(
+                            `    ${resolveResult.warnings.length} files could not be resolved (use --verbose for details)`,
+                        ),
+                    );
+                }
+            }
+        } catch (error) {
+            resolveSpinner.warn(
+                `Dynamic import resolution had issues: ${error}`,
+            );
         }
     }
 

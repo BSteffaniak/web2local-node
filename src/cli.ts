@@ -32,6 +32,8 @@ export interface CliOptions {
     crawl: boolean;
     crawlMaxDepth: number;
     crawlMaxPages: number;
+    // Dynamic import resolution options
+    resolveMaxIterations: number;
 }
 
 export function parseArgs(): CliOptions {
@@ -163,6 +165,11 @@ export function parseArgs(): CliOptions {
             'Maximum number of pages to visit when crawling',
             '100',
         )
+        .option(
+            '--resolve-max-iterations <number>',
+            'Maximum iterations for resolving dynamic imports from bundles (default: 10)',
+            '10',
+        )
         .parse();
 
     const options = program.opts();
@@ -208,5 +215,7 @@ export function parseArgs(): CliOptions {
         crawl: options.crawl !== false,
         crawlMaxDepth: parseInt(options.crawlMaxDepth, 10),
         crawlMaxPages: parseInt(options.crawlMaxPages, 10),
+        // Dynamic import resolution options
+        resolveMaxIterations: parseInt(options.resolveMaxIterations, 10),
     };
 }
