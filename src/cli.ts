@@ -141,7 +141,7 @@ export function parseArgs(): CliOptions {
         )
         .option(
             '--save-bundles',
-            'Save minified JS/CSS bundles even when no source maps are available',
+            'Additionally save minified bundles that have source maps (bundles without source maps are always saved)',
             false,
         )
         .parse();

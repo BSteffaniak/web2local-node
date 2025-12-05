@@ -183,10 +183,13 @@ export async function findSourceMapUrl(
 
     // Check cache first
     const cached = await cache.getSourceMapDiscovery(bundleUrl);
-    if (cached) {
+    if (cached && cached.sourceMapUrl) {
+        // Cached positive result - we have a source map URL
         return { sourceMapUrl: cached.sourceMapUrl };
     }
 
+    // Either not cached, or cached as "no source map" - need to fetch the bundle
+    // (We always need the bundle content for fallback saving even if we know there's no source map)
     let sourceMapUrl: string | null = null;
 
     try {
@@ -199,6 +202,13 @@ export async function findSourceMapUrl(
             return { sourceMapUrl: null };
         }
 
+        const text = await response.text();
+
+        // If we already know there's no source map (from cache), skip the checks
+        if (cached) {
+            return { sourceMapUrl: null, bundleContent: text };
+        }
+
         // Check SourceMap header
         const sourceMapHeader =
             response.headers.get('SourceMap') ||
@@ -208,8 +218,6 @@ export async function findSourceMapUrl(
             await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
             return { sourceMapUrl };
         }
-
-        const text = await response.text();
 
         // Check for sourceMappingURL comment at the end
         const jsMatch = text.match(/\/\/[#@]\s*sourceMappingURL=(\S+)\s*$/);

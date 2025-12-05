@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readFile, stat } from 'fs/promises';
-import { dirname, join } from 'path';
+import { mkdir, writeFile, readFile, stat, readdir } from 'fs/promises';
+import { dirname, join, relative, extname } from 'path';
 import { createHash } from 'crypto';
 import { SourceFile, shouldIncludePath } from './sourcemap.js';
 import type { BundleWithContent } from './scraper.js';
@@ -294,4 +294,200 @@ export async function saveBundles(
     }
 
     return { saved, errors };
+}
+
+/**
+ * Options for generating bundle stub entry point
+ */
+export interface BundleStubOptions {
+    outputDir: string;
+    siteHostname: string;
+    /** Bundles saved to _bundles/ (no source maps available) */
+    savedBundles: SavedBundle[];
+    /** Bundles that were extracted from source maps (to include re-exports) */
+    extractedBundles?: Array<{ bundleName: string; entryPoint?: string }>;
+}
+
+/**
+ * Result of generating bundle stubs
+ */
+export interface BundleStubResult {
+    stubsGenerated: number;
+    entryPointPath: string;
+    errors: string[];
+}
+
+/**
+ * Detects the entry point file in a bundle directory.
+ * Looks for common entry point patterns.
+ */
+async function detectBundleEntryPoint(
+    bundleDir: string,
+): Promise<string | undefined> {
+    const entryPatterns = [
+        'src/index.tsx',
+        'src/index.ts',
+        'src/index.jsx',
+        'src/index.js',
+        'src/main.tsx',
+        'src/main.ts',
+        'index.tsx',
+        'index.ts',
+        'index.jsx',
+        'index.js',
+        'main.tsx',
+        'main.ts',
+    ];
+
+    for (const pattern of entryPatterns) {
+        try {
+            const filePath = join(bundleDir, pattern);
+            await stat(filePath);
+            return pattern;
+        } catch {
+            // File doesn't exist, try next
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * Generates a stub entry point that imports minified bundles and re-exports
+ * extracted source entry points.
+ *
+ * This is used as a fallback when source maps are not available, creating
+ * a project structure that can still be built/modified.
+ */
+export async function generateBundleStubs(
+    options: BundleStubOptions,
+): Promise<BundleStubResult> {
+    const result: BundleStubResult = {
+        stubsGenerated: 0,
+        entryPointPath: '',
+        errors: [],
+    };
+
+    const siteDir = join(options.outputDir, options.siteHostname);
+    const srcDir = join(siteDir, 'src');
+    const entryPointPath = join(srcDir, 'index.ts');
+
+    // Check if there's anything to generate
+    const hasSavedBundles = options.savedBundles.length > 0;
+    const hasExtractedBundles =
+        options.extractedBundles && options.extractedBundles.length > 0;
+
+    if (!hasSavedBundles && !hasExtractedBundles) {
+        return result;
+    }
+
+    // Detect entry points for extracted bundles
+    const extractedEntries: Array<{ bundleName: string; entryPoint: string }> =
+        [];
+
+    if (options.extractedBundles) {
+        for (const bundle of options.extractedBundles) {
+            const bundleDir = join(siteDir, bundle.bundleName);
+            const entryPoint =
+                bundle.entryPoint || (await detectBundleEntryPoint(bundleDir));
+            if (entryPoint) {
+                extractedEntries.push({
+                    bundleName: bundle.bundleName,
+                    entryPoint,
+                });
+            }
+        }
+    }
+
+    // Build the stub content
+    const lines: string[] = [
+        '/**',
+        ' * Auto-generated entry point',
+        ' *',
+        ' * This file was generated because source maps were not available for some bundles.',
+        ' * It imports the original minified bundles and re-exports extracted sources.',
+        ' */',
+        '',
+    ];
+
+    // Add re-exports for extracted sources
+    if (extractedEntries.length > 0) {
+        lines.push('// === Extracted source entry points ===');
+        lines.push('// (These were reconstructed from source maps)');
+
+        for (const entry of extractedEntries) {
+            // Calculate relative path from src/ to the bundle entry point
+            const entryPath = join(siteDir, entry.bundleName, entry.entryPoint);
+            let relativePath = relative(srcDir, entryPath);
+
+            // Remove .ts/.tsx/.js/.jsx extension for import
+            relativePath = relativePath.replace(/\.(tsx?|jsx?)$/, '');
+
+            // Ensure it starts with ./
+            if (!relativePath.startsWith('.')) {
+                relativePath = './' + relativePath;
+            }
+
+            lines.push(`export * from '${relativePath}';`);
+        }
+        lines.push('');
+    }
+
+    // Add imports for minified bundles
+    if (hasSavedBundles) {
+        lines.push('// === Minified bundles (no source maps available) ===');
+
+        // Separate JS and CSS bundles
+        const jsBundles = options.savedBundles.filter(
+            (b) => b.type === 'script',
+        );
+        const cssBundles = options.savedBundles.filter(
+            (b) => b.type === 'stylesheet',
+        );
+
+        if (jsBundles.length > 0) {
+            lines.push('// JavaScript bundles');
+            for (const bundle of jsBundles) {
+                // Calculate relative path from src/ to _bundles/
+                let relativePath = relative(srcDir, bundle.localPath);
+
+                // Ensure it starts with ./
+                if (!relativePath.startsWith('.')) {
+                    relativePath = './' + relativePath;
+                }
+
+                lines.push(`import '${relativePath}';`);
+            }
+        }
+
+        if (cssBundles.length > 0) {
+            if (jsBundles.length > 0) {
+                lines.push('');
+            }
+            lines.push('// CSS bundles');
+            for (const bundle of cssBundles) {
+                let relativePath = relative(srcDir, bundle.localPath);
+
+                if (!relativePath.startsWith('.')) {
+                    relativePath = './' + relativePath;
+                }
+
+                lines.push(`import '${relativePath}';`);
+            }
+        }
+
+        lines.push('');
+    }
+
+    // Write the stub file
+    try {
+        await mkdir(srcDir, { recursive: true });
+        await writeFile(entryPointPath, lines.join('\n'), 'utf-8');
+        result.stubsGenerated = 1;
+        result.entryPointPath = entryPointPath;
+    } catch (error) {
+        result.errors.push(`Failed to write stub entry point: ${error}`);
+    }
+
+    return result;
 }

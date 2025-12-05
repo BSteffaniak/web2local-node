@@ -15,6 +15,7 @@ import {
     writeManifest,
     getBundleName,
     saveBundles,
+    generateBundleStubs,
     type BundleManifest,
     type SavedBundle,
 } from './reconstructor.js';
@@ -129,21 +130,17 @@ async function main() {
     let savedBundles: SavedBundle[] = [];
 
     if (bundlesWithMaps.length === 0) {
-        if (bundlesWithoutMaps.length > 0 && options.saveBundles) {
+        if (bundlesWithoutMaps.length > 0) {
             mapSpinner.warn(
-                'No source maps found - saving minified bundles as fallback',
+                'No source maps found - will use minified bundles as fallback',
             );
         } else {
             mapSpinner.fail('No source maps found for any bundles');
             console.log(
                 chalk.yellow(
-                    '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.' +
-                    (bundlesWithoutMaps.length > 0
-                        ? '\n\nTip: Use --save-bundles to save minified JS/CSS files anyway.'
-                        : ''),
+                    '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.',
                 ),
             );
-            process.exit(0);
         }
     } else {
         let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
@@ -155,8 +152,9 @@ async function main() {
         mapSpinner.succeed(mapStatusMsg);
     }
 
-    // Save bundles when --save-bundles is enabled
-    if (bundlesWithoutMaps.length > 0 && options.saveBundles) {
+    // Always save bundles without source maps (best-effort fallback)
+    // --save-bundles additionally saves bundles that DO have source maps
+    if (bundlesWithoutMaps.length > 0) {
         const bundleSpinner = ora({
             text: 'Saving minified bundles...',
             color: 'cyan',
@@ -198,31 +196,7 @@ async function main() {
         }
     }
 
-    // If no source maps found, skip source extraction but continue to summary
-    if (bundlesWithMaps.length === 0) {
-        // Summary for bundle-only mode
-        console.log(chalk.gray('\n  ' + '─'.repeat(20)));
-        console.log(chalk.bold('\n  Summary:'));
-        if (savedBundles.length > 0) {
-            const totalSize = savedBundles.reduce((sum, b) => sum + b.size, 0);
-            console.log(
-                `    ${chalk.green('✓')} Bundles saved: ${chalk.bold(savedBundles.length)} (${formatBytes(totalSize)})`,
-            );
-        }
-        console.log(
-            `    ${chalk.blue('→')} Output directory: ${chalk.cyan(options.output)}`,
-        );
-        console.log();
-
-        // Still allow API capture even without source maps
-        if (options.captureApi) {
-            // Continue to API capture section below
-        } else {
-            process.exit(0);
-        }
-    }
-
-    if (options.verbose) {
+    if (options.verbose && bundlesWithMaps.length > 0) {
         console.log(chalk.gray('\nSource maps found:'));
         for (const bundle of bundlesWithMaps) {
             console.log(chalk.gray(`  - ${bundle.sourceMapUrl}`));
@@ -255,10 +229,12 @@ async function main() {
         errors: string[];
     }> = [];
 
-    console.log(chalk.bold('\nExtracting source files:'));
-    console.log();
+    // Phase 1: Extract all source maps (only if there are bundles with source maps)
+    if (bundlesWithMaps.length > 0) {
+        console.log(chalk.bold('\nExtracting source files:'));
+        console.log();
+    }
 
-    // Phase 1: Extract all source maps
     for (const bundle of bundlesWithMaps) {
         const bundleName = getBundleName(bundle.url);
         const extractSpinner = ora({
@@ -385,11 +361,11 @@ async function main() {
 
             reconstructSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
-                (reconstructResult.filesSkipped > 0
-                    ? chalk.gray(
-                        ` (${reconstructResult.filesSkipped} skipped)`,
-                    )
-                    : ''),
+                    (reconstructResult.filesSkipped > 0
+                        ? chalk.gray(
+                              ` (${reconstructResult.filesSkipped} skipped)`,
+                          )
+                        : ''),
             );
 
             if (reconstructResult.errors.length > 0 && options.verbose) {
@@ -399,6 +375,41 @@ async function main() {
             }
         } catch (error) {
             reconstructSpinner.fail(`${bundleName}: ${error}`);
+        }
+    }
+
+    // Generate stub entry point (for bundles without source maps and/or to unify entry points)
+    if (savedBundles.length > 0 || bundleExtractions.length > 0) {
+        const stubSpinner = ora({
+            text: 'Generating stub entry point...',
+            color: 'cyan',
+        }).start();
+
+        try {
+            const stubResult = await generateBundleStubs({
+                outputDir: options.output,
+                siteHostname: hostname,
+                savedBundles,
+                extractedBundles: bundleExtractions.map((e) => ({
+                    bundleName: e.bundleName,
+                })),
+            });
+
+            if (stubResult.stubsGenerated > 0) {
+                stubSpinner.succeed(
+                    `Generated stub entry point: ${chalk.cyan(stubResult.entryPointPath.replace(options.output + '/', ''))}`,
+                );
+            } else {
+                stubSpinner.info('No stub entry point needed');
+            }
+
+            if (stubResult.errors.length > 0 && options.verbose) {
+                for (const error of stubResult.errors) {
+                    console.log(chalk.red(`    ${error}`));
+                }
+            }
+        } catch (error) {
+            stubSpinner.fail(`Failed to generate stub entry point: ${error}`);
         }
     }
 
@@ -421,7 +432,11 @@ async function main() {
         byConfidence: Record<string, number>;
     } | null = null;
 
-    if (options.generatePackageJson && totalFilesWritten > 0) {
+    // Generate package.json if requested (works with extracted sources OR saved bundles)
+    if (
+        options.generatePackageJson &&
+        (totalFilesWritten > 0 || savedBundles.length > 0)
+    ) {
         const depSpinner = ora({
             text: 'Analyzing dependencies...',
             color: 'cyan',
@@ -440,8 +455,8 @@ async function main() {
                     {
                         onProgress: options.verbose
                             ? (file) => {
-                                depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
-                            }
+                                  depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
+                              }
                             : undefined,
                         onVersionProgress: (stage, packageName, result) => {
                             switch (stage) {
@@ -714,9 +729,20 @@ async function main() {
     // Summary
     console.log(chalk.gray('\n  ' + '─'.repeat(20)));
     console.log(chalk.bold('\n  Summary:'));
-    console.log(
-        `    ${chalk.green('✓')} Files extracted: ${chalk.bold(totalFilesWritten)}`,
-    );
+    if (totalFilesWritten > 0) {
+        console.log(
+            `    ${chalk.green('✓')} Files extracted: ${chalk.bold(totalFilesWritten)}`,
+        );
+    }
+    if (savedBundles.length > 0) {
+        const totalBundleSize = savedBundles.reduce(
+            (sum, b) => sum + b.size,
+            0,
+        );
+        console.log(
+            `    ${chalk.yellow('○')} Minified bundles saved: ${chalk.bold(savedBundles.length)} (${formatBytes(totalBundleSize)})`,
+        );
+    }
     if (totalFilesSkipped > 0) {
         console.log(
             `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)}`,
@@ -739,7 +765,10 @@ async function main() {
         );
     }
 
-    if (!options.generatePackageJson && totalFilesWritten > 0) {
+    if (
+        !options.generatePackageJson &&
+        (totalFilesWritten > 0 || savedBundles.length > 0)
+    ) {
         console.log(
             chalk.gray(
                 '  Tip: Use --generate-package-json to create a package.json with dependencies',
@@ -788,11 +817,11 @@ async function main() {
                 // Verbose logging that works with the spinner
                 onVerbose: options.verbose
                     ? (message) => {
-                        // Clear spinner, log message, re-render spinner
-                        captureSpinner.clear();
-                        console.log(chalk.gray(`  ${message}`));
-                        captureSpinner.render();
-                    }
+                          // Clear spinner, log message, re-render spinner
+                          captureSpinner.clear();
+                          console.log(chalk.gray(`  ${message}`));
+                          captureSpinner.render();
+                      }
                     : undefined,
             });
 
@@ -845,10 +874,10 @@ async function main() {
                     const color = status.startsWith('2')
                         ? chalk.green
                         : status.startsWith('4')
-                            ? chalk.yellow
-                            : status.startsWith('5')
-                                ? chalk.red
-                                : chalk.gray;
+                          ? chalk.yellow
+                          : status.startsWith('5')
+                            ? chalk.red
+                            : chalk.gray;
                     return color(`${status}: ${count}`);
                 })
                 .join(', ');
@@ -908,9 +937,9 @@ async function main() {
                                 {
                                     onProgress: options.verbose
                                         ? (msg) =>
-                                            console.log(
-                                                chalk.gray(`    ${msg}`),
-                                            )
+                                              console.log(
+                                                  chalk.gray(`    ${msg}`),
+                                              )
                                         : undefined,
                                 },
                             );
