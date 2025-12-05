@@ -399,6 +399,12 @@ export async function generateBundleStubs(
         }
     }
 
+    // Check if there's actually anything to put in the stub
+    // (extracted bundles might not have entry points)
+    if (!hasSavedBundles && extractedEntries.length === 0) {
+        return result;
+    }
+
     // Build the stub content
     const lines: string[] = [
         '/**',

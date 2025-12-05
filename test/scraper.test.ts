@@ -9,7 +9,11 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
-import { findSourceMapUrl, extractBundleUrls } from '../src/scraper.js';
+import {
+    findSourceMapUrl,
+    extractBundleUrls,
+    findAllSourceMaps,
+} from '../src/scraper.js';
 import { server } from './helpers/msw-handlers.js';
 import { initCache } from '../src/fingerprint-cache.js';
 
@@ -480,5 +484,433 @@ describe('extractBundleUrls', () => {
                 'https://example.com/assets/index.js',
             );
         });
+    });
+});
+
+// ============================================================================
+// Bundle Content Fallback Tests
+// ============================================================================
+
+describe('findSourceMapUrl - bundle content fallback', () => {
+    describe('bundleContent return behavior', () => {
+        it('should return bundleContent when no source map exists', async () => {
+            const bundleContent = 'function minified(){console.log("hello")}';
+            server.use(
+                http.get(
+                    'https://fallback-test.example.com/no-sourcemap.js',
+                    () => {
+                        return new HttpResponse(bundleContent, {
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                            },
+                        });
+                    },
+                ),
+                http.head(
+                    'https://fallback-test.example.com/no-sourcemap.js.map',
+                    () => {
+                        return new HttpResponse(null, { status: 404 });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/no-sourcemap.js',
+            );
+
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBe(bundleContent);
+        });
+
+        it('should return bundleContent for CSS files without source maps', async () => {
+            const cssContent = '.container{color:red}.btn{padding:10px}';
+            server.use(
+                http.get('https://fallback-test.example.com/styles.css', () => {
+                    return new HttpResponse(cssContent, {
+                        headers: { 'Content-Type': 'text/css' },
+                    });
+                }),
+                http.head(
+                    'https://fallback-test.example.com/styles.css.map',
+                    () => {
+                        return new HttpResponse(null, { status: 404 });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/styles.css',
+            );
+
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBe(cssContent);
+        });
+
+        it('should not return bundleContent when source map exists via comment', async () => {
+            server.use(
+                http.get(
+                    'https://fallback-test.example.com/with-map.js',
+                    () => {
+                        return new HttpResponse(
+                            `function hello(){}\n//# sourceMappingURL=with-map.js.map`,
+                            {
+                                headers: {
+                                    'Content-Type': 'application/javascript',
+                                },
+                            },
+                        );
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/with-map.js',
+            );
+
+            expect(result.sourceMapUrl).toBe(
+                'https://fallback-test.example.com/with-map.js.map',
+            );
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should not return bundleContent when source map exists via header', async () => {
+            server.use(
+                http.get(
+                    'https://fallback-test.example.com/header-map.js',
+                    () => {
+                        return new HttpResponse('function hello(){}', {
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                                SourceMap: 'header-map.js.map',
+                            },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/header-map.js',
+            );
+
+            expect(result.sourceMapUrl).toBe(
+                'https://fallback-test.example.com/header-map.js.map',
+            );
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should not return bundleContent when .map file exists', async () => {
+            server.use(
+                http.get(
+                    'https://fallback-test.example.com/fallback-map.js',
+                    () => {
+                        return new HttpResponse('function hello(){}', {
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                            },
+                        });
+                    },
+                ),
+                http.head(
+                    'https://fallback-test.example.com/fallback-map.js.map',
+                    () => {
+                        return new HttpResponse(null, {
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/fallback-map.js',
+            );
+
+            expect(result.sourceMapUrl).toBe(
+                'https://fallback-test.example.com/fallback-map.js.map',
+            );
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should not return bundleContent when fetch fails with 404', async () => {
+            server.use(
+                http.get('https://fallback-test.example.com/missing.js', () => {
+                    return new HttpResponse(null, { status: 404 });
+                }),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/missing.js',
+            );
+
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should not return bundleContent when fetch fails with 500', async () => {
+            server.use(
+                http.get('https://fallback-test.example.com/error.js', () => {
+                    return new HttpResponse(null, { status: 500 });
+                }),
+            );
+
+            const result = await findSourceMapUrl(
+                'https://fallback-test.example.com/error.js',
+            );
+
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should return bundleContent on cached negative result', async () => {
+            const bundleContent = 'var cached="test"';
+            server.use(
+                http.get(
+                    'https://cached-test.example.com/cached-bundle.js',
+                    () => {
+                        return new HttpResponse(bundleContent, {
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                            },
+                        });
+                    },
+                ),
+                http.head(
+                    'https://cached-test.example.com/cached-bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, { status: 404 });
+                    },
+                ),
+            );
+
+            // First call - populates cache with negative result
+            const result1 = await findSourceMapUrl(
+                'https://cached-test.example.com/cached-bundle.js',
+            );
+            expect(result1.bundleContent).toBe(bundleContent);
+
+            // Second call - should still return bundleContent from re-fetch
+            const result2 = await findSourceMapUrl(
+                'https://cached-test.example.com/cached-bundle.js',
+            );
+            expect(result2.sourceMapUrl).toBeNull();
+            expect(result2.bundleContent).toBe(bundleContent);
+        });
+    });
+});
+
+// ============================================================================
+// findAllSourceMaps - bundlesWithoutMaps Tests
+// ============================================================================
+
+describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
+    it('should include bundles without source maps in bundlesWithoutMaps', async () => {
+        server.use(
+            http.get('https://findall-test.example.com/no-map.js', () => {
+                return new HttpResponse('var x=1;', {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/no-map.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/no-map.js',
+                type: 'script' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithMaps).toHaveLength(0);
+        expect(result.bundlesWithoutMaps).toHaveLength(1);
+        expect(result.bundlesWithoutMaps[0].bundle.url).toBe(
+            'https://findall-test.example.com/no-map.js',
+        );
+    });
+
+    it('should include bundle content for bundles without source maps', async () => {
+        const content = 'function test(){}';
+        server.use(
+            http.get('https://findall-test.example.com/bundle.js', () => {
+                return new HttpResponse(content, {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/bundle.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/bundle.js',
+                type: 'script' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithoutMaps[0].content).toBe(content);
+    });
+
+    it('should separate bundles with maps from bundles without maps', async () => {
+        server.use(
+            http.get('https://findall-test.example.com/with-map.js', () => {
+                return new HttpResponse(
+                    `var a=1;\n//# sourceMappingURL=with-map.js.map`,
+                    { headers: { 'Content-Type': 'application/javascript' } },
+                );
+            }),
+            http.get('https://findall-test.example.com/no-map.js', () => {
+                return new HttpResponse('var b=2;', {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/no-map.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/with-map.js',
+                type: 'script' as const,
+            },
+            {
+                url: 'https://findall-test.example.com/no-map.js',
+                type: 'script' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithMaps).toHaveLength(1);
+        expect(result.bundlesWithMaps[0].url).toBe(
+            'https://findall-test.example.com/with-map.js',
+        );
+        expect(result.bundlesWithoutMaps).toHaveLength(1);
+        expect(result.bundlesWithoutMaps[0].bundle.url).toBe(
+            'https://findall-test.example.com/no-map.js',
+        );
+    });
+
+    it('should handle mix of JS and CSS bundles', async () => {
+        server.use(
+            http.get('https://findall-test.example.com/app.js', () => {
+                return new HttpResponse('var x=1;', {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/app.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+            http.get('https://findall-test.example.com/styles.css', () => {
+                return new HttpResponse('.btn{color:red}', {
+                    headers: { 'Content-Type': 'text/css' },
+                });
+            }),
+            http.head('https://findall-test.example.com/styles.css.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/app.js',
+                type: 'script' as const,
+            },
+            {
+                url: 'https://findall-test.example.com/styles.css',
+                type: 'stylesheet' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithoutMaps).toHaveLength(2);
+        expect(result.bundlesWithoutMaps.map((b) => b.bundle.type)).toContain(
+            'script',
+        );
+        expect(result.bundlesWithoutMaps.map((b) => b.bundle.type)).toContain(
+            'stylesheet',
+        );
+    });
+
+    it('should handle all bundles having source maps', async () => {
+        server.use(
+            http.get('https://findall-test.example.com/a.js', () => {
+                return new HttpResponse(
+                    `var a=1;\n//# sourceMappingURL=a.js.map`,
+                    {
+                        headers: { 'Content-Type': 'application/javascript' },
+                    },
+                );
+            }),
+            http.get('https://findall-test.example.com/b.js', () => {
+                return new HttpResponse(
+                    `var b=2;\n//# sourceMappingURL=b.js.map`,
+                    {
+                        headers: { 'Content-Type': 'application/javascript' },
+                    },
+                );
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/a.js',
+                type: 'script' as const,
+            },
+            {
+                url: 'https://findall-test.example.com/b.js',
+                type: 'script' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithMaps).toHaveLength(2);
+        expect(result.bundlesWithoutMaps).toHaveLength(0);
+    });
+
+    it('should handle all bundles missing source maps', async () => {
+        server.use(
+            http.get('https://findall-test.example.com/a.js', () => {
+                return new HttpResponse('var a=1;', {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/a.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+            http.get('https://findall-test.example.com/b.js', () => {
+                return new HttpResponse('var b=2;', {
+                    headers: { 'Content-Type': 'application/javascript' },
+                });
+            }),
+            http.head('https://findall-test.example.com/b.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const bundles = [
+            {
+                url: 'https://findall-test.example.com/a.js',
+                type: 'script' as const,
+            },
+            {
+                url: 'https://findall-test.example.com/b.js',
+                type: 'script' as const,
+            },
+        ];
+        const result = await findAllSourceMaps(bundles, 5);
+
+        expect(result.bundlesWithMaps).toHaveLength(0);
+        expect(result.bundlesWithoutMaps).toHaveLength(2);
+    });
+
+    it('should handle empty bundles array', async () => {
+        const result = await findAllSourceMaps([], 5);
+
+        expect(result.bundlesWithMaps).toHaveLength(0);
+        expect(result.bundlesWithoutMaps).toHaveLength(0);
+        expect(result.vendorBundles).toHaveLength(0);
     });
 });
