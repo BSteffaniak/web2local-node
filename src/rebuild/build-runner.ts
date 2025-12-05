@@ -13,6 +13,7 @@ import type {
     RecoverableError,
     PackageManager,
 } from './types.js';
+import { preserveHtmlIfServerRendered } from './html-generator.js';
 
 /**
  * Detect which package manager to use based on lock files
@@ -371,6 +372,25 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
     // Get built files
     const outputDir = join(projectDir, '_rebuilt');
     const bundles = buildSuccess ? await getBuiltFiles(outputDir) : [];
+
+    // Preserve server-rendered HTML if available
+    if (buildSuccess) {
+        try {
+            const preserved = await preserveHtmlIfServerRendered(
+                projectDir,
+                outputDir,
+            );
+            if (preserved) {
+                onProgress?.(
+                    'Preserved server-rendered HTML with rebuilt assets',
+                );
+            }
+        } catch (err) {
+            warnings.push(
+                `Failed to preserve server-rendered HTML: ${err instanceof Error ? err.message : String(err)}`,
+            );
+        }
+    }
 
     return {
         success: buildSuccess,

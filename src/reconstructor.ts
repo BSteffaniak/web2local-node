@@ -1,5 +1,5 @@
-import { mkdir, writeFile, readFile, stat, readdir } from 'fs/promises';
-import { dirname, join, relative, extname } from 'path';
+import { mkdir, writeFile, readFile, stat } from 'fs/promises';
+import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
 import { SourceFile, shouldIncludePath } from './sourcemap.js';
 import type { BundleWithContent } from './scraper.js';
