@@ -41,6 +41,8 @@ import {
     type GlobalCssInjectionResult,
 } from './global-css-injector.js';
 
+import { generateClassNameMapFile } from './css-class-mapper.js';
+
 import type { CapturedCssBundle } from '../css-recovery.js';
 
 // Re-export types
@@ -401,6 +403,23 @@ export async function prepareRebuild(
         }
     } catch (error) {
         warnings.push(`Failed to check global CSS injection: ${error}`);
+    }
+
+    // Generate CSS class name mapping (for CSS module hash resolution)
+    onProgress?.('Generating CSS class name mappings...');
+    try {
+        const classNameMap = await generateClassNameMapFile(projectDir);
+        if (classNameMap) {
+            generatedFiles.push('_class-name-map.json');
+            const totalMappings = Object.keys(classNameMap.mappings).length;
+            if (verbose) {
+                onProgress?.(
+                    `Generated class name map with ${totalMappings} mappings`,
+                );
+            }
+        }
+    } catch (error) {
+        warnings.push(`Failed to generate class name map: ${error}`);
     }
 
     const success = errors.length === 0;

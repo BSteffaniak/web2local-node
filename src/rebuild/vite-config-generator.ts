@@ -232,11 +232,13 @@ export function generateViteConfig(options: ViteConfigOptions): string {
 /**
  * Plugin to handle CSS module stubs that have no actual class definitions.
  * When CSS source maps aren't available, the CSS module stubs are empty.
- * This plugin intercepts CSS module imports and returns a Proxy that returns
- * the property name as the class name (e.g., styles.foo -> 'foo').
+ * This plugin intercepts CSS module imports and returns a Proxy that maps
+ * base class names to their hashed equivalents from the captured CSS.
  * 
- * This allows the app to run without errors while styles are provided
- * by the globally-injected captured CSS bundle.
+ * For example: styles.skipLink -> '_skipLink_pl5cr_7'
+ * 
+ * This allows the app to work with the globally-injected captured CSS bundle
+ * which contains the production-hashed class names.
  */
 function cssModuleStubPlugin(): import('vite').Plugin {
   const stubMarker = 'Auto-generated CSS module stub';
@@ -245,9 +247,34 @@ function cssModuleStubPlugin(): import('vite').Plugin {
   const virtualPrefix = '\\0virtual:css-stub/';
   const virtualSuffix = '.js';
   
+  // Class name mappings loaded from _class-name-map.json
+  let classNameMappings: Record<string, string[]> | null = null;
+  let mappingsLoaded = false;
+  
+  async function loadMappings() {
+    if (mappingsLoaded) return;
+    mappingsLoaded = true;
+    
+    try {
+      const fs = await import('fs/promises');
+      const mapPath = path.resolve(process.cwd(), '_class-name-map.json');
+      const content = await fs.readFile(mapPath, 'utf-8');
+      const parsed = JSON.parse(content);
+      classNameMappings = parsed.mappings || {};
+      console.log('[css-module-stub] Loaded', Object.keys(classNameMappings).length, 'class name mappings');
+    } catch (e) {
+      // No mappings file - will fall back to returning base names
+      console.log('[css-module-stub] No class name mappings found, using base names');
+    }
+  }
+  
   return {
     name: 'css-module-stub',
     enforce: 'pre',
+    
+    async buildStart() {
+      await loadMappings();
+    },
     
     async resolveId(source, importer, options) {
       // Only handle CSS module imports
@@ -291,14 +318,26 @@ function cssModuleStubPlugin(): import('vite').Plugin {
         return null;
       }
       
-      // Return a module that exports a Proxy
-      // The Proxy returns the property name as the class name
+      // Generate a module that exports a Proxy
+      // The Proxy maps base class names to their hashed equivalents
+      const mappingsJson = JSON.stringify(classNameMappings || {});
+      
       return \`
+        const __mappings = \${mappingsJson};
+        
         const handler = {
           get(target, prop) {
             if (prop === '__esModule') return true;
             if (prop === 'default') return target;
-            if (typeof prop === 'string') return prop;
+            if (typeof prop === 'string') {
+              // Look up the hashed class name from mappings
+              const hashedNames = __mappings[prop];
+              if (hashedNames && hashedNames.length > 0) {
+                return hashedNames[0];
+              }
+              // Fallback to base name if no mapping found
+              return prop;
+            }
             return undefined;
           }
         };
