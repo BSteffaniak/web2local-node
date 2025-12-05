@@ -33,8 +33,8 @@ import {
 } from './stub-generator.js';
 import { type CapturedCssBundle, extractCssBaseName } from './css-recovery.js';
 import { initCache } from './fingerprint-cache.js';
-import { join, basename } from 'path';
-import { readFile } from 'fs/promises';
+import { join, basename, relative, dirname } from 'path';
+import { readFile, readdir, stat, copyFile, mkdir } from 'fs/promises';
 import { captureWebsite, generateCaptureSummary } from './capture/index.js';
 import {
     prepareRebuild,
@@ -1020,6 +1020,44 @@ async function main() {
         console.log();
     }
 
+    // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
+    // This ensures bundles loaded via dynamic imports during API capture are available for rebuild
+    if (options.captureApi && (options.prepareRebuild || options.rebuild)) {
+        const sourceDir = join(options.output, hostname);
+        const syncSpinner = ora({
+            text: 'Syncing dynamically loaded bundles...',
+            color: 'cyan',
+        }).start();
+
+        try {
+            const syncResult = await syncDynamicBundles(
+                sourceDir,
+                options.verbose,
+            );
+
+            if (syncResult.jsFiles > 0 || syncResult.cssFiles > 0) {
+                const parts: string[] = [];
+                if (syncResult.jsFiles > 0)
+                    parts.push(`${syncResult.jsFiles} JS`);
+                if (syncResult.cssFiles > 0)
+                    parts.push(`${syncResult.cssFiles} CSS`);
+                syncSpinner.succeed(
+                    `Synced ${parts.join(' + ')} dynamic bundles to ${chalk.cyan('_bundles/')}`,
+                );
+            } else {
+                syncSpinner.info('No additional dynamic bundles to sync');
+            }
+
+            if (syncResult.errors.length > 0 && options.verbose) {
+                for (const error of syncResult.errors) {
+                    console.log(chalk.red(`    ${error}`));
+                }
+            }
+        } catch (error) {
+            syncSpinner.warn(`Failed to sync dynamic bundles: ${error}`);
+        }
+    }
+
     // Step 7: Prepare for rebuild if requested
     if (options.prepareRebuild || options.rebuild) {
         const sourceDir = join(options.output, hostname);
@@ -1134,6 +1172,113 @@ function formatBytes(bytes: number): string {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+/**
+ * Recursively find all files matching given extensions in a directory
+ */
+async function findFilesRecursive(
+    dir: string,
+    extensions: string[],
+): Promise<string[]> {
+    const files: string[] = [];
+
+    try {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = join(dir, entry.name);
+            if (entry.isDirectory()) {
+                const subFiles = await findFilesRecursive(fullPath, extensions);
+                files.push(...subFiles);
+            } else if (
+                entry.isFile() &&
+                extensions.some((ext) => entry.name.endsWith(ext))
+            ) {
+                files.push(fullPath);
+            }
+        }
+    } catch {
+        // Directory doesn't exist or can't be read
+    }
+
+    return files;
+}
+
+/**
+ * Check if a file exists
+ */
+async function fileExists(path: string): Promise<boolean> {
+    try {
+        await stat(path);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Sync dynamically loaded bundles from _server/static to _bundles.
+ *
+ * During API capture, additional JS/CSS files may be loaded via dynamic imports
+ * that weren't detected during the initial bundle scan. These files are captured
+ * in _server/static/ but need to also be in _bundles/ for the rebuild to work.
+ *
+ * This function finds all JS/CSS files in _server/static/ that don't exist in
+ * _bundles/ and copies them over.
+ *
+ * @param sourceDir - The site output directory (e.g., output/example.com)
+ * @param verbose - Whether to log progress
+ * @returns Object with counts of synced files
+ */
+async function syncDynamicBundles(
+    sourceDir: string,
+    verbose: boolean = false,
+): Promise<{ jsFiles: number; cssFiles: number; errors: string[] }> {
+    const staticDir = join(sourceDir, '_server', 'static');
+    const bundlesDir = join(sourceDir, '_bundles');
+    const errors: string[] = [];
+
+    let jsFiles = 0;
+    let cssFiles = 0;
+
+    // Find all JS and CSS files in _server/static
+    const staticFiles = await findFilesRecursive(staticDir, ['.js', '.css']);
+
+    for (const staticFile of staticFiles) {
+        // Get the relative path from staticDir
+        const relativePath = relative(staticDir, staticFile);
+
+        // Check if this file exists in _bundles
+        const bundlePath = join(bundlesDir, relativePath);
+
+        if (!(await fileExists(bundlePath))) {
+            try {
+                // Create the directory if needed
+                await mkdir(dirname(bundlePath), { recursive: true });
+
+                // Copy the file
+                await copyFile(staticFile, bundlePath);
+
+                if (staticFile.endsWith('.js')) {
+                    jsFiles++;
+                } else if (staticFile.endsWith('.css')) {
+                    cssFiles++;
+                }
+
+                if (verbose) {
+                    console.log(
+                        chalk.gray(
+                            `    Synced dynamic bundle: ${relativePath}`,
+                        ),
+                    );
+                }
+            } catch (error) {
+                errors.push(`Failed to sync ${relativePath}: ${error}`);
+            }
+        }
+    }
+
+    return { jsFiles, cssFiles, errors };
 }
 
 main().catch((error) => {
