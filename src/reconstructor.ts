@@ -134,9 +134,11 @@ export async function reconstructSources(
 }
 
 /**
- * Sanitizes a path to prevent directory traversal attacks
+ * Sanitizes a path to prevent directory traversal attacks and normalize it.
+ * Resolves `..` segments and removes leading slashes/dots.
+ * Returns null if the result would be empty.
  */
-function sanitizePath(path: string): string | null {
+export function sanitizePath(path: string): string | null {
     // Remove any null bytes
     let sanitized = path.replace(/\0/g, '');
 

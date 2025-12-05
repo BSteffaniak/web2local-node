@@ -16,6 +16,7 @@ import {
     getBundleName,
     saveBundles,
     generateBundleStubs,
+    sanitizePath,
     type BundleManifest,
     type SavedBundle,
 } from './reconstructor.js';
@@ -268,11 +269,16 @@ async function main() {
 
             // Collect ALL files for version extraction (before filtering)
             // This includes node_modules/*/package.json files
-            // Prefix paths with bundle name to match the actual output structure
-            const filesWithBundlePrefix = result.files.map((f) => ({
-                ...f,
-                path: `${bundleName}/${f.path}`,
-            }));
+            // Sanitize paths FIRST to resolve `..` segments, THEN prefix with bundle name
+            // to match the actual output structure (sanitizePath in reconstructSources does the same)
+            const filesWithBundlePrefix = result.files
+                .map((f) => {
+                    const sanitized = sanitizePath(f.path);
+                    return sanitized
+                        ? { ...f, path: `${bundleName}/${sanitized}` }
+                        : null;
+                })
+                .filter((f): f is SourceFile => f !== null);
             allExtractedFiles.push(...filesWithBundlePrefix);
 
             // Store for reconstruction phase (original paths, bundleName is added during reconstruction)
