@@ -184,3 +184,173 @@ export async function waitForNetworkIdle(
     // Additional wait for any trailing requests
     await page.waitForTimeout(idleTime);
 }
+
+/**
+ * File extensions to skip when crawling (non-page resources)
+ */
+const SKIP_EXTENSIONS = new Set([
+    '.pdf',
+    '.png',
+    '.jpg',
+    '.jpeg',
+    '.gif',
+    '.svg',
+    '.webp',
+    '.ico',
+    '.bmp',
+    '.tiff',
+    '.mp4',
+    '.webm',
+    '.ogg',
+    '.mp3',
+    '.wav',
+    '.flac',
+    '.aac',
+    '.zip',
+    '.tar',
+    '.gz',
+    '.rar',
+    '.7z',
+    '.exe',
+    '.dmg',
+    '.pkg',
+    '.deb',
+    '.rpm',
+    '.msi',
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    '.csv',
+    '.xml',
+    '.json',
+    '.txt',
+    '.md',
+    '.rss',
+    '.atom',
+]);
+
+/**
+ * Normalize a URL for crawl deduplication.
+ * Removes hash fragments but preserves query parameters.
+ * Removes trailing slashes (except for root path).
+ *
+ * @param url - URL to normalize
+ * @returns Normalized URL string
+ */
+export function normalizeUrlForCrawl(url: string): string {
+    try {
+        const parsed = new URL(url);
+        // Remove hash fragment
+        parsed.hash = '';
+        // Remove trailing slash from pathname (except for root)
+        if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+            parsed.pathname = parsed.pathname.slice(0, -1);
+        }
+        return parsed.href;
+    } catch {
+        return url;
+    }
+}
+
+/**
+ * Check if a URL should be skipped based on its extension
+ */
+function shouldSkipUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url);
+        const pathname = parsed.pathname.toLowerCase();
+
+        // Check for file extensions to skip
+        for (const ext of SKIP_EXTENSIONS) {
+            if (pathname.endsWith(ext)) {
+                return true;
+            }
+        }
+
+        // Check for non-http(s) protocols
+        if (!parsed.protocol.startsWith('http')) {
+            return true;
+        }
+
+        return false;
+    } catch {
+        return true; // Skip invalid URLs
+    }
+}
+
+/**
+ * Extract all same-origin links from the current page.
+ * Filters out non-page URLs (images, files, mailto, etc.)
+ *
+ * @param page - Playwright page
+ * @param baseOrigin - Origin to filter links (e.g., "https://example.com")
+ * @returns Array of absolute URLs to same-origin pages
+ */
+export async function extractPageLinks(
+    page: Page,
+    baseOrigin: string,
+): Promise<string[]> {
+    const currentUrl = page.url();
+
+    // Extract all href attributes from anchor tags
+    const hrefs = await page.evaluate(() => {
+        const anchors = document.querySelectorAll('a[href]');
+        const hrefs: string[] = [];
+        for (const anchor of anchors) {
+            const href = anchor.getAttribute('href');
+            if (href) {
+                hrefs.push(href);
+            }
+        }
+        return hrefs;
+    });
+
+    const links: Set<string> = new Set();
+    const baseOriginObj = new URL(baseOrigin);
+
+    for (const href of hrefs) {
+        // Skip empty hrefs
+        if (!href || href.trim() === '') continue;
+
+        // Skip javascript:, mailto:, tel:, data: protocols
+        if (
+            href.startsWith('javascript:') ||
+            href.startsWith('mailto:') ||
+            href.startsWith('tel:') ||
+            href.startsWith('data:')
+        ) {
+            continue;
+        }
+
+        // Skip hash-only links (same page anchors)
+        if (href.startsWith('#')) continue;
+
+        try {
+            // Resolve relative URLs using current page URL as base
+            const absoluteUrl = new URL(href, currentUrl);
+
+            // Only include same-origin links
+            if (absoluteUrl.origin !== baseOriginObj.origin) {
+                continue;
+            }
+
+            // Skip non-page URLs (files, images, etc.)
+            if (shouldSkipUrl(absoluteUrl.href)) {
+                continue;
+            }
+
+            // Normalize and add to set
+            const normalized = normalizeUrlForCrawl(absoluteUrl.href);
+            links.add(normalized);
+        } catch {
+            // Skip invalid URLs
+            continue;
+        }
+    }
+
+    // Return sorted array for deterministic ordering
+    return Array.from(links).sort();
+}

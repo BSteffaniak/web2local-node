@@ -807,6 +807,10 @@ async function main() {
                 browseTimeout: options.browseTimeout,
                 autoScroll: options.autoScroll,
                 verbose: options.verbose,
+                // Crawl options
+                crawl: options.crawl,
+                crawlMaxDepth: options.crawlMaxDepth,
+                crawlMaxPages: options.crawlMaxPages,
                 // Pass scraped redirect to include in manifest
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]
@@ -858,6 +862,25 @@ async function main() {
                 console.log(
                     `    ${chalk.green('✓')} Static assets: ${chalk.bold(summary.staticAssets)} (${formatBytes(summary.totalBytes)})`,
                 );
+            }
+
+            // Show crawl stats
+            if (captureResult.stats.crawlStats) {
+                const cs = captureResult.stats.crawlStats;
+                let crawlMsg = `Pages crawled: ${chalk.bold(cs.pagesVisited)}`;
+                if (cs.maxPagesReached) {
+                    crawlMsg += chalk.yellow(' (max pages reached)');
+                }
+                if (cs.maxDepthReached) {
+                    crawlMsg += chalk.yellow(' (max depth reached)');
+                }
+                console.log(`    ${chalk.green('✓')} ${crawlMsg}`);
+
+                if (options.verbose) {
+                    console.log(
+                        `    ${chalk.blue('→')} Links discovered: ${cs.linksDiscovered}`,
+                    );
+                }
             }
 
             // Show method breakdown

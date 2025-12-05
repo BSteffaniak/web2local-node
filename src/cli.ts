@@ -28,6 +28,10 @@ export interface CliOptions {
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
     // Fallback options
     saveBundles: boolean;
+    // Crawl options
+    crawl: boolean;
+    crawlMaxDepth: number;
+    crawlMaxPages: number;
 }
 
 export function parseArgs(): CliOptions {
@@ -144,6 +148,21 @@ export function parseArgs(): CliOptions {
             'Additionally save minified bundles that have source maps (bundles without source maps are always saved)',
             false,
         )
+        // Crawl options
+        .option(
+            '--no-crawl',
+            'Disable link crawling (only capture the entry page)',
+        )
+        .option(
+            '--crawl-max-depth <number>',
+            'Maximum link depth to follow when crawling',
+            '5',
+        )
+        .option(
+            '--crawl-max-pages <number>',
+            'Maximum number of pages to visit when crawling',
+            '100',
+        )
         .parse();
 
     const options = program.opts();
@@ -185,5 +204,9 @@ export function parseArgs(): CliOptions {
         packageManager: options.packageManager || 'auto',
         // Fallback options
         saveBundles: options.saveBundles || false,
+        // Crawl options (--no-crawl sets crawl to false)
+        crawl: options.crawl !== false,
+        crawlMaxDepth: parseInt(options.crawlMaxDepth, 10),
+        crawlMaxPages: parseInt(options.crawlMaxPages, 10),
     };
 }

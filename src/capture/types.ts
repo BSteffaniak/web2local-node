@@ -206,6 +206,28 @@ export interface CaptureOptions {
     onProgress?: (message: string) => void;
     /** Verbose log callback - use this instead of console.log when spinner is active */
     onVerbose?: (message: string) => void;
+    /** Whether to crawl linked pages (default: true) */
+    crawl?: boolean;
+    /** Maximum depth of links to follow (default: 5) */
+    crawlMaxDepth?: number;
+    /** Maximum number of pages to visit (default: 100) */
+    crawlMaxPages?: number;
+}
+
+/**
+ * Crawl statistics
+ */
+export interface CrawlStats {
+    /** Number of pages successfully visited */
+    pagesVisited: number;
+    /** Number of pages skipped (already visited, errors, etc.) */
+    pagesSkipped: number;
+    /** Total number of links discovered across all pages */
+    linksDiscovered: number;
+    /** Whether crawling stopped due to max depth limit */
+    maxDepthReached: boolean;
+    /** Whether crawling stopped due to max pages limit */
+    maxPagesReached: boolean;
 }
 
 /**
@@ -224,6 +246,8 @@ export interface CaptureResult {
         staticAssetsCaptured: number;
         totalBytesDownloaded: number;
         captureTimeMs: number;
+        /** Crawl statistics (only present if crawling was enabled) */
+        crawlStats?: CrawlStats;
     };
 }
 
