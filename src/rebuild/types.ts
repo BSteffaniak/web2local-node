@@ -42,7 +42,8 @@ export interface EntryPoint {
         | 'main-file'
         | 'html-script'
         | 'package-main'
-        | 'heuristic';
+        | 'heuristic'
+        | 'fallback-index';
 }
 
 /**

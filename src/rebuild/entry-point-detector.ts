@@ -372,6 +372,45 @@ export async function detectEntryPoints(
         }
     }
 
+    // Final fallback: any index.ts/main.ts file (works for vanilla JS, stub files, etc.)
+    // No framework detection required - an entry point is just the build starting point
+    if (entryPoints.length === 0) {
+        for (const bundleDir of bundleDirs) {
+            for (const entryDir of ENTRY_DIRECTORIES) {
+                const searchDir = entryDir
+                    ? join(projectDir, bundleDir, entryDir)
+                    : join(projectDir, bundleDir);
+
+                for (const fileName of [
+                    'index.ts',
+                    'index.tsx',
+                    'main.ts',
+                    'main.tsx',
+                    'index.js',
+                    'index.jsx',
+                    'main.js',
+                    'main.jsx',
+                ]) {
+                    const filePath = join(searchDir, fileName);
+                    const relativePath = relative(projectDir, filePath);
+
+                    try {
+                        await stat(filePath);
+                        entryPoints.push({
+                            path: relativePath,
+                            framework: 'vanilla',
+                            mountElement: undefined,
+                            confidence: 0.3,
+                            detectionMethod: 'fallback-index',
+                        });
+                    } catch {
+                        // File doesn't exist
+                    }
+                }
+            }
+        }
+    }
+
     // Sort by confidence
     entryPoints.sort((a, b) => b.confidence - a.confidence);
 
