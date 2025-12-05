@@ -84,6 +84,12 @@ export interface StaticCaptureOptions {
      * proper JS initialization (event handlers will be attached when JS runs).
      */
     captureRenderedHtml: boolean;
+    /**
+     * Whether to capture media sources from <source> elements in <video>/<audio>.
+     * These can be large files. Even when enabled, maxFileSize is still respected.
+     * Default: false
+     */
+    captureMediaSources: boolean;
     /** Verbose logging */
     verbose: boolean;
     /** Progress callback */
@@ -102,6 +108,7 @@ const DEFAULT_OPTIONS: StaticCaptureOptions = {
     captureFonts: true,
     captureMedia: true,
     captureRenderedHtml: false,
+    captureMediaSources: false,
     verbose: false,
 };
 
@@ -269,6 +276,8 @@ export class StaticCapturer {
         to: string;
         status: number;
     }> = [];
+    /** URLs discovered in CSS image-set() that need to be fetched */
+    private pendingResponsiveUrls: Set<string> = new Set();
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -604,6 +613,29 @@ export class StaticCapturer {
             this.options.onCapture?.(asset);
 
             this.log(`[Static] Saved: ${localPath} (${body.length} bytes)`);
+
+            // If this is a CSS file, extract image-set() URLs for later fetching
+            if (contentType.includes('css') || url.endsWith('.css')) {
+                try {
+                    const cssContent = body.toString('utf-8');
+                    const imageSetUrls = extractResponsiveUrlsFromCss(
+                        cssContent,
+                        url,
+                    );
+                    if (imageSetUrls.length > 0) {
+                        this.log(
+                            `[Static] Found ${imageSetUrls.length} image-set URLs in CSS: ${url}`,
+                        );
+                        for (const imageUrl of imageSetUrls) {
+                            this.pendingResponsiveUrls.add(imageUrl);
+                        }
+                    }
+                } catch (cssError) {
+                    this.log(
+                        `[Static] Error parsing CSS for image-set: ${cssError}`,
+                    );
+                }
+            }
         } catch (error) {
             this.log(`[Static] Error capturing ${url}: ${error}`);
         }
@@ -675,6 +707,16 @@ export class StaticCapturer {
             `[Static] Saved document: ${localPath} (${body.length} bytes)`,
         );
 
+        // Extract and fetch responsive image URLs that browser may not have loaded
+        // (e.g., srcset variants for different viewport sizes)
+        const responsiveUrls = extractResponsiveUrlsFromHtml(html, baseUrl);
+        if (responsiveUrls.length > 0) {
+            this.log(
+                `[Static] Found ${responsiveUrls.length} responsive URLs in HTML`,
+            );
+            await this.fetchAdditionalAssets(responsiveUrls);
+        }
+
         return asset;
     }
 
@@ -726,7 +768,8 @@ export class StaticCapturer {
     }
 
     /**
-     * Wait for all pending captures to complete
+     * Wait for all pending captures to complete, then fetch any
+     * responsive URLs discovered in CSS files.
      */
     async flush(): Promise<void> {
         const pending = Array.from(this.pendingCaptures.values());
@@ -735,6 +778,16 @@ export class StaticCapturer {
                 `[StaticCapturer] Waiting for ${pending.length} pending captures...`,
             );
             await Promise.all(pending);
+        }
+
+        // Fetch any responsive URLs discovered in CSS files
+        if (this.pendingResponsiveUrls.size > 0) {
+            const urls = Array.from(this.pendingResponsiveUrls);
+            this.log(
+                `[StaticCapturer] Fetching ${urls.length} responsive URLs from CSS...`,
+            );
+            await this.fetchAdditionalAssets(urls);
+            this.pendingResponsiveUrls.clear();
         }
     }
 
@@ -807,12 +860,174 @@ export class StaticCapturer {
         this.assets = [];
         this.downloadedUrls.clear();
         this.pendingCaptures.clear();
+        this.pendingResponsiveUrls.clear();
         this.entrypointUrl = null;
         this.baseOrigin = null;
         this.originalDocumentHtml = null;
         this.originalDocumentUrl = null;
         this.truncatedFiles = [];
         this.recoveredFiles = [];
+    }
+
+    /**
+     * Fetch additional assets that were discovered but not loaded by the browser.
+     * This is used to capture responsive image variants from srcset/image-set
+     * that the browser didn't load based on viewport size.
+     *
+     * @param urls - Array of absolute URLs to fetch
+     */
+    async fetchAdditionalAssets(urls: string[]): Promise<void> {
+        // Filter out URLs already downloaded
+        const newUrls = urls.filter((url) => !this.downloadedUrls.has(url));
+
+        if (newUrls.length === 0) {
+            return;
+        }
+
+        this.log(
+            `[Static] Fetching ${newUrls.length} additional responsive assets...`,
+        );
+
+        // Filter to only same-origin or recognized CDN subdomains
+        const baseUrl = this.baseOrigin || this.entrypointUrl;
+        if (!baseUrl) {
+            this.log(
+                '[Static] No base URL available, skipping additional assets',
+            );
+            return;
+        }
+
+        const baseUrlObj = new URL(baseUrl);
+        const baseDomain = baseUrlObj.host.replace(/^www\./, '');
+
+        const eligibleUrls = newUrls.filter((url) => {
+            try {
+                const urlObj = new URL(url);
+
+                // Same origin
+                if (urlObj.origin === baseUrlObj.origin) {
+                    return true;
+                }
+
+                // CDN subdomains
+                const urlHost = urlObj.host;
+                const cdnSubdomains = [
+                    'cdn',
+                    'static',
+                    'assets',
+                    'images',
+                    'media',
+                ];
+                for (const subdomain of cdnSubdomains) {
+                    if (urlHost === `${subdomain}.${baseDomain}`) {
+                        return true;
+                    }
+                }
+
+                return false;
+            } catch {
+                return false;
+            }
+        });
+
+        if (eligibleUrls.length === 0) {
+            this.log('[Static] No eligible URLs to fetch (all cross-origin)');
+            return;
+        }
+
+        this.log(
+            `[Static] ${eligibleUrls.length} URLs are same-origin or CDN, fetching...`,
+        );
+
+        // Fetch in batches to avoid overwhelming the server
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < eligibleUrls.length; i += BATCH_SIZE) {
+            const batch = eligibleUrls.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map((url) => this.fetchSingleAsset(url)));
+        }
+    }
+
+    /**
+     * Fetch and save a single asset by URL.
+     * Used for fetching responsive image variants that weren't loaded by the browser.
+     */
+    private async fetchSingleAsset(url: string): Promise<void> {
+        // Skip if already downloaded (double-check)
+        if (this.downloadedUrls.has(url)) {
+            return;
+        }
+
+        // Check if this is a media file and if we should skip it
+        if (isMediaUrl(url) && !this.options.captureMediaSources) {
+            this.log(
+                `[Static] Skipping media source (captureMediaSources=false): ${url}`,
+            );
+            return;
+        }
+
+        // Mark as downloading to prevent duplicates
+        this.downloadedUrls.add(url);
+
+        try {
+            const body = await fetchWithContentVerification(url);
+
+            if (!body) {
+                this.log(`[Static] Failed to fetch: ${url}`);
+                return;
+            }
+
+            // Check file size
+            if (body.length > this.options.maxFileSize) {
+                this.log(
+                    `[Static] Skipping large file: ${url} (${body.length} bytes)`,
+                );
+                return;
+            }
+
+            // Generate local path
+            const baseUrl = this.baseOrigin || this.entrypointUrl || url;
+            const localPath = urlToLocalPath(url, baseUrl);
+            const fullPath = join(this.options.outputDir, localPath);
+
+            // Create directory and write file
+            await mkdir(dirname(fullPath), { recursive: true });
+            await writeFile(fullPath, body);
+
+            // Guess content type from extension
+            const ext = extname(new URL(url).pathname).toLowerCase();
+            const mimeTypes: Record<string, string> = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.svg': 'image/svg+xml',
+                '.webp': 'image/webp',
+                '.ico': 'image/x-icon',
+                '.mp4': 'video/mp4',
+                '.webm': 'video/webm',
+                '.mp3': 'audio/mpeg',
+                '.wav': 'audio/wav',
+                '.ogg': 'audio/ogg',
+            };
+            const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+            const asset: CapturedAsset = {
+                url,
+                localPath,
+                contentType,
+                size: body.length,
+                isEntrypoint: false,
+            };
+
+            this.assets.push(asset);
+            this.options.onCapture?.(asset);
+
+            this.log(
+                `[Static] Fetched responsive asset: ${localPath} (${body.length} bytes)`,
+            );
+        } catch (error) {
+            this.log(`[Static] Error fetching ${url}: ${error}`);
+        }
     }
 }
 
@@ -865,4 +1080,270 @@ export function rewriteHtmlUrls(
  */
 function escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Parse srcset attribute value and extract all URLs.
+ * Handles both width descriptors (240w) and pixel density descriptors (2x).
+ *
+ * @param srcset - The srcset attribute value
+ * @returns Array of URLs extracted from the srcset
+ *
+ * @example
+ * parseSrcsetUrls("/img/foo-240.webp 240w, /img/foo-540.webp 540w")
+ * // returns ["/img/foo-240.webp", "/img/foo-540.webp"]
+ */
+export function parseSrcsetUrls(srcset: string): string[] {
+    if (!srcset || !srcset.trim()) {
+        return [];
+    }
+
+    const urls: string[] = [];
+
+    // Parse srcset character by character to handle data: URLs with commas
+    // The srcset format is: URL [descriptor], URL [descriptor], ...
+    // where descriptor is optional and can be "100w" or "2x"
+    let i = 0;
+    const len = srcset.length;
+
+    while (i < len) {
+        // Skip leading whitespace
+        while (i < len && /\s/.test(srcset[i])) i++;
+        if (i >= len) break;
+
+        // Check if this is a data: URL
+        if (srcset.slice(i, i + 5) === 'data:') {
+            // Skip data: URLs entirely - find the next entry after whitespace+descriptor+comma
+            // Data URLs end at whitespace followed by descriptor (e.g., " 1x")
+            while (i < len) {
+                // Look for pattern: whitespace + descriptor (digits + w/x)
+                if (/\s/.test(srcset[i])) {
+                    const rest = srcset.slice(i);
+                    const descriptorMatch = rest.match(
+                        /^\s+\d+(?:\.\d+)?[wx]\s*(?:,|$)/i,
+                    );
+                    if (descriptorMatch) {
+                        i += descriptorMatch[0].length;
+                        break;
+                    }
+                }
+                i++;
+            }
+            continue;
+        }
+
+        // Extract URL (until whitespace)
+        let url = '';
+        while (i < len && !/\s/.test(srcset[i]) && srcset[i] !== ',') {
+            url += srcset[i];
+            i++;
+        }
+
+        if (url) {
+            urls.push(url);
+        }
+
+        // Skip whitespace
+        while (i < len && /\s/.test(srcset[i])) i++;
+
+        // Skip optional descriptor (e.g., "240w", "2x", "1.5x")
+        if (i < len && /[\d.]/.test(srcset[i])) {
+            while (i < len && /[\d.]/.test(srcset[i])) i++;
+            if (i < len && /[wx]/i.test(srcset[i])) i++;
+        }
+
+        // Skip whitespace and comma
+        while (i < len && (/\s/.test(srcset[i]) || srcset[i] === ',')) i++;
+    }
+
+    return urls;
+}
+
+/**
+ * Parse CSS image-set() function and extract all URLs.
+ * Handles both standard image-set() and -webkit-image-set().
+ *
+ * @param imageSet - The image-set() function content (including the function name)
+ * @returns Array of URLs extracted from the image-set
+ *
+ * @example
+ * parseImageSetUrls("image-set(url('foo.webp') 1x, url('foo@2x.webp') 2x)")
+ * // returns ["foo.webp", "foo@2x.webp"]
+ */
+export function parseImageSetUrls(imageSet: string): string[] {
+    if (!imageSet || !imageSet.trim()) {
+        return [];
+    }
+
+    const urls: string[] = [];
+
+    // Match url() functions within the image-set
+    // Handles: url("path"), url('path'), url(path)
+    const urlPattern = /url\(\s*['"]?([^'")\s]+)['"]?\s*\)/gi;
+    let match;
+
+    while ((match = urlPattern.exec(imageSet)) !== null) {
+        const url = match[1];
+        if (url && !url.startsWith('data:')) {
+            urls.push(url);
+        }
+    }
+
+    // Also handle bare strings (without url()) which some browsers support
+    // Format: "image.webp" 1x, "image@2x.webp" 2x
+    // This is less common but valid
+    const bareStringPattern = /['"]([^'"]+\.[a-z0-9]+)['"]\s+\d+x/gi;
+    while ((match = bareStringPattern.exec(imageSet)) !== null) {
+        const url = match[1];
+        if (url && !url.startsWith('data:') && !urls.includes(url)) {
+            urls.push(url);
+        }
+    }
+
+    return urls;
+}
+
+/**
+ * Extract all responsive image URLs from HTML content.
+ * Finds URLs in:
+ * - <img srcset="...">
+ * - <source srcset="..."> (in <picture> elements)
+ * - <source src="..."> (in <video> and <audio> elements)
+ * - <style> tags containing image-set()
+ *
+ * @param html - The HTML content to parse
+ * @param baseUrl - Base URL for resolving relative URLs
+ * @returns Array of absolute URLs
+ */
+export function extractResponsiveUrlsFromHtml(
+    html: string,
+    baseUrl: string,
+): string[] {
+    const urls: Set<string> = new Set();
+
+    // Extract srcset attributes from <img> and <source> elements
+    const srcsetPattern = /srcset\s*=\s*["']([^"']+)["']/gi;
+    let match;
+
+    while ((match = srcsetPattern.exec(html)) !== null) {
+        const srcsetValue = match[1];
+        const srcsetUrls = parseSrcsetUrls(srcsetValue);
+        for (const url of srcsetUrls) {
+            const absoluteUrl = resolveUrl(url, baseUrl);
+            if (absoluteUrl) {
+                urls.add(absoluteUrl);
+            }
+        }
+    }
+
+    // Extract src attributes from <source> elements (for video/audio)
+    // Be careful not to match <source> inside <picture> which uses srcset
+    // We'll match all <source src="..."> and filter later if needed
+    const sourceSrcPattern = /<source[^>]+src\s*=\s*["']([^"']+)["']/gi;
+
+    while ((match = sourceSrcPattern.exec(html)) !== null) {
+        const url = match[1];
+        if (url && !url.startsWith('data:')) {
+            const absoluteUrl = resolveUrl(url, baseUrl);
+            if (absoluteUrl) {
+                urls.add(absoluteUrl);
+            }
+        }
+    }
+
+    // Extract image-set() from inline <style> tags
+    const stylePattern = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+
+    while ((match = stylePattern.exec(html)) !== null) {
+        const styleContent = match[1];
+        const cssUrls = extractResponsiveUrlsFromCss(styleContent, baseUrl);
+        for (const url of cssUrls) {
+            urls.add(url);
+        }
+    }
+
+    return Array.from(urls);
+}
+
+/**
+ * Extract all image-set() URLs from CSS content.
+ * Handles both standard image-set() and -webkit-image-set().
+ *
+ * @param css - The CSS content to parse
+ * @param cssUrl - URL of the CSS file (for resolving relative URLs)
+ * @returns Array of absolute URLs
+ */
+export function extractResponsiveUrlsFromCss(
+    css: string,
+    cssUrl: string,
+): string[] {
+    const urls: Set<string> = new Set();
+
+    // Match image-set() and -webkit-image-set() functions
+    // The content can span multiple lines and contain nested parentheses in url()
+    const imageSetPattern = /(?:-webkit-)?image-set\s*\(([^;{}]+)\)/gi;
+    let match;
+
+    while ((match = imageSetPattern.exec(css)) !== null) {
+        const imageSetContent = match[0]; // Include the function name for parseImageSetUrls
+        const imageSetUrls = parseImageSetUrls(imageSetContent);
+        for (const url of imageSetUrls) {
+            const absoluteUrl = resolveUrl(url, cssUrl);
+            if (absoluteUrl) {
+                urls.add(absoluteUrl);
+            }
+        }
+    }
+
+    return Array.from(urls);
+}
+
+/**
+ * Resolve a potentially relative URL against a base URL.
+ * Returns null if the URL is invalid.
+ *
+ * @param url - The URL to resolve (may be relative or absolute)
+ * @param baseUrl - The base URL to resolve against
+ * @returns Absolute URL string, or null if invalid
+ */
+function resolveUrl(url: string, baseUrl: string): string | null {
+    try {
+        // Handle protocol-relative URLs (//example.com/path)
+        if (url.startsWith('//')) {
+            const baseProtocol = new URL(baseUrl).protocol;
+            return new URL(baseProtocol + url).href;
+        }
+
+        // Use URL constructor to resolve relative URLs
+        return new URL(url, baseUrl).href;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Check if a URL points to a media file (video/audio) based on extension.
+ */
+function isMediaUrl(url: string): boolean {
+    try {
+        const pathname = new URL(url).pathname.toLowerCase();
+        const mediaExtensions = [
+            '.mp4',
+            '.webm',
+            '.ogg',
+            '.ogv',
+            '.mp3',
+            '.wav',
+            '.flac',
+            '.aac',
+            '.m4a',
+            '.m4v',
+            '.mov',
+            '.avi',
+            '.mkv',
+        ];
+        return mediaExtensions.some((ext) => pathname.endsWith(ext));
+    } catch {
+        return false;
+    }
 }
