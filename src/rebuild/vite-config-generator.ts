@@ -372,7 +372,10 @@ export default defineConfig(({ mode }) => {
           entryFileNames: 'assets/[name]-[hash].js',
           chunkFileNames: 'assets/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash].[ext]'
-        }
+        },
+        // Externalize virtual modules from Vite plugins that aren't configured
+        // (e.g., virtual:pwa-register from vite-plugin-pwa)
+        external: [/^virtual:/]
       },
       // Increase chunk size warning limit for large apps
       chunkSizeWarningLimit: 2000
