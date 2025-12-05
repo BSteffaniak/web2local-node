@@ -17,6 +17,7 @@ import {
     detectImportAliases,
     buildAliasPathMappings,
     extractBareImports,
+    inferAliasesFromImports,
     type AliasMap,
 } from '../dependency-analyzer.js';
 
@@ -694,6 +695,61 @@ export async function extractAliasesFromTsConfig(
         existingAliases.add(pkg.name);
     }
 
+    // Step 2b: Detect scoped package imports that should resolve to local workspace packages
+    // This handles monorepo patterns where:
+    // - Source code imports from '@excalidraw/excalidraw/analytics'
+    // - The actual source exists at 'assets/packages/excalidraw/analytics.ts'
+    // - The npm package '@excalidraw/excalidraw' doesn't export these internal subpaths
+    // In this case, we need to alias '@excalidraw/excalidraw' -> local workspace path
+    if (sourceFiles && bareImports) {
+        // Find all scoped package imports
+        const scopedImports = Array.from(bareImports).filter((imp) =>
+            imp.startsWith('@'),
+        );
+
+        for (const scopedPkg of scopedImports) {
+            if (existingAliases.has(scopedPkg)) continue;
+
+            // Extract the unscoped name: @excalidraw/excalidraw -> excalidraw
+            const parts = scopedPkg.split('/');
+            if (parts.length !== 2) continue;
+            const unscopedName = parts[1];
+
+            // Check if we have a workspace package with the same unscoped name
+            const matchingWorkspace = workspacePackages.find(
+                (wp) => wp.name === unscopedName,
+            );
+            if (!matchingWorkspace) continue;
+
+            // Check if the scoped package is declared as a dependency
+            // (it may not be installed yet when prepareRebuild runs)
+            const isDeclaredDep = declaredDeps.has(scopedPkg);
+
+            // If the scoped package is a declared dependency AND we have a matching
+            // local workspace package, alias the scoped name to the local path.
+            // This handles monorepo scenarios where the source was extracted from
+            // the same codebase that publishes the npm package, and the npm package
+            // doesn't export internal subpaths that the source code uses.
+            if (isDeclaredDep) {
+                const localPath = matchingWorkspace.path;
+                const absoluteLocalPath = join(projectDir, localPath);
+
+                if (await pathExists(absoluteLocalPath)) {
+                    // Prefer src/ subdirectory if it exists (common monorepo pattern)
+                    // This handles both packages with index files and packages with
+                    // individual module files like utils/src/export.ts
+                    const srcPath = `${localPath}/src`;
+                    const absoluteSrcPath = join(projectDir, srcPath);
+                    const srcExists = await pathExists(absoluteSrcPath);
+
+                    const finalPath = srcExists ? srcPath : localPath;
+                    aliases.push({ alias: scopedPkg, path: finalPath });
+                    existingAliases.add(scopedPkg);
+                }
+            }
+        }
+    }
+
     // Step 3: If source files provided, detect import aliases accurately
     // This handles cases like 'sarsaparilla' -> '@fp/sarsaparilla'
     if (sourceFiles && sourceFiles.length > 0) {
@@ -746,6 +802,30 @@ export async function extractAliasesFromTsConfig(
                     }
                 }
             }
+        }
+    }
+
+    // Step 4: Infer aliases from import/file path matching
+    // This handles cases where imports like 'excalidraw-app/app-jotai' exist
+    // but the file is actually at 'assets/app-jotai.ts', meaning
+    // 'excalidraw-app' should alias to 'assets'.
+    if (sourceFiles && sourceFiles.length > 0) {
+        const inferredAliases = inferAliasesFromImports(
+            sourceFiles,
+            existingAliases,
+        );
+
+        for (const inferred of inferredAliases) {
+            if (existingAliases.has(inferred.alias)) continue;
+
+            // Only add high/medium confidence aliases
+            if (inferred.confidence === 'low') continue;
+
+            aliases.push({
+                alias: inferred.alias,
+                path: inferred.targetPath,
+            });
+            existingAliases.add(inferred.alias);
         }
     }
 

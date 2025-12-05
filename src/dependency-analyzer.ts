@@ -223,6 +223,297 @@ export function extractBareImports(sourceFiles: SourceFile[]): Set<string> {
 }
 
 /**
+ * Extracts all bare (non-relative) import specifiers with their full paths (including subpaths).
+ * Unlike extractBareImports which only returns package names, this returns the full specifier.
+ *
+ * For example:
+ *   - 'lodash/merge' is returned as 'lodash/merge' (not just 'lodash')
+ *   - '@scope/pkg/sub' is returned as '@scope/pkg/sub' (not just '@scope/pkg')
+ *
+ * @param sourceFiles - Source files to analyze
+ * @returns Set of full import specifiers
+ */
+export function extractFullImportSpecifiers(
+    sourceFiles: SourceFile[],
+): Set<string> {
+    const allImports = new Set<string>();
+
+    for (const file of sourceFiles) {
+        // Skip files in node_modules
+        if (file.path.includes('node_modules/')) continue;
+        if (!file.content) continue;
+
+        // Use AST-based extraction for robust parsing
+        const importSources = extractImportSourcesFromAST(
+            file.content,
+            file.path,
+        );
+
+        for (const importSpecifier of importSources) {
+            // Skip relative imports (start with . or /)
+            if (
+                importSpecifier.startsWith('.') ||
+                importSpecifier.startsWith('/')
+            ) {
+                continue;
+            }
+
+            const packageName = getPackageName(importSpecifier);
+
+            // Skip built-in modules
+            if (isBuiltinModule(packageName)) {
+                continue;
+            }
+
+            allImports.add(importSpecifier);
+        }
+    }
+
+    return allImports;
+}
+
+/**
+ * Resolves path segments, handling ../ and ./ properly.
+ *
+ * This function needs to match the behavior of the reconstruction sanitizePath,
+ * which processes the path AFTER the bundleName prefix. So for a path like
+ * 'assets/../../app-jotai.ts', the bundleName is 'assets' and the original
+ * source map path was '../../app-jotai.ts'. After sanitization, the original
+ * path becomes 'app-jotai.ts', and it's written to 'assets/app-jotai.ts'.
+ *
+ * We need to replicate this: take the first segment as bundleName, sanitize
+ * the rest, then rejoin.
+ *
+ * For example:
+ *   'assets/../../app-jotai.ts' -> 'assets/app-jotai.ts'
+ *   'assets/foo/../bar.ts' -> 'assets/bar.ts'
+ *   'bundle/node_modules/pkg/index.ts' -> 'bundle/node_modules/pkg/index.ts'
+ */
+function resolvePathSegments(inputPath: string): string {
+    const segments = inputPath.split('/');
+
+    if (segments.length === 0) {
+        return '.';
+    }
+
+    // First segment is the bundleName
+    const bundleName = segments[0];
+    const restSegments = segments.slice(1);
+
+    // Sanitize the rest (matching reconstruction's sanitizePath behavior)
+    const resolved: string[] = [];
+    for (const segment of restSegments) {
+        if (segment === '..') {
+            if (resolved.length > 0) {
+                resolved.pop();
+            }
+            // Can't go above root, skip
+        } else if (segment !== '.' && segment !== '') {
+            resolved.push(segment);
+        }
+    }
+
+    // Rejoin with bundleName
+    if (resolved.length === 0) {
+        return bundleName;
+    }
+    return bundleName + '/' + resolved.join('/');
+}
+
+/**
+ * Inferred alias mapping from import/file path analysis
+ */
+export interface InferredAlias {
+    /** The alias name (e.g., 'excalidraw-app') */
+    alias: string;
+    /** The target directory path (e.g., './assets') */
+    targetPath: string;
+    /** Import specifiers that led to this inference */
+    evidence: string[];
+    /** Confidence: 'high' if all subpaths resolve to same dir, 'medium' if majority */
+    confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Infers alias mappings by matching import specifiers to actual file locations.
+ *
+ * Algorithm:
+ * 1. Extract all bare import specifiers with subpaths (e.g., 'excalidraw-app/app-jotai')
+ * 2. For each unique alias name, collect all subpaths imported from it
+ * 3. For each subpath, find files in extracted sources that match
+ * 4. Find the directory that satisfies all (or most) subpaths
+ * 5. That directory is the alias target
+ *
+ * @param sourceFiles - Extracted source files with their paths and content
+ * @param existingAliases - Set of alias names that are already resolved (to skip)
+ * @returns Array of inferred alias mappings
+ */
+export function inferAliasesFromImports(
+    sourceFiles: SourceFile[],
+    existingAliases: Set<string> = new Set(),
+): InferredAlias[] {
+    const result: InferredAlias[] = [];
+
+    // Step 1: Extract all full import specifiers
+    const fullImports = extractFullImportSpecifiers(sourceFiles);
+
+    // Step 2: Group imports by alias name (first segment for non-scoped, first two for scoped)
+    // Only consider imports with subpaths
+    const aliasImports = new Map<string, Set<string>>(); // alias -> set of full specifiers
+
+    for (const specifier of fullImports) {
+        const packageName = getPackageName(specifier);
+
+        // Skip if already resolved
+        if (existingAliases.has(packageName)) continue;
+
+        // Only consider imports with subpaths
+        if (specifier === packageName) continue;
+
+        // Extract the subpath (part after package name)
+        const subpath = specifier.slice(packageName.length + 1); // +1 for the '/'
+        if (!subpath) continue;
+
+        if (!aliasImports.has(packageName)) {
+            aliasImports.set(packageName, new Set());
+        }
+        aliasImports.get(packageName)!.add(specifier);
+    }
+
+    // Step 3: Build a map of filename -> list of directories containing it
+    // Also handle nested paths like 'data/types' -> look for files at */data/types.{ts,tsx,...}
+    const fileLocationMap = new Map<string, string[]>(); // subpath -> [dir1, dir2, ...]
+
+    for (const file of sourceFiles) {
+        // Skip node_modules
+        if (file.path.includes('node_modules/')) continue;
+
+        // Normalize path - resolve any ../ segments
+        // Source map paths can have ../ segments like 'assets/../../app-jotai.ts'
+        // which should resolve to 'app-jotai.ts' (going up from 'assets' twice)
+        const normalizedPath = resolvePathSegments(file.path);
+
+        // Get the path without extension
+        const pathWithoutExt = normalizedPath.replace(
+            /\.(tsx?|jsx?|mjs|cjs)$/,
+            '',
+        );
+
+        // For a file at 'assets/data/types.ts', we want to map:
+        // - 'types' -> 'assets/data'
+        // - 'data/types' -> 'assets'
+        // - 'assets/data/types' -> '.'
+        const parts = pathWithoutExt.split('/');
+
+        for (let i = parts.length - 1; i >= 0; i--) {
+            const subpath = parts.slice(i).join('/');
+            const directory = parts.slice(0, i).join('/') || '.';
+
+            if (!fileLocationMap.has(subpath)) {
+                fileLocationMap.set(subpath, []);
+            }
+
+            const dirs = fileLocationMap.get(subpath)!;
+            if (!dirs.includes(directory)) {
+                dirs.push(directory);
+            }
+        }
+
+        // Also handle index files: 'assets/data/index.ts' should match 'data'
+        const basename = parts[parts.length - 1];
+        if (basename === 'index') {
+            const dirParts = parts.slice(0, -1);
+            if (dirParts.length > 0) {
+                const subpath = dirParts[dirParts.length - 1];
+                const directory = dirParts.slice(0, -1).join('/') || '.';
+
+                if (!fileLocationMap.has(subpath)) {
+                    fileLocationMap.set(subpath, []);
+                }
+                const dirs = fileLocationMap.get(subpath)!;
+                if (!dirs.includes(directory)) {
+                    dirs.push(directory);
+                }
+            }
+        }
+    }
+
+    // Step 4: For each alias, find the directory that satisfies all subpaths
+    for (const [aliasName, specifiers] of aliasImports) {
+        // Collect all subpaths for this alias
+        const subpaths: string[] = [];
+        for (const specifier of specifiers) {
+            const subpath = specifier.slice(aliasName.length + 1);
+            subpaths.push(subpath);
+        }
+
+        // For each subpath, find candidate directories
+        const subpathCandidates = new Map<string, string[]>(); // subpath -> candidate dirs
+
+        for (const subpath of subpaths) {
+            const candidates = fileLocationMap.get(subpath) || [];
+            subpathCandidates.set(subpath, candidates);
+        }
+
+        // Find directories that satisfy the most subpaths
+        const directoryCounts = new Map<string, number>();
+        const directoryEvidence = new Map<string, string[]>();
+
+        for (const [subpath, candidates] of subpathCandidates) {
+            for (const dir of candidates) {
+                directoryCounts.set(dir, (directoryCounts.get(dir) || 0) + 1);
+
+                if (!directoryEvidence.has(dir)) {
+                    directoryEvidence.set(dir, []);
+                }
+                directoryEvidence.get(dir)!.push(`${aliasName}/${subpath}`);
+            }
+        }
+
+        if (directoryCounts.size === 0) {
+            // No candidates found for any subpath
+            continue;
+        }
+
+        // Sort directories by count (descending), then by path length (ascending, prefer shorter)
+        const sortedDirs = Array.from(directoryCounts.entries()).sort(
+            (a, b) => {
+                // First by count (more matches = better)
+                if (b[1] !== a[1]) return b[1] - a[1];
+                // Then by path length (shorter = better)
+                return a[0].length - b[0].length;
+            },
+        );
+
+        const bestDir = sortedDirs[0][0];
+        const bestCount = sortedDirs[0][1];
+        const totalSubpaths = subpaths.length;
+
+        // Determine confidence
+        let confidence: 'high' | 'medium' | 'low';
+        if (bestCount === totalSubpaths) {
+            confidence = 'high';
+        } else if (bestCount >= totalSubpaths * 0.5) {
+            confidence = 'medium';
+        } else {
+            confidence = 'low';
+        }
+
+        // Format the path
+        const targetPath = bestDir === '.' ? '.' : `./${bestDir}`;
+
+        result.push({
+            alias: aliasName,
+            targetPath,
+            evidence: directoryEvidence.get(bestDir) || [],
+            confidence,
+        });
+    }
+
+    return result;
+}
+
+/**
  * Recursively walks a directory and yields file paths
  */
 async function* walkDirectory(dir: string): AsyncGenerator<string> {

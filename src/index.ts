@@ -1182,6 +1182,7 @@ async function main() {
                         options.packageManager === 'auto'
                             ? undefined
                             : options.packageManager,
+                    sourceFiles: allExtractedFiles,
                     onProgress: (message) => {
                         rebuildSpinner.text = message;
                     },

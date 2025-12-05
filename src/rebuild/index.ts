@@ -5,7 +5,7 @@
  */
 
 import { join } from 'path';
-import { stat, writeFile, readFile } from 'fs/promises';
+import { stat, writeFile, readFile, readdir } from 'fs/promises';
 import type {
     PrepareRebuildOptions,
     PrepareResult,
@@ -68,6 +68,121 @@ export {
     injectGlobalCss,
     needsGlobalCssInjection,
 } from './global-css-injector.js';
+
+/**
+ * Generate index.ts files for alias target directories that don't have one.
+ *
+ * When an alias points to a directory (e.g., @excalidraw/utils -> ./assets/packages/utils/src),
+ * Vite needs an index file to resolve bare imports like `from "@excalidraw/utils"`.
+ * If the directory only has individual module files (bbox.ts, export.ts, etc.),
+ * we generate an index that re-exports all of them.
+ *
+ * @param projectDir - Project root directory
+ * @param aliases - Alias mappings from config
+ * @param onProgress - Optional progress callback
+ * @returns Array of generated index file paths
+ */
+async function generateMissingIndexFiles(
+    projectDir: string,
+    aliases: Array<{ alias: string; path: string }>,
+    onProgress?: (message: string) => void,
+): Promise<string[]> {
+    const generatedFiles: string[] = [];
+    const processedDirs = new Set<string>();
+
+    for (const { alias, path: aliasPath } of aliases) {
+        // Normalize the path
+        const normalizedPath = aliasPath.replace(/^\.\//, '');
+        const absolutePath = join(projectDir, normalizedPath);
+
+        // Skip if we've already processed this directory
+        if (processedDirs.has(absolutePath)) continue;
+        processedDirs.add(absolutePath);
+
+        try {
+            // Check if path exists and is a directory
+            const pathStat = await stat(absolutePath);
+            if (!pathStat.isDirectory()) continue;
+
+            // Check if index file already exists
+            const indexExtensions = ['ts', 'tsx', 'js', 'jsx'];
+            let hasIndex = false;
+            for (const ext of indexExtensions) {
+                try {
+                    await stat(join(absolutePath, `index.${ext}`));
+                    hasIndex = true;
+                    break;
+                } catch {
+                    // Index doesn't exist with this extension
+                }
+            }
+
+            if (hasIndex) continue;
+
+            // Read directory contents to find exportable modules
+            const entries = await readdir(absolutePath, {
+                withFileTypes: true,
+            });
+            const moduleFiles: string[] = [];
+
+            for (const entry of entries) {
+                if (!entry.isFile()) continue;
+
+                // Check for TypeScript/JavaScript files (not index files)
+                const match = entry.name.match(
+                    /^([a-zA-Z][\w-]*)\.(?:ts|tsx|js|jsx)$/,
+                );
+                if (match && match[1] !== 'index') {
+                    moduleFiles.push(match[1]);
+                }
+            }
+
+            if (moduleFiles.length === 0) continue;
+
+            // Generate the index file
+            const indexContent = generateIndexFileContent(moduleFiles, alias);
+            const indexPath = join(absolutePath, 'index.ts');
+
+            await writeFile(indexPath, indexContent, 'utf-8');
+            generatedFiles.push(normalizedPath + '/index.ts');
+
+            onProgress?.(
+                `Generated index.ts for ${alias} with ${moduleFiles.length} module(s)`,
+            );
+        } catch {
+            // Directory doesn't exist or can't be read, skip
+        }
+    }
+
+    return generatedFiles;
+}
+
+/**
+ * Generate content for an index.ts file that re-exports all modules
+ */
+function generateIndexFileContent(
+    moduleFiles: string[],
+    aliasName: string,
+): string {
+    const lines: string[] = [
+        '// Auto-generated index file for package alias resolution',
+        `// This file was created because the directory is used as an alias target (${aliasName})`,
+        '// and did not have an index file for bare imports.',
+        '',
+    ];
+
+    // Sort module files alphabetically for consistent output
+    const sortedModules = [...moduleFiles].sort();
+
+    // Re-export everything from each module
+    for (const moduleName of sortedModules) {
+        lines.push(`export * from './${moduleName}';`);
+    }
+
+    lines.push('');
+
+    return lines.join('\n');
+}
 
 /**
  * Analyze a project and return its configuration
@@ -298,6 +413,21 @@ export async function prepareRebuild(
         };
     }
 
+    // Generate missing index files for alias target directories
+    // This ensures bare imports like `from "@excalidraw/utils"` work when
+    // the alias target directory only has individual module files.
+    onProgress?.('Checking for missing index files...');
+    try {
+        const indexFiles = await generateMissingIndexFiles(
+            projectDir,
+            config.aliases,
+            verbose ? onProgress : undefined,
+        );
+        generatedFiles.push(...indexFiles);
+    } catch (error) {
+        warnings.push(`Failed to generate missing index files: ${error}`);
+    }
+
     // Generate vite.config.ts
     onProgress?.('Generating vite.config.ts...');
     try {
@@ -455,6 +585,7 @@ export async function rebuild(options: BuildOptions): Promise<BuildResult> {
         overwrite: true, // Always overwrite when rebuilding
         verbose,
         onProgress,
+        sourceFiles: options.sourceFiles,
     });
 
     if (!prepareResult.success) {
