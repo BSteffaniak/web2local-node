@@ -134,6 +134,81 @@ export function extractDynamicImportPaths(
 }
 
 /**
+ * Extract static import/export paths from JavaScript source code using SWC AST parsing.
+ *
+ * Extracts paths from:
+ * - `import ... from "./relative/path.js"`
+ * - `import "./relative/path.js"` (side-effect imports)
+ * - `export ... from "./relative/path.js"` (re-exports)
+ *
+ * Only returns relative paths (starting with ./ or ../).
+ *
+ * @param sourceCode - The JavaScript source code to parse
+ * @param filename - Optional filename for better error messages
+ * @returns Array of relative import paths
+ */
+export function extractStaticImportPaths(
+    sourceCode: string,
+    filename: string = 'file.js',
+): string[] {
+    const ast = safeParse(sourceCode, filename);
+    if (!ast) return [];
+
+    const paths: Set<string> = new Set();
+
+    walkAST(ast, (node) => {
+        // Import declarations: import ... from "..."
+        if (node.type === 'ImportDeclaration') {
+            const source = node.source as Record<string, unknown> | undefined;
+            if (source && source.type === 'StringLiteral') {
+                const path = source.value as string;
+                if (path.startsWith('./') || path.startsWith('../')) {
+                    paths.add(path);
+                }
+            }
+        }
+
+        // Export declarations with source: export ... from "..."
+        if (
+            node.type === 'ExportNamedDeclaration' ||
+            node.type === 'ExportAllDeclaration'
+        ) {
+            const source = node.source as Record<string, unknown> | undefined;
+            if (source && source.type === 'StringLiteral') {
+                const path = source.value as string;
+                if (path.startsWith('./') || path.startsWith('../')) {
+                    paths.add(path);
+                }
+            }
+        }
+    });
+
+    return Array.from(paths);
+}
+
+/**
+ * Extract all import paths (both static and dynamic) from JavaScript source code.
+ *
+ * This is a convenience function that combines extractDynamicImportPaths and
+ * extractStaticImportPaths.
+ *
+ * @param sourceCode - The JavaScript source code to parse
+ * @param filename - Optional filename for better error messages
+ * @returns Array of relative import paths (deduplicated)
+ */
+export function extractAllImportPaths(
+    sourceCode: string,
+    filename: string = 'file.js',
+): string[] {
+    const dynamicPaths = extractDynamicImportPaths(sourceCode, filename);
+    const staticPaths = extractStaticImportPaths(sourceCode, filename);
+
+    // Combine and deduplicate
+    const allPaths = new Set([...dynamicPaths, ...staticPaths]);
+    return Array.from(allPaths);
+}
+
+/**
  * Extract @import URLs from CSS content.
  *
  * Matches:
@@ -339,9 +414,10 @@ export async function resolveMissingDynamicImports(
                 const relativeFromFile = relative(bundlesDir, bundleFile);
 
                 // Extract imports based on file type
+                // For JS files, extract both static and dynamic imports
                 const isJs = bundleFile.endsWith('.js');
                 const importPaths = isJs
-                    ? extractDynamicImportPaths(content, bundleFile)
+                    ? extractAllImportPaths(content, bundleFile)
                     : extractCssImportUrls(content);
 
                 for (const relativePath of importPaths) {
