@@ -99,8 +99,10 @@ describe('generateViteConfig', () => {
         });
 
         expect(config).toContain("import react from '@vitejs/plugin-react'");
-        // CSS module stub plugin is always first, followed by framework plugin
-        expect(config).toContain('plugins: [cssModuleStubPlugin(), react()]');
+        // Virtual module stub and CSS module stub plugins are always first, followed by framework plugin
+        expect(config).toContain(
+            'plugins: [virtualModuleStubPlugin(), cssModuleStubPlugin(), react()]',
+        );
     });
 
     test('should include Vue plugin for Vue framework', () => {
@@ -114,8 +116,10 @@ describe('generateViteConfig', () => {
         });
 
         expect(config).toContain("import vue from '@vitejs/plugin-vue'");
-        // CSS module stub plugin is always first, followed by framework plugin
-        expect(config).toContain('plugins: [cssModuleStubPlugin(), vue()]');
+        // Virtual module stub and CSS module stub plugins are always first, followed by framework plugin
+        expect(config).toContain(
+            'plugins: [virtualModuleStubPlugin(), cssModuleStubPlugin(), vue()]',
+        );
     });
 
     test('should include aliases sorted by specificity', () => {

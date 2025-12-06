@@ -116,6 +116,16 @@ function extractAllExportedSymbols(
 }
 
 /**
+ * Alias mapping from alias name to file system path
+ */
+export interface AliasMapping {
+    /** The alias (e.g., '@excalidraw/common') */
+    alias: string;
+    /** The path relative to project root (e.g., './assets/packages/common/src') */
+    path: string;
+}
+
+/**
  * Options for index reconstruction
  */
 export interface IndexReconstructionOptions {
@@ -123,6 +133,8 @@ export interface IndexReconstructionOptions {
     projectDir: string;
     /** All source files in the project */
     sourceFiles: SourceFile[];
+    /** Alias mappings from vite config */
+    aliases?: AliasMapping[];
     /** Progress callback */
     onProgress?: (message: string) => void;
     /** Warning callback */
@@ -153,6 +165,8 @@ export interface ResolvedExport {
     absolutePath: string;
     /** Whether this should be a type-only export */
     isTypeOnly: boolean;
+    /** Whether this is a default export that should be re-exported as a named export */
+    isDefaultAsNamed: boolean;
 }
 
 /**
@@ -254,9 +268,40 @@ function resolveModulePath(
 }
 
 /**
+ * Resolve an aliased import to a filesystem path
+ *
+ * @param importSource - The import source (e.g., '@excalidraw/common')
+ * @param aliases - The alias mappings
+ * @param projectDir - The project root directory
+ * @returns The resolved absolute path, or null if not an alias
+ */
+function resolveAliasedImport(
+    importSource: string,
+    aliases: AliasMapping[],
+    projectDir: string,
+): string | null {
+    // Sort aliases by specificity (longer/more specific first)
+    const sortedAliases = [...aliases].sort(
+        (a, b) => b.alias.length - a.alias.length,
+    );
+
+    for (const { alias, path: aliasPath } of sortedAliases) {
+        // Check for exact match or prefix match with /
+        if (importSource === alias || importSource.startsWith(alias + '/')) {
+            // Normalize the alias path (remove leading ./)
+            const normalizedPath = aliasPath.replace(/^\.\//, '');
+            const absolutePath = resolve(projectDir, normalizedPath);
+            return absolutePath;
+        }
+    }
+
+    return null;
+}
+
+/**
  * Collect all expected imports from internal modules
  *
- * Scans all source files, finds imports from relative paths,
+ * Scans all source files, finds imports from relative paths AND aliased imports,
  * and aggregates what symbols are expected from each module.
  *
  * @returns Map of module directory path -> Map of symbol name -> ExpectedImport
@@ -264,7 +309,7 @@ function resolveModulePath(
 export async function collectExpectedImports(
     options: IndexReconstructionOptions,
 ): Promise<Map<string, Map<string, ExpectedImport>>> {
-    const { projectDir, sourceFiles, onProgress } = options;
+    const { projectDir, sourceFiles, aliases, onProgress } = options;
 
     // Map: module path -> symbol name -> import info
     const moduleImports = new Map<string, Map<string, ExpectedImport>>();
@@ -286,15 +331,24 @@ export async function collectExpectedImports(
             for (const imp of imports) {
                 const category = categorizeImport(imp.source);
 
-                // Only process relative imports (internal modules)
-                if (!category.isRelative) continue;
+                let modulePath: string | null = null;
 
-                // Resolve to absolute module path
-                const modulePath = resolveModulePath(
-                    imp.source,
-                    filePath,
-                    projectDir,
-                );
+                if (category.isRelative) {
+                    // Handle relative imports (internal modules)
+                    modulePath = resolveModulePath(
+                        imp.source,
+                        filePath,
+                        projectDir,
+                    );
+                } else if (aliases && aliases.length > 0) {
+                    // Handle aliased imports (e.g., @excalidraw/common)
+                    modulePath = resolveAliasedImport(
+                        imp.source,
+                        aliases,
+                        projectDir,
+                    );
+                }
+
                 if (!modulePath) continue;
 
                 // Get or create the map for this module
@@ -415,6 +469,16 @@ async function getModuleFiles(dirPath: string): Promise<string[]> {
 }
 
 /**
+ * Result of finding an export source
+ */
+interface ExportSourceResult {
+    absolutePath: string;
+    relativePath: string;
+    /** True if the export is a default export that should be re-exported as a named export */
+    isDefaultAsNamed: boolean;
+}
+
+/**
  * Search for a symbol's export source within a directory and related paths
  *
  * Search order:
@@ -422,13 +486,17 @@ async function getModuleFiles(dirPath: string): Promise<string[]> {
  * 2. Files in subdirectories (e.g., src/)
  * 3. Sibling directories at the same level
  * 4. Parent package directories
+ *
+ * Also handles the common pattern where a file exports a default that should
+ * be re-exported as a named export (e.g., StaticCanvas.tsx exports default,
+ * and index.ts should export { default as StaticCanvas } from './StaticCanvas')
  */
 async function findExportSource(
     symbolName: string,
     modulePath: string,
     projectDir: string,
     options: IndexReconstructionOptions,
-): Promise<{ absolutePath: string; relativePath: string } | null> {
+): Promise<ExportSourceResult | null> {
     const searchPaths: string[] = [];
 
     // 1. The module directory itself
@@ -475,8 +543,7 @@ async function findExportSource(
     }
 
     // Search each path for files exporting the symbol
-    const candidates: Array<{ absolutePath: string; relativePath: string }> =
-        [];
+    const candidates: Array<ExportSourceResult> = [];
 
     for (const searchPath of searchPaths) {
         if (!(await isDirectory(searchPath))) continue;
@@ -491,12 +558,45 @@ async function findExportSource(
                     basename(filePath),
                 );
 
+                // Direct named export match
                 if (allExports.has(symbolName)) {
                     const relativePath = relative(modulePath, filePath).replace(
                         /\\/g,
                         '/',
                     );
-                    candidates.push({ absolutePath: filePath, relativePath });
+                    candidates.push({
+                        absolutePath: filePath,
+                        relativePath,
+                        isDefaultAsNamed: false,
+                    });
+                    continue;
+                }
+
+                // Check for default export that matches filename
+                // e.g., StaticCanvas.tsx with default export -> symbolName 'StaticCanvas'
+                if (allExports.has('default')) {
+                    const fileName = basename(filePath);
+                    // Remove extension: StaticCanvas.tsx -> StaticCanvas
+                    const fileBaseName = fileName.replace(
+                        /\.(tsx?|jsx?|mjs|cjs)$/,
+                        '',
+                    );
+
+                    if (
+                        fileBaseName === symbolName ||
+                        // Handle PascalCase vs camelCase variations
+                        fileBaseName.toLowerCase() === symbolName.toLowerCase()
+                    ) {
+                        const relativePath = relative(
+                            modulePath,
+                            filePath,
+                        ).replace(/\\/g, '/');
+                        candidates.push({
+                            absolutePath: filePath,
+                            relativePath,
+                            isDefaultAsNamed: true,
+                        });
+                    }
                 }
             } catch {
                 // File can't be read or parsed
@@ -508,11 +608,22 @@ async function findExportSource(
         return null;
     }
 
+    // Prefer direct named exports over default-as-named
+    const directExports = candidates.filter((c) => !c.isDefaultAsNamed);
+    if (directExports.length > 0) {
+        if (directExports.length > 1) {
+            const paths = directExports.map((c) => c.relativePath).join(', ');
+            options.onWarning?.(
+                `"${symbolName}" found in multiple locations: ${paths} - using first match`,
+            );
+        }
+        return directExports[0];
+    }
+
     if (candidates.length > 1) {
-        // Warn about multiple sources
         const paths = candidates.map((c) => c.relativePath).join(', ');
         options.onWarning?.(
-            `"${symbolName}" found in multiple locations: ${paths} - using first match`,
+            `"${symbolName}" found in multiple locations (as default): ${paths} - using first match`,
         );
     }
 
@@ -564,24 +675,50 @@ function generateIndexContent(
             ? importPath
             : './' + importPath;
 
-        // Separate type-only and regular exports
-        const typeExports = exports.filter((e) => e.isTypeOnly);
-        const valueExports = exports.filter((e) => !e.isTypeOnly);
+        // Separate exports by type
+        const namedExports = exports.filter(
+            (e) => !e.isTypeOnly && !e.isDefaultAsNamed,
+        );
+        const defaultAsNamedExports = exports.filter(
+            (e) => !e.isTypeOnly && e.isDefaultAsNamed,
+        );
+        const typeExports = exports.filter(
+            (e) => e.isTypeOnly && !e.isDefaultAsNamed,
+        );
+        const typeDefaultAsNamedExports = exports.filter(
+            (e) => e.isTypeOnly && e.isDefaultAsNamed,
+        );
 
-        if (valueExports.length > 0) {
-            const symbols = valueExports
+        // Regular named exports: export { foo, bar } from './module';
+        if (namedExports.length > 0) {
+            const symbols = namedExports
                 .map((e) => e.symbolName)
                 .sort()
                 .join(', ');
             lines.push(`export { ${symbols} } from '${normalizedPath}';`);
         }
 
+        // Default-as-named exports: export { default as Foo } from './Foo';
+        for (const exp of defaultAsNamedExports) {
+            lines.push(
+                `export { default as ${exp.symbolName} } from '${normalizedPath}';`,
+            );
+        }
+
+        // Type-only named exports: export type { Foo, Bar } from './module';
         if (typeExports.length > 0) {
             const symbols = typeExports
                 .map((e) => e.symbolName)
                 .sort()
                 .join(', ');
             lines.push(`export type { ${symbols} } from '${normalizedPath}';`);
+        }
+
+        // Type-only default-as-named exports (rare, but handle it)
+        for (const exp of typeDefaultAsNamedExports) {
+            lines.push(
+                `export type { default as ${exp.symbolName} } from '${normalizedPath}';`,
+            );
         }
     }
 
@@ -599,6 +736,59 @@ function generateIndexContent(
     lines.push('');
 
     return lines.join('\n');
+}
+
+/**
+ * Check if content is an entry point file that should NOT be reconstructed.
+ *
+ * Entry point files typically:
+ * - Import React and render to DOM
+ * - Contain JSX syntax
+ * - Have substantial application logic beyond just exports
+ *
+ * We should NOT modify these files as they are the application entry points,
+ * not simple module index files.
+ */
+function isEntryPointContent(content: string): boolean {
+    // Check for JSX syntax (common in entry points)
+    // Look for opening JSX tags: <Component or <div etc.
+    const hasJsx = /<[A-Z][a-zA-Z0-9]*[\s/>]/.test(content);
+
+    // Check for ReactDOM.render or createRoot().render patterns
+    const hasReactRender =
+        /createRoot\s*\(/.test(content) ||
+        /ReactDOM\.render\s*\(/.test(content) ||
+        /\.render\s*\(\s*</.test(content);
+
+    // Check for document.getElementById (typical entry point pattern)
+    const hasDocumentGetById = /document\.getElementById\s*\(/.test(content);
+
+    // An entry point typically has JSX AND either render call or getElementById
+    if (hasJsx && (hasReactRender || hasDocumentGetById)) {
+        return true;
+    }
+
+    // If the file has JSX and more than just exports/imports, it's likely an app file
+    if (hasJsx) {
+        // Count lines that aren't imports/exports/comments/whitespace
+        const lines = content.split('\n');
+        let codeLines = 0;
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            if (trimmed.startsWith('import ')) continue;
+            if (trimmed.startsWith('export ')) continue;
+            if (trimmed.startsWith('//')) continue;
+            if (trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+            codeLines++;
+        }
+        // If more than 10 lines of actual code, it's not just an index file
+        if (codeLines > 10) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -624,6 +814,14 @@ async function reconstructModuleIndex(
     const { exports: existingExports, content: existingContent } = indexPath
         ? await getExistingExports(indexPath)
         : { exports: new Set<string>(), content: '' };
+
+    // Skip entry point files - these are application entry points, not module indices
+    if (existingContent && isEntryPointContent(existingContent)) {
+        onProgress?.(
+            `  Skipping ${relativeModulePath} - appears to be an entry point, not an index file`,
+        );
+        return null;
+    }
 
     // Determine which exports are missing
     const expectedSymbols = Array.from(expectedImports.keys())
@@ -660,6 +858,7 @@ async function reconstructModuleIndex(
                 relativePath: source.relativePath,
                 absolutePath: source.absolutePath,
                 isTypeOnly: importInfo.isTypeOnly,
+                isDefaultAsNamed: source.isDefaultAsNamed,
             });
         } else {
             unresolvedExports.push(symbolName);

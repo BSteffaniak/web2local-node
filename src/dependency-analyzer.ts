@@ -1526,8 +1526,23 @@ export function generatePackageJson(
         const target = info.isPrivate ? privateDeps : deps;
 
         if (info.version) {
-            // Use caret range for flexibility
-            target[packageName] = `^${info.version}`;
+            // Use exact version when confidence is 'exact' (from fingerprinting),
+            // otherwise use caret range for flexibility.
+            // This prevents installing a newer (potentially broken) patch version
+            // when we know the exact version that was running in production.
+            const isExact = info.confidence === 'exact';
+            if (isExact) {
+                target[packageName] = info.version;
+            } else {
+                target[packageName] = `^${info.version}`;
+            }
+
+            // Debug: log when exact versions are used
+            if (isExact) {
+                console.log(
+                    `[version] Using exact version for ${packageName}: ${info.version} (confidence: ${info.confidence})`,
+                );
+            }
 
             // Track version metadata
             if (info.confidence && info.versionSource) {
@@ -1547,7 +1562,7 @@ export function generatePackageJson(
 
     // Add dev dependencies based on detected project config
     if (projectConfig?.hasTypeScript) {
-        devDeps['typescript'] = '^5.0.0';
+        devDeps['typescript'] = 'latest';
         scripts['typecheck'] = 'tsc --noEmit';
         scripts['build'] = 'tsc';
     }
@@ -1557,7 +1572,7 @@ export function generatePackageJson(
     // (e.g., React 19 changed RefObject<T> to be non-generic, breaking React 18 code)
     if (projectConfig?.jsxFramework === 'react' && !deps['@types/react']) {
         const reactVersion = deps['react'];
-        let typesVersion = '^18.0.0'; // Default fallback
+        let typesVersion = 'latest'; // Default fallback
 
         if (reactVersion && reactVersion !== '*') {
             // Extract major version (e.g., "^18.2.0" -> "18", "~17.0.0" -> "17")
@@ -1577,7 +1592,7 @@ export function generatePackageJson(
             projectConfig?.environment === 'both') &&
         projectConfig?.hasTypeScript
     ) {
-        devDeps['@types/node'] = '^20.0.0';
+        devDeps['@types/node'] = 'latest';
     }
 
     const result: Record<string, unknown> = {

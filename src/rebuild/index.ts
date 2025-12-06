@@ -306,11 +306,14 @@ export async function prepareRebuild(
     // Reconstruct index files for internal modules using SWC-based analysis
     // This analyzes what symbols consuming files expect from each module,
     // finds where those symbols are defined, and generates proper re-exports.
+    // NOTE: We also pass aliases so that aliased imports (like @excalidraw/common)
+    // are tracked and their target index files get reconstructed.
     onProgress?.('Reconstructing module index files...');
     try {
         const reconstructionResult = await reconstructAllIndexes({
             projectDir,
             sourceFiles: sourceFiles ?? [],
+            aliases: config.aliases,
             onProgress: verbose ? onProgress : undefined,
             onWarning: (msg) => warnings.push(msg),
         });

@@ -208,6 +208,8 @@ export interface PackageEnhanceOptions {
     packageJsonPath: string;
     /** Framework being used */
     framework: Framework;
+    /** Whether TypeScript is used (.ts/.tsx files detected) */
+    hasTypeScript?: boolean;
     /** Whether SCSS/SASS is used */
     usesSass?: boolean;
     /** Additional dev dependencies to add */

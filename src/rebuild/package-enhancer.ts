@@ -9,44 +9,6 @@ import type { Framework, PackageEnhanceOptions } from './types.js';
 import { getFrameworkPluginPackage } from './vite-config-generator.js';
 
 /**
- * Default Vite version
- */
-const VITE_VERSION = '^5.4.0';
-
-/**
- * Default TypeScript version
- */
-const TYPESCRIPT_VERSION = '^5.6.0';
-
-/**
- * Get dev dependencies for a framework
- */
-function getFrameworkDevDeps(framework: Framework): Record<string, string> {
-    const deps: Record<string, string> = {};
-
-    const pluginPkg = getFrameworkPluginPackage(framework);
-    if (pluginPkg) {
-        deps[pluginPkg] = '^4.3.0';
-    }
-
-    // Add framework-specific type packages
-    switch (framework) {
-        case 'react':
-            deps['@types/react'] = '^18.3.0';
-            deps['@types/react-dom'] = '^18.3.0';
-            break;
-        case 'vue':
-            deps['vue-tsc'] = '^2.0.0';
-            break;
-        case 'svelte':
-            deps['svelte-check'] = '^4.0.0';
-            break;
-    }
-
-    return deps;
-}
-
-/**
  * Get build scripts for the project
  */
 function getBuildScripts(): Record<string, string> {
@@ -79,11 +41,25 @@ async function readPackageJson(
 
 /**
  * Enhance package.json with build dependencies
+ *
+ * Only adds build tools that are actually needed:
+ * - Vite: Always needed for rebuild
+ * - TypeScript: Only if .ts/.tsx files exist (detected via hasTypeScript option)
+ * - Sass: Only if .scss/.sass files exist (detected via usesSass option)
+ * - Framework plugin: Based on detected framework
+ *
+ * All versions use 'latest' to avoid hardcoding potentially stale versions.
  */
 export async function enhancePackageJson(
     options: PackageEnhanceOptions,
 ): Promise<{ added: string[]; updated: boolean }> {
-    const { packageJsonPath, framework, usesSass, additionalDevDeps } = options;
+    const {
+        packageJsonPath,
+        framework,
+        usesSass,
+        additionalDevDeps,
+        hasTypeScript = true,
+    } = options;
 
     const pkg = await readPackageJson(packageJsonPath);
     const added: string[] = [];
@@ -94,31 +70,29 @@ export async function enhancePackageJson(
     }
     const devDeps = pkg.devDependencies as Record<string, string>;
 
-    // Add Vite
+    // Add Vite - always needed for rebuild
     if (!devDeps['vite']) {
-        devDeps['vite'] = VITE_VERSION;
+        devDeps['vite'] = 'latest';
         added.push('vite');
     }
 
-    // Add TypeScript if not present
+    // Add TypeScript only if TypeScript files were detected
     const deps = (pkg.dependencies || {}) as Record<string, string>;
-    if (!devDeps['typescript'] && !deps['typescript']) {
-        devDeps['typescript'] = TYPESCRIPT_VERSION;
+    if (hasTypeScript && !devDeps['typescript'] && !deps['typescript']) {
+        devDeps['typescript'] = 'latest';
         added.push('typescript');
     }
 
-    // Add framework-specific dev dependencies
-    const frameworkDeps = getFrameworkDevDeps(framework);
-    for (const [name, version] of Object.entries(frameworkDeps)) {
-        if (!devDeps[name]) {
-            devDeps[name] = version;
-            added.push(name);
-        }
+    // Add framework-specific Vite plugin
+    const pluginPkg = getFrameworkPluginPackage(framework);
+    if (pluginPkg && !devDeps[pluginPkg]) {
+        devDeps[pluginPkg] = 'latest';
+        added.push(pluginPkg);
     }
 
-    // Add SASS if used
+    // Add SASS only if SASS/SCSS files were detected
     if (usesSass && !devDeps['sass']) {
-        devDeps['sass'] = '^1.80.0';
+        devDeps['sass'] = 'latest';
         added.push('sass');
     }
 
@@ -149,6 +123,18 @@ export async function enhancePackageJson(
     // Ensure type: module for ESM
     if (!pkg.type) {
         pkg.type = 'module';
+    }
+
+    // Sort dependencies alphabetically
+    if (
+        pkg.dependencies &&
+        Object.keys(pkg.dependencies as object).length > 0
+    ) {
+        pkg.dependencies = Object.fromEntries(
+            Object.entries(pkg.dependencies as Record<string, string>).sort(
+                ([a], [b]) => a.localeCompare(b),
+            ),
+        );
     }
 
     // Sort devDependencies alphabetically
