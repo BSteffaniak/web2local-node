@@ -26,6 +26,9 @@ import { robustFetch } from './http.js';
 // Re-export for external use
 export { computeNormalizedHash, extractCodeSignature };
 
+/** Default number of versions to check concurrently within a single package */
+const DEFAULT_VERSION_CHECK_CONCURRENCY = 6;
+
 export interface FingerprintResult extends VersionResult {
     similarity: number;
     matchedFiles: number;
@@ -37,8 +40,10 @@ export interface FingerprintOptions {
     maxVersionsToCheck?: number;
     /** Minimum similarity threshold (0-1) */
     minSimilarity?: number;
-    /** Number of concurrent requests */
+    /** Number of packages to process concurrently */
     concurrency?: number;
+    /** Number of versions to check concurrently within each package (default: 6) */
+    versionConcurrency?: number;
     /** Include pre-release versions (alpha, beta, rc, nightly, etc.) */
     includePrereleases?: boolean;
     /** Progress callback for overall progress */
@@ -114,11 +119,23 @@ async function fetchPackageMetadata(
             };
         }
 
+        // Extract version publish times for smart ordering
+        const versionTimes: Record<string, number> = {};
+        if (data.time) {
+            for (const [version, timeStr] of Object.entries(data.time)) {
+                // Skip 'created' and 'modified' meta-keys
+                if (version !== 'created' && version !== 'modified') {
+                    versionTimes[version] = new Date(timeStr).getTime();
+                }
+            }
+        }
+
         const metadata: PackageMetadataCache = {
             name: packageName,
             versions,
             versionDetails,
             distTags: data['dist-tags'] || {},
+            versionTimes,
             fetchedAt: Date.now(),
         };
 
@@ -180,6 +197,137 @@ async function getAllVersions(
     }
 
     return allVersions;
+}
+
+/**
+ * Finds the index of the version closest to the hint in a list of versions.
+ * The hint can be a full version like "1.2.3" or a partial like "1.2" or "1.x".
+ */
+function findClosestVersionIndex(versions: string[], hint: string): number {
+    // Parse hint - remove .x suffix and split into parts
+    const hintParts = hint
+        .replace(/\.x$/i, '')
+        .split('.')
+        .map((p) => parseInt(p, 10) || 0);
+
+    let bestIndex = -1;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i < versions.length; i++) {
+        const vParts = versions[i]
+            .replace(/-.*$/, '') // Remove prerelease suffix
+            .split('.')
+            .map((p) => parseInt(p, 10) || 0);
+
+        // Calculate weighted distance (major has highest weight)
+        let distance = 0;
+        for (let j = 0; j < 3; j++) {
+            const weight = Math.pow(1000, 2 - j); // 1000000, 1000, 1
+            const diff = Math.abs((vParts[j] || 0) - (hintParts[j] || 0));
+            distance += diff * weight;
+        }
+
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+        }
+    }
+
+    return bestIndex;
+}
+
+/**
+ * Returns versions ordered for efficient searching:
+ * 1. dist-tags (latest, next, etc.) - most likely matches
+ * 2. If versionHint provided, versions close to it (outward search)
+ * 3. Remaining versions by publish date (newest first)
+ */
+function getVersionsInSearchOrder(
+    allVersions: string[],
+    metadata: PackageMetadataCache,
+    versionHint?: string | null,
+): string[] {
+    const ordered: string[] = [];
+    const seen = new Set<string>();
+
+    // Priority 1: dist-tags (latest, next, etc.) - these are most commonly used
+    if (metadata.distTags) {
+        for (const tagVersion of Object.values(metadata.distTags)) {
+            if (allVersions.includes(tagVersion) && !seen.has(tagVersion)) {
+                ordered.push(tagVersion);
+                seen.add(tagVersion);
+            }
+        }
+    }
+
+    // Priority 2: If we have a version hint, search outward from it
+    if (versionHint) {
+        const hintIndex = findClosestVersionIndex(allVersions, versionHint);
+        if (hintIndex >= 0) {
+            // Interleave versions before and after the hint for binary-search-like behavior
+            for (let offset = 0; offset < allVersions.length; offset++) {
+                const after = hintIndex + offset;
+                const before = hintIndex - offset - 1;
+
+                if (
+                    after < allVersions.length &&
+                    !seen.has(allVersions[after])
+                ) {
+                    ordered.push(allVersions[after]);
+                    seen.add(allVersions[after]);
+                }
+                if (before >= 0 && !seen.has(allVersions[before])) {
+                    ordered.push(allVersions[before]);
+                    seen.add(allVersions[before]);
+                }
+            }
+        }
+    }
+
+    // Priority 3: Remaining versions by publish date (newest first)
+    const remaining = allVersions.filter((v) => !seen.has(v));
+    if (
+        metadata.versionTimes &&
+        Object.keys(metadata.versionTimes).length > 0
+    ) {
+        remaining.sort((a, b) => {
+            const timeA = metadata.versionTimes?.[a] ?? 0;
+            const timeB = metadata.versionTimes?.[b] ?? 0;
+            return timeB - timeA; // Descending (newest first)
+        });
+    }
+
+    ordered.push(...remaining);
+    return ordered;
+}
+
+/**
+ * Pre-fetches metadata for multiple packages in parallel.
+ * This eliminates metadata fetch latency from the critical path.
+ */
+async function prefetchPackageMetadata(
+    packageNames: string[],
+    cache: FingerprintCache,
+    concurrency: number = 10,
+): Promise<void> {
+    // Filter to packages not already in cache
+    const needsFetch: string[] = [];
+    for (const name of packageNames) {
+        const cached = await cache.getMetadata(name);
+        if (!cached) {
+            needsFetch.push(name);
+        }
+    }
+
+    if (needsFetch.length === 0) return;
+
+    // Fetch in parallel batches
+    for (let i = 0; i < needsFetch.length; i += concurrency) {
+        const batch = needsFetch.slice(i, i + concurrency);
+        await Promise.all(
+            batch.map((name) => fetchPackageMetadata(name, cache)),
+        );
+    }
 }
 
 /**
@@ -338,7 +486,7 @@ function detectIfMinified(content: string): boolean {
 
     // Heuristic 3: Single-character variable density
     // Minified code has many single-char vars like: function(a,b,c){...}
-    const singleCharVars = (content.match(/[\(,]\s*[a-z]\s*[,\)]/gi) || [])
+    const singleCharVars = (content.match(/[(,]\s*[a-z]\s*[,)]/gi) || [])
         .length;
     const singleCharDensity = singleCharVars / (content.length / 1000);
 
@@ -1056,6 +1204,112 @@ function computeMultiFileSimilarity(
 }
 
 /**
+ * Result from checking a single version's similarity
+ */
+interface VersionCheckResult {
+    version: string;
+    similarity: number;
+    matchSource: 'fingerprint' | 'fingerprint-minified';
+}
+
+/**
+ * Checks similarity between extracted source and a specific npm package version.
+ * Extracted as a helper to enable parallel version checking.
+ */
+async function checkVersionSimilarity(
+    packageName: string,
+    version: string,
+    extractedFingerprint: ReturnType<typeof computeExtractedFingerprint>,
+    extractedContent: string,
+    isExtractedMinified: boolean,
+    packageFeatures: ReturnType<typeof collectPackageFeatures> | null,
+    metadata: PackageMetadataCache,
+    cache: FingerprintCache,
+): Promise<VersionCheckResult | null> {
+    const versionDetails = metadata.versionDetails[version];
+    const entryPaths = resolveEntryPoints(packageName, versionDetails);
+
+    let bestSimilarityForVersion = 0;
+    let matchSource: 'fingerprint' | 'fingerprint-minified' = 'fingerprint';
+
+    // Strategy 1: Try clean source fingerprint
+    let npmFingerprint: ContentFingerprintCache | null = null;
+
+    for (const entryPath of entryPaths) {
+        npmFingerprint = await fetchFileFromUnpkg(
+            packageName,
+            version,
+            entryPath,
+            cache,
+        );
+        if (npmFingerprint) {
+            break;
+        }
+    }
+
+    if (npmFingerprint) {
+        const similarity = computeSimilarity(
+            extractedFingerprint,
+            npmFingerprint,
+        );
+        if (similarity > bestSimilarityForVersion) {
+            bestSimilarityForVersion = similarity;
+            matchSource = 'fingerprint';
+        }
+    }
+
+    // Strategy 2: If extracted is minified OR clean match wasn't great, try minified versions
+    if (isExtractedMinified || bestSimilarityForVersion < 0.9) {
+        const minifiedResult = await fetchMinifiedFromUnpkg(
+            packageName,
+            version,
+            cache,
+        );
+        if (minifiedResult) {
+            // Use enhanced minified similarity algorithm
+            const minifiedSimilarity = computeMinifiedSimilarity(
+                extractedContent,
+                extractedFingerprint,
+                minifiedResult.fingerprint,
+                minifiedResult.content,
+            );
+
+            if (minifiedSimilarity > bestSimilarityForVersion) {
+                bestSimilarityForVersion = minifiedSimilarity;
+                matchSource = 'fingerprint-minified';
+            }
+
+            // Strategy 3: Multi-file fingerprinting for packages split into many files
+            if (
+                packageFeatures &&
+                minifiedResult.content &&
+                bestSimilarityForVersion < 0.8
+            ) {
+                const multiFileSimilarity = computeMultiFileSimilarity(
+                    packageFeatures,
+                    minifiedResult.content,
+                );
+                if (multiFileSimilarity > bestSimilarityForVersion) {
+                    bestSimilarityForVersion = multiFileSimilarity;
+                    matchSource = 'fingerprint-minified';
+                }
+            }
+        }
+    }
+
+    // Return null if no fingerprint found at all
+    if (bestSimilarityForVersion === 0) {
+        return null;
+    }
+
+    return {
+        version,
+        similarity: bestSimilarityForVersion,
+        matchSource,
+    };
+}
+
+/**
  * Finds the best matching version for a package
  * Uses dual fingerprinting strategy: tries clean source first, then minified versions
  * For packages with many small files, uses multi-file fingerprinting
@@ -1067,6 +1321,10 @@ export async function findMatchingVersion(
         maxVersionsToCheck?: number;
         minSimilarity?: number;
         includePrereleases?: boolean;
+        /** Number of versions to check concurrently (default: 6) */
+        versionConcurrency?: number;
+        /** Optional version hint for smarter search ordering */
+        versionHint?: string | null;
         cache?: FingerprintCache;
         onVersionCheck?: (
             version: string,
@@ -1079,6 +1337,8 @@ export async function findMatchingVersion(
         maxVersionsToCheck = 0, // 0 = all versions
         minSimilarity = 0.7,
         includePrereleases = false,
+        versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
+        versionHint = null,
         cache = getCache(),
         onVersionCheck,
     } = options;
@@ -1143,141 +1403,101 @@ export async function findMatchingVersion(
     }
 
     // Get versions to check (stable only by default)
-    const versions = await getAllVersions(
+    const allVersions = await getAllVersions(
         packageName,
         cache,
         maxVersionsToCheck,
         includePrereleases,
     );
-    if (versions.length === 0) {
+    if (allVersions.length === 0) {
         return null;
     }
 
+    // Order versions for efficient searching (dist-tags first, then by hint, then by date)
+    const versions = getVersionsInSearchOrder(
+        allVersions,
+        metadata,
+        versionHint,
+    );
+
     let bestMatch: FingerprintResult | null = null;
+    let checkedCount = 0;
 
-    for (let i = 0; i < versions.length; i++) {
-        const version = versions[i];
-        onVersionCheck?.(version, i + 1, versions.length);
+    // Check versions in parallel batches for improved performance
+    for (let i = 0; i < versions.length; i += versionConcurrency) {
+        const batch = versions.slice(i, i + versionConcurrency);
 
-        const versionDetails = metadata.versionDetails[version];
-        const entryPaths = resolveEntryPoints(packageName, versionDetails);
-
-        let bestSimilarityForVersion = 0;
-        let matchSource: 'fingerprint' | 'fingerprint-minified' = 'fingerprint';
-
-        // Strategy 1: Try clean source fingerprint (existing approach)
-        let npmFingerprint: ContentFingerprintCache | null = null;
-
-        for (const entryPath of entryPaths) {
-            npmFingerprint = await fetchFileFromUnpkg(
-                packageName,
-                version,
-                entryPath,
-                cache,
-            );
-            if (npmFingerprint) {
-                break;
-            }
-        }
-
-        if (npmFingerprint) {
-            const similarity = computeSimilarity(
-                extractedFingerprint,
-                npmFingerprint,
-            );
-            if (similarity > bestSimilarityForVersion) {
-                bestSimilarityForVersion = similarity;
-                matchSource = 'fingerprint';
-            }
-        }
-
-        // Strategy 2: If extracted is minified OR clean match wasn't great, try minified versions
-        if (isExtractedMinified || bestSimilarityForVersion < 0.9) {
-            const minifiedResult = await fetchMinifiedFromUnpkg(
-                packageName,
-                version,
-                cache,
-            );
-            if (minifiedResult) {
-                // Use enhanced minified similarity algorithm
-                const minifiedSimilarity = computeMinifiedSimilarity(
-                    entryPoint.content,
+        // Check batch in parallel
+        const results = await Promise.all(
+            batch.map((version) =>
+                checkVersionSimilarity(
+                    packageName,
+                    version,
                     extractedFingerprint,
-                    minifiedResult.fingerprint,
-                    minifiedResult.content,
-                );
+                    entryPoint.content,
+                    isExtractedMinified,
+                    packageFeatures,
+                    metadata,
+                    cache,
+                ),
+            ),
+        );
 
-                if (minifiedSimilarity > bestSimilarityForVersion) {
-                    bestSimilarityForVersion = minifiedSimilarity;
-                    matchSource = 'fingerprint-minified';
-                }
+        // Process results from this batch
+        for (let j = 0; j < results.length; j++) {
+            checkedCount++;
+            onVersionCheck?.(batch[j], checkedCount, versions.length);
 
-                // Strategy 3: Multi-file fingerprinting for packages split into many files
-                // Compare collected features against minified npm bundle
-                if (
-                    packageFeatures &&
-                    minifiedResult.content &&
-                    bestSimilarityForVersion < 0.8
-                ) {
-                    const multiFileSimilarity = computeMultiFileSimilarity(
-                        packageFeatures,
-                        minifiedResult.content,
-                    );
-                    if (multiFileSimilarity > bestSimilarityForVersion) {
-                        bestSimilarityForVersion = multiFileSimilarity;
-                        matchSource = 'fingerprint-minified';
-                    }
-                }
+            const result = results[j];
+            if (!result) continue;
+
+            // Exact match - cache and return immediately
+            if (result.similarity >= 0.99) {
+                const exactResult: FingerprintResult = {
+                    version: result.version,
+                    confidence: 'exact',
+                    source: result.matchSource,
+                    similarity: result.similarity,
+                    matchedFiles: isMultiFilePackage
+                        ? extractedFiles.length
+                        : 1,
+                    totalFiles: extractedFiles.length,
+                };
+
+                // Cache the match result
+                await cache.setMatchResult({
+                    packageName,
+                    extractedContentHash: extractedFingerprint.normalizedHash,
+                    matchedVersion: result.version,
+                    similarity: result.similarity,
+                    confidence: 'exact',
+                    fetchedAt: Date.now(),
+                });
+
+                return exactResult;
             }
-        }
 
-        // Skip if no fingerprint found at all
-        if (bestSimilarityForVersion === 0) {
-            continue;
-        }
-
-        // Exact match - cache and return immediately
-        if (bestSimilarityForVersion >= 0.99) {
-            const result: FingerprintResult = {
-                version,
-                confidence: 'exact',
-                source: matchSource,
-                similarity: bestSimilarityForVersion,
-                matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
-                totalFiles: extractedFiles.length,
-            };
-
-            // Cache the match result
-            await cache.setMatchResult({
-                packageName,
-                extractedContentHash: extractedFingerprint.normalizedHash,
-                matchedVersion: version,
-                similarity: bestSimilarityForVersion,
-                confidence: 'exact',
-                fetchedAt: Date.now(),
-            });
-
-            return result;
-        }
-
-        // Track best match
-        if (
-            bestSimilarityForVersion >= minSimilarity &&
-            (!bestMatch || bestSimilarityForVersion > bestMatch.similarity)
-        ) {
-            bestMatch = {
-                version,
-                confidence:
-                    bestSimilarityForVersion >= 0.9
-                        ? 'high'
-                        : bestSimilarityForVersion >= 0.8
-                          ? 'medium'
-                          : 'low',
-                source: matchSource,
-                similarity: bestSimilarityForVersion,
-                matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
-                totalFiles: extractedFiles.length,
-            };
+            // Track best match
+            if (
+                result.similarity >= minSimilarity &&
+                (!bestMatch || result.similarity > bestMatch.similarity)
+            ) {
+                bestMatch = {
+                    version: result.version,
+                    confidence:
+                        result.similarity >= 0.9
+                            ? 'high'
+                            : result.similarity >= 0.8
+                              ? 'medium'
+                              : 'low',
+                    source: result.matchSource,
+                    similarity: result.similarity,
+                    matchedFiles: isMultiFilePackage
+                        ? extractedFiles.length
+                        : 1,
+                    totalFiles: extractedFiles.length,
+                };
+            }
         }
 
         // If we found a very good match, we can stop early
@@ -1337,16 +1557,23 @@ export async function findMatchingVersions(
         maxVersionsToCheck = 0,
         minSimilarity = 0.7,
         concurrency = 3,
+        versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
         includePrereleases = false,
         onProgress,
         onDetailedProgress,
     } = options;
 
     const cache = getCache();
+    const packageNames = Array.from(packages.keys());
+
+    // Pre-fetch all package metadata in parallel before version checking
+    // This eliminates metadata fetch latency from the critical path
+    await prefetchPackageMetadata(packageNames, cache, 10);
+
     const results = new Map<string, FingerprintResult>();
     const entries = Array.from(packages.entries());
 
-    // Process in batches for concurrency control
+    // Process packages in batches for concurrency control
     for (let i = 0; i < entries.length; i += concurrency) {
         const batch = entries.slice(i, i + concurrency);
         const batchResults = await Promise.all(
@@ -1355,6 +1582,7 @@ export async function findMatchingVersions(
                     maxVersionsToCheck,
                     minSimilarity,
                     includePrereleases,
+                    versionConcurrency,
                     cache,
                     onVersionCheck: (version, index, total) => {
                         onDetailedProgress?.(
@@ -1433,7 +1661,7 @@ export async function fingerprintVendorBundle(
     const extractedContent = vendorBundle.content;
 
     // Pre-compute fingerprint features for the extracted bundle
-    const extractedFingerprint = {
+    const _extractedFingerprint = {
         contentHash: createHash('sha256')
             .update(extractedContent)
             .digest('hex'),

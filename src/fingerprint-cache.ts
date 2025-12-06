@@ -28,6 +28,8 @@ export interface PackageMetadataCache {
         }
     >;
     distTags: Record<string, string>;
+    /** Version publish timestamps (version -> timestamp in ms) for smart version ordering */
+    versionTimes?: Record<string, number>;
     fetchedAt: number;
 }
 
