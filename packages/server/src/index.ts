@@ -22,4 +22,5 @@ export {
     fixedDelayMiddleware,
     loggerMiddleware,
 } from './middleware/index.js';
+export { runServer } from './runner.js';
 export * from './types.js';
