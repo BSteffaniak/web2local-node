@@ -369,11 +369,11 @@ export async function main() {
 
             reconstructSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
-                (reconstructResult.filesSkipped > 0
-                    ? chalk.gray(
-                        ` (${reconstructResult.filesSkipped} skipped)`,
-                    )
-                    : ''),
+                    (reconstructResult.filesSkipped > 0
+                        ? chalk.gray(
+                              ` (${reconstructResult.filesSkipped} skipped)`,
+                          )
+                        : ''),
             );
 
             if (reconstructResult.errors.length > 0 && options.verbose) {
@@ -463,8 +463,8 @@ export async function main() {
                     {
                         onProgress: options.verbose
                             ? (file) => {
-                                depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
-                            }
+                                  depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
+                              }
                             : undefined,
                         onVersionProgress: (stage, packageName, result) => {
                             switch (stage) {
@@ -829,11 +829,11 @@ export async function main() {
                 // Verbose logging that works with the spinner
                 onVerbose: options.verbose
                     ? (message) => {
-                        // Clear spinner, log message, re-render spinner
-                        captureSpinner.clear();
-                        console.log(chalk.gray(`  ${message}`));
-                        captureSpinner.render();
-                    }
+                          // Clear spinner, log message, re-render spinner
+                          captureSpinner.clear();
+                          console.log(chalk.gray(`  ${message}`));
+                          captureSpinner.render();
+                      }
                     : undefined,
             });
 
@@ -905,10 +905,10 @@ export async function main() {
                     const color = status.startsWith('2')
                         ? chalk.green
                         : status.startsWith('4')
-                            ? chalk.yellow
-                            : status.startsWith('5')
-                                ? chalk.red
-                                : chalk.gray;
+                          ? chalk.yellow
+                          : status.startsWith('5')
+                            ? chalk.red
+                            : chalk.gray;
                     return color(`${status}: ${count}`);
                 })
                 .join(', ');
@@ -968,9 +968,9 @@ export async function main() {
                                 {
                                     onProgress: options.verbose
                                         ? (msg) =>
-                                            console.log(
-                                                chalk.gray(`    ${msg}`),
-                                            )
+                                              console.log(
+                                                  chalk.gray(`    ${msg}`),
+                                              )
                                         : undefined,
                                 },
                             );

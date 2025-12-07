@@ -10,15 +10,15 @@ import { server } from './helpers/msw-handlers.js';
 
 // Start MSW server before all tests
 beforeAll(() => {
-  server.listen({ onUnhandledRequest: 'error' });
+    server.listen({ onUnhandledRequest: 'error' });
 });
 
 // Reset handlers after each test (removes any per-test overrides)
 afterEach(() => {
-  server.resetHandlers();
+    server.resetHandlers();
 });
 
 // Close server after all tests
 afterAll(() => {
-  server.close();
+    server.close();
 });
