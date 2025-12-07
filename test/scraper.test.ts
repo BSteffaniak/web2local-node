@@ -13,9 +13,9 @@ import {
     findSourceMapUrl,
     extractBundleUrls,
     findAllSourceMaps,
-} from '../src/scraper.js';
+} from '@web2local/scraper';
 import { server } from './helpers/msw-handlers.js';
-import { initCache } from '../src/fingerprint-cache.js';
+import { initCache } from '@web2local/cache';
 
 // ============================================================================
 // Test Setup

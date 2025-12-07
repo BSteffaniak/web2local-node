@@ -7,11 +7,8 @@
  */
 
 import { describe, test, expect } from 'vitest';
-import {
-    generateViteConfig,
-    generateEnvExample,
-} from '../src/rebuild/vite-config-generator.js';
-import type { EnvVariable, EntryPoint } from '../src/rebuild/types.js';
+import { generateViteConfig, generateEnvExample } from '@web2local/rebuild';
+import type { EnvVariable, EntryPoint } from '@web2local/rebuild';
 
 // Helper to create a minimal entry point
 function createEntryPoint(

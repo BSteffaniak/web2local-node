@@ -1,0 +1,36 @@
+{
+    "name": "@web2local/http",
+    "version": "1.0.0",
+    "description": "HTTP utilities for web2local",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "web2local",
+        "http",
+        "fetch"
+    ],
+    "license": "MIT",
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "src"
+    ]
+}

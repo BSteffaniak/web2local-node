@@ -6,14 +6,14 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { CapturedCssBundle } from '../src/css-recovery.js';
-import type { EntryPoint } from '../src/rebuild/types.js';
+import type { CapturedCssBundle } from '@web2local/stubs';
+import type { EntryPoint } from '@web2local/rebuild';
 import {
     generateCapturedStylesContent,
     injectCssImport,
     injectGlobalCss,
     needsGlobalCssInjection,
-} from '../src/rebuild/global-css-injector.js';
+} from '@web2local/rebuild';
 
 // Helper to create temp directory
 async function createTempDir(): Promise<string> {

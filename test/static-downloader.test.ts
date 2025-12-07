@@ -8,7 +8,7 @@ import {
     parseImageSetUrls,
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
-} from '../src/capture/static-downloader.js';
+} from '@web2local/capture';
 
 describe('parseSrcsetUrls', () => {
     it('parses srcset with width descriptors', () => {

@@ -1,0 +1,42 @@
+{
+    "name": "@web2local/rebuild",
+    "version": "1.0.0",
+    "description": "Build system and config generation for web2local",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "web2local",
+        "rebuild",
+        "vite"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@web2local/analyzer": "workspace:*",
+        "@web2local/stubs": "workspace:*",
+        "@web2local/types": "workspace:*",
+        "vite": "^5.4.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "src"
+    ]
+}

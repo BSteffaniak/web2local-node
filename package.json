@@ -1,58 +1,51 @@
 {
-  "name": "top-secret-source-reverse-engineerer-9001",
-  "version": "1.0.0",
-  "description": "CLI tool to extract and reconstruct original source code from publicly available source maps",
-  "type": "module",
-  "main": "./dist/index.js",
-  "bin": {
-    "top-secret-source-reverse-engineerer-9001": "./dist/index.js"
-  },
-  "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsc --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "eslint .",
-    "lint:fix": "eslint --fix .",
-    "pretty": "prettier --check \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
-    "pretty:write": "prettier --write \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
-    "validate": "pnpm typecheck && pnpm lint && pnpm pretty"
-  },
-  "keywords": [
-    "sourcemap",
-    "source-map",
-    "reverse-engineering",
-    "cli"
-  ],
-  "license": "MIT",
-  "devDependencies": {
-    "@eslint/eslintrc": "^3.3.3",
-    "@eslint/js": "^9.39.1",
-    "@swc/types": "^0.1.25",
-    "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^8.48.0",
-    "@typescript-eslint/parser": "^8.48.0",
-    "eslint": "^9.39.1",
-    "eslint-config-prettier": "^9.1.2",
-    "eslint-plugin-diff": "^2.0.3",
-    "globals": "^15.15.0",
-    "msw": "^2.4.0",
-    "prettier": "^3.7.3",
-    "typescript": "^5.3.0",
-    "vitest": "^2.1.0"
-  },
-  "dependencies": {
-    "@swc/core": "^1.15.3",
-    "chalk": "^5.6.2",
-    "commander": "^14.0.2",
-    "node-html-parser": "^7.0.1",
-    "ora": "^9.0.0",
-    "playwright": "1.54.1"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+    "name": "web2local",
+    "version": "1.0.0",
+    "private": true,
+    "description": "CLI tool to extract and reconstruct original source code from publicly available source maps",
+    "type": "module",
+    "scripts": {
+        "build": "turbo build",
+        "dev": "turbo dev",
+        "test": "turbo test",
+        "test:watch": "turbo test:watch",
+        "lint": "turbo lint",
+        "lint:fix": "eslint --fix .",
+        "pretty": "prettier --check \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
+        "pretty:write": "prettier --write \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
+        "typecheck": "turbo typecheck",
+        "validate": "pnpm typecheck && pnpm lint && pnpm pretty",
+        "clean": "rm -rf packages/*/dist node_modules/.cache"
+    },
+    "keywords": [
+        "sourcemap",
+        "source-map",
+        "reverse-engineering",
+        "cli",
+        "web2local"
+    ],
+    "license": "MIT",
+    "devDependencies": {
+        "@eslint/eslintrc": "^3.3.3",
+        "@eslint/js": "^9.39.1",
+        "@swc/core": "^1.15.3",
+        "@swc/types": "^0.1.25",
+        "@types/node": "^20.10.0",
+        "@typescript-eslint/eslint-plugin": "^8.48.0",
+        "@typescript-eslint/parser": "^8.48.0",
+        "eslint": "^9.39.1",
+        "eslint-config-prettier": "^9.1.2",
+        "eslint-plugin-diff": "^2.0.3",
+        "globals": "^15.15.0",
+        "msw": "^2.4.0",
+        "playwright": "^1.54.1",
+        "prettier": "^3.7.3",
+        "turbo": "^2.5.4",
+        "typescript": "^5.3.0",
+        "vitest": "^2.1.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "packageManager": "pnpm@9.15.0"
 }

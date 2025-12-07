@@ -32,8 +32,8 @@ import {
     appendMissingBarrelExports,
     updateCssStubsWithCapturedBundles,
     type AliasMapping,
-} from '../src/stub-generator.js';
-import type { CapturedCssBundle } from '../src/css-recovery.js';
+} from '@web2local/stubs';
+import type { CapturedCssBundle } from '@web2local/stubs';
 
 // ============================================================================
 // TEST HELPERS
@@ -2240,7 +2240,7 @@ describe('internal packages in node_modules', () => {
                 internalPackages: new Set(['@fp/sarsaparilla']),
             });
             const { generateMissingTypeFileStubs } =
-                await import('../src/stub-generator.js');
+                await import('@web2local/stubs');
             await generateMissingTypeFileStubs(
                 tempDir,
                 imports.missingTypeFileImports,
@@ -2273,7 +2273,7 @@ describe('internal packages in node_modules', () => {
                 internalPackages: new Set(['@fp/sarsaparilla']),
             });
             const { generateMissingTypeFileStubs } =
-                await import('../src/stub-generator.js');
+                await import('@web2local/stubs');
             await generateMissingTypeFileStubs(
                 tempDir,
                 imports.missingTypeFileImports,
@@ -2313,7 +2313,7 @@ describe('internal packages in node_modules', () => {
                 internalPackages: new Set(['@fp/sarsaparilla']),
             });
             const { generateMissingTypeFileStubs } =
-                await import('../src/stub-generator.js');
+                await import('@web2local/stubs');
             await generateMissingTypeFileStubs(
                 tempDir,
                 imports.missingTypeFileImports,
@@ -3752,7 +3752,7 @@ import {
     findAssetStubs,
     resolveAssetStubs,
     findAndResolveAssetStubs,
-} from '../src/asset-stub-resolver.js';
+} from '@web2local/analyzer';
 
 describe('analyzeAssetStub', () => {
     test('should detect Vite asset stub pattern', () => {

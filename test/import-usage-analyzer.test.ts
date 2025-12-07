@@ -3,7 +3,7 @@ import {
     analyzeImportUsage,
     aggregateImportUsage,
     type ImportUsageInfo,
-} from '../src/import-usage-analyzer';
+} from '@web2local/analyzer';
 
 describe('analyzeImportUsage', () => {
     describe('member expression detection', () => {

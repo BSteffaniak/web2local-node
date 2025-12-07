@@ -20,7 +20,7 @@ import {
     preserveServerRenderedHtml,
     preserveHtmlIfServerRendered,
     type AssetMapping,
-} from '../src/rebuild/html-generator.js';
+} from '@web2local/rebuild';
 
 // ============================================================================
 // TEST HELPERS

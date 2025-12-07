@@ -9,7 +9,7 @@ import {
     groupResolutionsByType,
     type ExportResolution,
     type MissingExportInfo,
-} from '../src/export-resolver';
+} from '@web2local/analyzer';
 
 describe('findNamespaceSourceFile', () => {
     let tempDir: string;

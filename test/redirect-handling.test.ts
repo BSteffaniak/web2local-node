@@ -12,15 +12,15 @@ import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-// Import the app creation function from mock-site-server
-import { createApp } from '../packages/mock-site-server/src/server/app.js';
-import { generateServerManifest } from '../src/manifest/server-manifest.js';
+// Import the app creation function from server package
+import { createApp } from '@web2local/server';
+import { generateServerManifest } from '@web2local/manifest';
 import type {
     ServerManifest,
     CapturedRedirect,
     ApiFixture,
     CapturedAsset,
-} from '../src/capture/types.js';
+} from '@web2local/capture';
 
 /**
  * Helper to create a minimal test site directory structure

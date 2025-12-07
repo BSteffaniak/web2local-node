@@ -1,0 +1,33 @@
+{
+    "name": "web2local",
+    "version": "1.0.0",
+    "description": "Unscoped wrapper for web2local CLI",
+    "type": "module",
+    "main": "./dist/index.js",
+    "bin": {
+        "web2local": "./bin/web2local.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "web2local"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@web2local/cli": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "bin"
+    ]
+}

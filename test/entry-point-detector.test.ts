@@ -11,7 +11,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { detectEntryPoints } from '../src/rebuild/entry-point-detector.js';
+import { detectEntryPoints } from '@web2local/rebuild';
 
 // ============================================================================
 // TEST HELPERS

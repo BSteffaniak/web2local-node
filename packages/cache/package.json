@@ -1,0 +1,38 @@
+{
+    "name": "@web2local/cache",
+    "version": "1.0.0",
+    "description": "Caching system for web2local",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "web2local",
+        "cache"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@web2local/ast": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "src"
+    ]
+}

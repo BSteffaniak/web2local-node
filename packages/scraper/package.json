@@ -1,0 +1,42 @@
+{
+    "name": "@web2local/scraper",
+    "version": "1.0.0",
+    "description": "Source map extraction and file reconstruction for web2local",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "web2local",
+        "scraper",
+        "sourcemap"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@web2local/cache": "workspace:*",
+        "@web2local/http": "workspace:*",
+        "@web2local/types": "workspace:*",
+        "node-html-parser": "^7.0.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "src"
+    ]
+}

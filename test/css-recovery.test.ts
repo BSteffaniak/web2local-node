@@ -34,7 +34,7 @@ import {
     matchCssImportToBundle,
     generateCssStubFromBundle,
     type CapturedCssBundle,
-} from '../src/css-recovery.js';
+} from '@web2local/stubs';
 
 // ============================================================================
 // TIER 1: CSS SOURCE MAP EXTRACTION

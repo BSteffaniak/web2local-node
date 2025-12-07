@@ -13,8 +13,8 @@ import { http, HttpResponse } from 'msw';
 import {
     validateNpmVersion,
     validateNpmVersionsBatch,
-} from '../src/dependency-analyzer.js';
-import { initCache } from '../src/fingerprint-cache.js';
+} from '@web2local/analyzer';
+import { initCache } from '@web2local/cache';
 import { server } from './helpers/msw-handlers.js';
 
 // ============================================================================

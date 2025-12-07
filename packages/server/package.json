@@ -1,0 +1,45 @@
+{
+    "name": "@web2local/server",
+    "version": "1.0.0",
+    "description": "Serve captured API fixtures and static assets from a mock server",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+        "web2local-server": "./dist/cli.js"
+    },
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsc --watch",
+        "start": "node dist/cli.js",
+        "typecheck": "tsc --noEmit"
+    },
+    "keywords": [
+        "mock",
+        "server",
+        "api",
+        "fixtures",
+        "testing",
+        "hono",
+        "web2local"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "@hono/node-server": "^1.19.6",
+        "commander": "^14.0.2",
+        "hono": "^4.10.7",
+        "picocolors": "^1.1.1"
+    },
+    "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0",
+        "vitest": "^2.1.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "files": [
+        "dist",
+        "README.md"
+    ]
+}

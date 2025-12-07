@@ -14,7 +14,7 @@ import {
     resolveRelativePath,
     resolveMissingDynamicImports,
     updateManifestWithResolvedFiles,
-} from '../src/dynamic-import-resolver.js';
+} from '@web2local/analyzer';
 
 describe('extractDynamicImportPaths', () => {
     it('extracts basic dynamic import', () => {

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { createUniversalStub, __stub__ } from '../src/universal-stub';
+import { createUniversalStub, __stub__ } from '@web2local/stubs';
 
 describe('createUniversalStub', () => {
     test('can be called as a function', () => {

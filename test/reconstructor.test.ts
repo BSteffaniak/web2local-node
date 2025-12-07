@@ -14,7 +14,7 @@ import {
     generateBundleStubs,
     saveBundles,
     type SavedBundle,
-} from '../src/reconstructor.js';
+} from '@web2local/scraper';
 
 // ============================================================================
 // TEST HELPERS
