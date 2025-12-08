@@ -27,6 +27,7 @@
         "@web2local/analyzer": "1.0.0",
         "@web2local/stubs": "1.0.0",
         "@web2local/types": "1.0.0",
+        "@web2local/utils": "1.0.0",
         "vite": "^5.4.0"
     },
     "devDependencies": {

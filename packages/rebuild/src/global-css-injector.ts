@@ -16,6 +16,7 @@
 
 import { readFile, writeFile } from 'fs/promises';
 import { join, dirname, relative } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import type { CapturedCssBundle } from '@web2local/stubs';
 import type { EntryPoint } from './types.js';
 
@@ -78,7 +79,9 @@ export function generateCapturedStylesContent(
             'static',
             bundle.localPath,
         );
-        const relativePath = relative(capturedStylesDir, bundleFullPath);
+        const relativePath = toPosixPath(
+            relative(capturedStylesDir, bundleFullPath),
+        );
         lines.push(`/* Bundle: ${bundle.filename} */`);
         lines.push(`@import '${relativePath}';`);
         lines.push('');

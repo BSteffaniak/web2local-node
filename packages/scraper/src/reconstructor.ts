@@ -1,6 +1,7 @@
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
+import { toPosixPath } from '@web2local/utils';
 import { SourceFile, shouldIncludePath } from './sourcemap.js';
 import type { BundleWithContent } from './scraper.js';
 
@@ -426,7 +427,7 @@ export async function generateBundleStubs(
         for (const entry of extractedEntries) {
             // Calculate relative path from src/ to the bundle entry point
             const entryPath = join(siteDir, entry.bundleName, entry.entryPoint);
-            let relativePath = relative(srcDir, entryPath);
+            let relativePath = toPosixPath(relative(srcDir, entryPath));
 
             // Remove .ts/.tsx/.js/.jsx extension for import
             relativePath = relativePath.replace(/\.(tsx?|jsx?)$/, '');
@@ -457,7 +458,9 @@ export async function generateBundleStubs(
             lines.push('// JavaScript bundles');
             for (const bundle of jsBundles) {
                 // Calculate relative path from src/ to _bundles/
-                let relativePath = relative(srcDir, bundle.localPath);
+                let relativePath = toPosixPath(
+                    relative(srcDir, bundle.localPath),
+                );
 
                 // Ensure it starts with ./
                 if (!relativePath.startsWith('.')) {
@@ -474,7 +477,9 @@ export async function generateBundleStubs(
             }
             lines.push('// CSS bundles');
             for (const bundle of cssBundles) {
-                let relativePath = relative(srcDir, bundle.localPath);
+                let relativePath = toPosixPath(
+                    relative(srcDir, bundle.localPath),
+                );
 
                 if (!relativePath.startsWith('.')) {
                     relativePath = './' + relativePath;

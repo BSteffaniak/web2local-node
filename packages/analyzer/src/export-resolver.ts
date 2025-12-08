@@ -9,6 +9,7 @@
 
 import { readdir, readFile, stat } from 'fs/promises';
 import { join, basename, relative, extname, dirname } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import { extractExportsFromSource } from '@web2local/ast';
 import { extractImportsFromSource, categorizeImport } from '@web2local/ast';
 import {
@@ -164,7 +165,7 @@ export async function findNamespaceSourceFile(
 
     if (candidates.length === 1) {
         // Single match - return relative path
-        return relative(packagePath, candidates[0]);
+        return toPosixPath(relative(packagePath, candidates[0]));
     }
 
     if (candidates.length > 1) {

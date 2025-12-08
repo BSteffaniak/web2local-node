@@ -80,6 +80,9 @@ importers:
       '@web2local/types':
         specifier: 1.0.0
         version: link:../types
+      '@web2local/utils':
+        specifier: 1.0.0
+        version: link:../utils
     devDependencies:
       '@swc/types':
         specifier: ^0.1.25
@@ -233,6 +236,9 @@ importers:
       '@web2local/types':
         specifier: 1.0.0
         version: link:../types
+      '@web2local/utils':
+        specifier: 1.0.0
+        version: link:../utils
       vite:
         specifier: ^5.4.0
         version: 5.4.21(@types/node@20.19.25)
@@ -255,6 +261,9 @@ importers:
       '@web2local/types':
         specifier: 1.0.0
         version: link:../types
+      '@web2local/utils':
+        specifier: 1.0.0
+        version: link:../utils
       node-html-parser:
         specifier: ^7.0.1
         version: 7.0.1
@@ -305,6 +314,9 @@ importers:
       '@web2local/http':
         specifier: 1.0.0
         version: link:../http
+      '@web2local/utils':
+        specifier: 1.0.0
+        version: link:../utils
     devDependencies:
       '@swc/types':
         specifier: ^0.1.25
@@ -321,6 +333,15 @@ importers:
       typescript:
         specifier: ^5.3.0
         version: 5.9.3
+
+  packages/utils:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.25)(msw@2.12.4(@types/node@20.19.25)(typescript@5.9.3))
 
   packages/web2local:
     dependencies:

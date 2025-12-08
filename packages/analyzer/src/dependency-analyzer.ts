@@ -1082,15 +1082,15 @@ export interface DependencyClassification {
         string,
         {
             reason:
-            | 'workspace'
-            | 'private-registry'
-            | 'npm'
-            | 'unknown-internal'
-            | 'unknown-external';
+                | 'workspace'
+                | 'private-registry'
+                | 'npm'
+                | 'unknown-internal'
+                | 'unknown-external';
             sourceLocation?:
-            | 'outside-node-modules'
-            | 'in-node-modules'
-            | 'no-source';
+                | 'outside-node-modules'
+                | 'in-node-modules'
+                | 'no-source';
         }
     >;
 }
@@ -2643,9 +2643,9 @@ export async function generateDependencyManifest(
             )._importAliases as Record<string, string> | undefined;
             const cachedAliasMap: AliasMap | undefined = cachedAliases
                 ? {
-                    aliases: new Map(Object.entries(cachedAliases)),
-                    evidence: new Map(),
-                }
+                      aliases: new Map(Object.entries(cachedAliases)),
+                      evidence: new Map(),
+                  }
                 : undefined;
             const aliasPathMappings = extractedSourceFiles
                 ? buildAliasPathMappings(cachedAliasMap, extractedSourceFiles)
@@ -2654,10 +2654,10 @@ export async function generateDependencyManifest(
             // Detect subpath imports for aliased packages
             const subpathMappings = extractedSourceFiles
                 ? detectSubpathImports(
-                    extractedSourceFiles,
-                    cachedAliasMap,
-                    workspacePackages,
-                )
+                      extractedSourceFiles,
+                      cachedAliasMap,
+                      workspacePackages,
+                  )
                 : [];
 
             return {
@@ -2682,9 +2682,9 @@ export async function generateDependencyManifest(
     const analysis =
         extractedSourceFiles && extractedSourceFiles.length > 0
             ? analyzeDependenciesFromSourceFiles(
-                extractedSourceFiles,
-                onProgress,
-            )
+                  extractedSourceFiles,
+                  onProgress,
+              )
             : await analyzeDependencies(sourceDir, onProgress);
 
     // Initialize stats tracking
@@ -3241,10 +3241,10 @@ export async function generateDependencyManifest(
     // Detect subpath imports for aliased packages
     const subpathMappings = extractedSourceFiles
         ? detectSubpathImports(
-            extractedSourceFiles,
-            aliasMap,
-            workspacePackages,
-        )
+              extractedSourceFiles,
+              aliasMap,
+              workspacePackages,
+          )
         : [];
 
     const packageJson = generatePackageJson(

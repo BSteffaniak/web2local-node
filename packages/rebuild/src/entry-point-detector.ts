@@ -7,6 +7,7 @@
 
 import { readFile, readdir, stat } from 'fs/promises';
 import { join, relative, extname } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import type { EntryPoint, Framework, EnvVariable } from './types.js';
 
 /**
@@ -173,7 +174,7 @@ async function findSourceFiles(
             } else if (entry.isFile()) {
                 const ext = extname(entry.name);
                 if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-                    files.push(relative(baseDir, fullPath));
+                    files.push(toPosixPath(relative(baseDir, fullPath)));
                 }
             }
         }
@@ -277,7 +278,9 @@ export async function detectEntryPoints(
             // Check for common entry file names
             for (const fileName of ENTRY_FILE_NAMES) {
                 const filePath = join(searchDir, fileName);
-                const relativePath = relative(projectDir, filePath);
+                const relativePath = toPosixPath(
+                    relative(projectDir, filePath),
+                );
 
                 try {
                     const content = await readFile(filePath, 'utf-8');
@@ -349,7 +352,9 @@ export async function detectEntryPoints(
                     'main.ts',
                 ]) {
                     const filePath = join(searchDir, fileName);
-                    const relativePath = relative(projectDir, filePath);
+                    const relativePath = toPosixPath(
+                        relative(projectDir, filePath),
+                    );
 
                     try {
                         const content = await readFile(filePath, 'utf-8');
@@ -392,7 +397,9 @@ export async function detectEntryPoints(
                     'main.jsx',
                 ]) {
                     const filePath = join(searchDir, fileName);
-                    const relativePath = relative(projectDir, filePath);
+                    const relativePath = toPosixPath(
+                        relative(projectDir, filePath),
+                    );
 
                     try {
                         await stat(filePath);

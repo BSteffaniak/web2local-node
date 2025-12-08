@@ -4,7 +4,7 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, mkdir, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import type { CapturedCssBundle } from '@web2local/stubs';
 import type { EntryPoint } from '@web2local/rebuild';
@@ -27,7 +27,7 @@ async function createFile(
     content: string,
 ): Promise<void> {
     const fullPath = join(baseDir, relativePath);
-    const dir = fullPath.substring(0, fullPath.lastIndexOf('/'));
+    const dir = dirname(fullPath);
     await mkdir(dir, { recursive: true });
     await writeFile(fullPath, content, 'utf-8');
 }

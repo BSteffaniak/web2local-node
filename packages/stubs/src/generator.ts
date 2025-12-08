@@ -1,5 +1,6 @@
 import { readdir, writeFile, stat, readFile, mkdir } from 'fs/promises';
 import { join, dirname, basename, relative, extname, resolve } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import { parseSync } from '@swc/core';
 import type {
     ExportSpecifier,
@@ -167,7 +168,7 @@ async function findSourceFiles(
             } else if (entry.isFile()) {
                 const ext = extname(entry.name).toLowerCase();
                 if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
-                    files.push(relative(baseDir, fullPath));
+                    files.push(toPosixPath(relative(baseDir, fullPath)));
                 }
             }
         }
@@ -875,7 +876,7 @@ export async function findPackagesNeedingIndex(
 
         const info = await analyzePackage(fullPath);
         if (!info.hasIndex && info.exportedModules.length > 0) {
-            packagesNeedingIndex.push(fullPath);
+            packagesNeedingIndex.push(toPosixPath(fullPath));
         }
     }
 
@@ -948,7 +949,9 @@ export async function findPackagesNeedingIndex(
                                 !info.hasIndex &&
                                 info.exportedModules.length > 0
                             ) {
-                                packagesNeedingIndex.push(scopedFullPath);
+                                packagesNeedingIndex.push(
+                                    toPosixPath(scopedFullPath),
+                                );
                             }
                         }
                     }
@@ -957,7 +960,7 @@ export async function findPackagesNeedingIndex(
                     if (internalPackages.has(entry.name)) {
                         const info = await analyzePackage(fullPath);
                         if (!info.hasIndex && info.exportedModules.length > 0) {
-                            packagesNeedingIndex.push(fullPath);
+                            packagesNeedingIndex.push(toPosixPath(fullPath));
                         }
                     }
                 }
@@ -1313,7 +1316,9 @@ export async function generateMissingCssModuleStubs(
                 // Calculate relative path from the stub location to _server/static
                 const stubDir = dirname(cssPath);
                 const staticDir = join(sourceDir, '_server', 'static');
-                const relativeToStatic = relative(stubDir, staticDir);
+                const relativeToStatic = toPosixPath(
+                    relative(stubDir, staticDir),
+                );
 
                 stubContent = generateCssStubFromBundle(
                     {
@@ -1465,7 +1470,7 @@ export async function updateCssStubsWithCapturedBundles(
     }
 
     const stubFiles = await scanForCssStubs(sourceDir);
-    result.allStubs = stubFiles.map((s) => relative(sourceDir, s));
+    result.allStubs = stubFiles.map((s) => toPosixPath(relative(sourceDir, s)));
 
     for (const stubPath of stubFiles) {
         const filename = basename(stubPath);
@@ -1486,7 +1491,7 @@ export async function updateCssStubsWithCapturedBundles(
             // Calculate relative path from stub to _server/static
             const stubDir = dirname(stubPath);
             const staticDir = join(sourceDir, '_server', 'static');
-            const relativeToStatic = relative(stubDir, staticDir);
+            const relativeToStatic = toPosixPath(relative(stubDir, staticDir));
 
             let newContent: string;
             if (isModule) {
@@ -1519,7 +1524,7 @@ export async function updateCssStubsWithCapturedBundles(
             result.unusedBundles.splice(matchedBundleIndex, 1);
         } else {
             // No matching bundle found for this stub
-            result.unmatchedStubs.push(relativeStubPath);
+            result.unmatchedStubs.push(toPosixPath(relativeStubPath));
         }
     }
 
@@ -2737,16 +2742,18 @@ export async function findMissingSourceFiles(
                 const stubPath = resolvedBasePath + '.tsx';
 
                 // Get or create requirements for this missing file
-                let requirements = missingFiles.get(stubPath);
+                // Normalize the path for cross-platform consistency
+                const normalizedStubPath = toPosixPath(stubPath);
+                let requirements = missingFiles.get(normalizedStubPath);
                 if (!requirements) {
                     requirements = {
-                        filePath: stubPath,
+                        filePath: normalizedStubPath,
                         needsDefaultExport: false,
                         namedExports: new Set(),
                         typeExports: new Set(),
                         importedBy: [],
                     };
-                    missingFiles.set(stubPath, requirements);
+                    missingFiles.set(normalizedStubPath, requirements);
                 }
 
                 // Track who imports this file
