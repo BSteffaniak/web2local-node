@@ -8,25 +8,25 @@ export interface CliOptions {
     verbose: boolean;
     includeNodeModules: boolean;
     concurrency: number;
-    generatePackageJson: boolean;
+    // Package.json generation (default: enabled)
+    noPackageJson: boolean;
     useFingerprinting: boolean;
-    fetchNpmVersions: boolean;
+    noFetchVersions: boolean;
     maxVersions: number;
     cacheDir: string;
     noCache: boolean;
     includePrereleases: boolean;
     forceRefresh: boolean;
-    // API capture options
-    captureApi: boolean;
+    // API capture options (default: enabled)
+    noCapture: boolean;
     apiFilter: string[];
     captureStatic: boolean;
     captureRenderedHtml: boolean;
     headless: boolean;
     browseTimeout: number;
     autoScroll: boolean;
-    // Rebuild options
-    prepareRebuild: boolean;
-    rebuild: boolean;
+    // Rebuild options (default: enabled)
+    noRebuild: boolean;
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
     serve: boolean;
     useRebuilt: boolean;
@@ -81,7 +81,8 @@ export function parseArgs(): CliOptions {
     program
         .name('web2local')
         .description(
-            'Extract and reconstruct original source code from publicly available source maps',
+            'Extract and reconstruct original source code from publicly available source maps. ' +
+                'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
         )
         .version('1.0.0')
         .argument('<url>', 'URL of the website to extract source maps from')
@@ -97,10 +98,10 @@ export function parseArgs(): CliOptions {
             'Number of concurrent downloads',
             '5',
         )
+        // Package.json generation options (enabled by default)
         .option(
-            '--generate-package-json',
-            'Generate package.json with detected dependencies',
-            false,
+            '--no-package-json',
+            'Skip generating package.json with detected dependencies',
         )
         .option(
             '--use-fingerprinting',
@@ -108,9 +109,8 @@ export function parseArgs(): CliOptions {
             false,
         )
         .option(
-            '--fetch-npm-versions',
-            'Fallback to latest npm versions for undetected packages (requires -p)',
-            false,
+            '--no-fetch-versions',
+            'Skip fetching latest npm versions for undetected packages',
         )
         .option(
             '--max-versions <number>',
@@ -122,7 +122,7 @@ export function parseArgs(): CliOptions {
             'Directory for caching npm metadata and fingerprints',
             '',
         )
-        .option('--no-cache', 'Disable fingerprint caching', false)
+        .option('--no-cache', 'Disable fingerprint caching')
         .option(
             '--include-prereleases',
             'Include pre-release versions (alpha, beta, rc, nightly) when fingerprinting',
@@ -133,12 +133,8 @@ export function parseArgs(): CliOptions {
             'Bypass all caches and fetch fresh data',
             false,
         )
-        // API capture options
-        .option(
-            '--capture-api',
-            'Enable API call capture via browser automation (uses Playwright)',
-            false,
-        )
+        // API capture options (enabled by default)
+        .option('--no-capture', 'Skip API call capture via browser automation')
         .option(
             '--api-filter <patterns...>',
             'Filter patterns for API routes to capture (glob-style)',
@@ -148,36 +144,22 @@ export function parseArgs(): CliOptions {
             '--no-static',
             'Disable static asset capture (only capture API calls)',
         )
-        .option(
-            '--no-headless',
-            'Run browser in visible mode (not headless)',
-            false,
-        )
+        .option('--no-headless', 'Run browser in visible mode (not headless)')
         .option(
             '--browse-timeout <ms>',
             'Time to wait for API calls after page load (ms)',
             '10000',
         )
-        .option(
-            '--no-scroll',
-            'Disable auto-scrolling to trigger lazy loading',
-            false,
-        )
+        .option('--no-scroll', 'Disable auto-scrolling to trigger lazy loading')
         .option(
             '--capture-rendered-html',
             'Capture rendered HTML after JS execution instead of original (use for SPAs)',
             false,
         )
-        // Rebuild options
+        // Rebuild options (enabled by default)
         .option(
-            '--prepare-rebuild',
-            'Generate build configuration (vite.config.ts, index.html) for rebuilding from source',
-            false,
-        )
-        .option(
-            '--rebuild',
-            'Generate build configuration and run the build (requires -p for package.json)',
-            false,
+            '--no-rebuild',
+            'Skip running the build (only generate config files)',
         )
         .option(
             '--package-manager <manager>',
@@ -222,17 +204,23 @@ export function parseArgs(): CliOptions {
             '10',
         )
         .action(async (url, options) => {
-            const fullOptions = {
+            const fullOptions: CliOptions = {
                 url,
-                ...options,
+                output: options.output,
+                verbose: options.verbose || false,
+                includeNodeModules: options.includeNodeModules || false,
                 concurrency: parseInt(options.concurrency, 10),
+                // Package.json options (--no-X sets to false, so we check !== false for enabled)
+                noPackageJson: options.packageJson === false,
+                useFingerprinting: options.useFingerprinting || false,
+                noFetchVersions: options.fetchVersions === false,
                 maxVersions: parseInt(options.maxVersions, 10),
                 cacheDir: options.cacheDir || '',
-                noCache: options.noCache || false,
+                noCache: options.cache === false,
                 includePrereleases: options.includePrereleases || false,
                 forceRefresh: options.forceRefresh || false,
                 // API capture options
-                captureApi: options.captureApi || false,
+                noCapture: options.capture === false,
                 apiFilter: options.apiFilter || [
                     '**/api/**',
                     '**/graphql**',
@@ -240,21 +228,19 @@ export function parseArgs(): CliOptions {
                     '**/v2/**',
                     '**/v3/**',
                 ],
-                // Note: commander's --no-X flags set the option to true when NOT specified
-                // and false when specified, so we need to handle this correctly
                 captureStatic: options.static !== false,
                 captureRenderedHtml: options.captureRenderedHtml || false,
                 headless: options.headless !== false,
                 browseTimeout: parseInt(options.browseTimeout, 10),
                 autoScroll: options.scroll !== false,
                 // Rebuild options
-                prepareRebuild: options.prepareRebuild || false,
-                rebuild: options.rebuild || false,
+                noRebuild: options.rebuild === false,
                 packageManager: options.packageManager || 'auto',
                 serve: options.serve || false,
+                useRebuilt: options.useRebuilt || false,
                 // Fallback options
                 saveBundles: options.saveBundles || false,
-                // Crawl options (--no-crawl sets crawl to false)
+                // Crawl options
                 crawl: options.crawl !== false,
                 crawlMaxDepth: parseInt(options.crawlMaxDepth, 10),
                 crawlMaxPages: parseInt(options.crawlMaxPages, 10),
@@ -294,19 +280,20 @@ export function parseArgs(): CliOptions {
     return {
         url,
         output: options.output,
-        verbose: options.verbose,
-        includeNodeModules: options.includeNodeModules,
+        verbose: options.verbose || false,
+        includeNodeModules: options.includeNodeModules || false,
         concurrency: parseInt(options.concurrency, 10),
-        generatePackageJson: options.generatePackageJson,
-        useFingerprinting: options.useFingerprinting,
-        fetchNpmVersions: options.fetchNpmVersions,
+        // Package.json options
+        noPackageJson: options.packageJson === false,
+        useFingerprinting: options.useFingerprinting || false,
+        noFetchVersions: options.fetchVersions === false,
         maxVersions: parseInt(options.maxVersions, 10),
         cacheDir: options.cacheDir || '',
-        noCache: options.noCache || false,
+        noCache: options.cache === false,
         includePrereleases: options.includePrereleases || false,
         forceRefresh: options.forceRefresh || false,
         // API capture options
-        captureApi: options.captureApi || false,
+        noCapture: options.capture === false,
         apiFilter: options.apiFilter || [
             '**/api/**',
             '**/graphql**',
@@ -314,22 +301,19 @@ export function parseArgs(): CliOptions {
             '**/v2/**',
             '**/v3/**',
         ],
-        // Note: commander's --no-X flags set the option to true when NOT specified
-        // and false when specified, so we need to handle this correctly
         captureStatic: options.static !== false,
         captureRenderedHtml: options.captureRenderedHtml || false,
         headless: options.headless !== false,
         browseTimeout: parseInt(options.browseTimeout, 10),
         autoScroll: options.scroll !== false,
         // Rebuild options
-        prepareRebuild: options.prepareRebuild || false,
-        rebuild: options.rebuild || false,
+        noRebuild: options.rebuild === false,
         packageManager: options.packageManager || 'auto',
         serve: options.serve || false,
         useRebuilt: options.useRebuilt || false,
         // Fallback options
         saveBundles: options.saveBundles || false,
-        // Crawl options (--no-crawl sets crawl to false)
+        // Crawl options
         crawl: options.crawl !== false,
         crawlMaxDepth: parseInt(options.crawlMaxDepth, 10),
         crawlMaxPages: parseInt(options.crawlMaxPages, 10),

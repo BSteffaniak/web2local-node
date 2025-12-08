@@ -473,9 +473,9 @@ export async function runMain(options: CliOptions) {
         byConfidence: Record<string, number>;
     } | null = null;
 
-    // Generate package.json if requested (works with extracted sources OR saved bundles)
+    // Generate package.json (enabled by default, works with extracted sources OR saved bundles)
     if (
-        options.generatePackageJson &&
+        !options.noPackageJson &&
         (totalFilesWritten > 0 || savedBundles.length > 0)
     ) {
         const depSpinner = ora({
@@ -550,7 +550,7 @@ export async function runMain(options: CliOptions) {
                         },
                         useFingerprinting: options.useFingerprinting,
                         maxVersionsToCheck: options.maxVersions,
-                        fetchFromNpm: options.fetchNpmVersions,
+                        fetchFromNpm: !options.noFetchVersions,
                         includePrereleases: options.includePrereleases,
                         onNpmProgress: (completed, total, pkg) => {
                             depSpinner.text = `Fetching from npm... (${completed}/${total}) ${pkg}`;
@@ -817,32 +817,30 @@ export async function runMain(options: CliOptions) {
     }
 
     if (
-        !options.generatePackageJson &&
+        options.noPackageJson &&
         (totalFilesWritten > 0 || savedBundles.length > 0)
     ) {
         console.log(
             chalk.gray(
-                '  Tip: Use --generate-package-json to create a package.json with dependencies',
+                '  Note: Package.json generation was skipped (--no-package-json)',
             ),
         );
     }
 
-    if (!options.captureApi) {
+    if (options.noCapture) {
         console.log(
-            chalk.gray(
-                '  Tip: Use --capture-api to capture API calls for mock server generation',
-            ),
+            chalk.gray('  Note: API capture was skipped (--no-capture)'),
         );
     }
 
     console.log();
 
-    // Mark capture as successful if we extracted files, saved bundles, or captured API
+    // Mark capture as successful if we extracted files, saved bundles, or will capture API
     captureSuccess =
-        totalFilesWritten > 0 || savedBundles.length > 0 || options.captureApi;
+        totalFilesWritten > 0 || savedBundles.length > 0 || !options.noCapture;
 
-    // Step 6: Capture API calls if requested
-    if (options.captureApi) {
+    // Step 6: Capture API calls (enabled by default)
+    if (!options.noCapture) {
         console.log(chalk.bold('\nCapturing API calls:'));
         console.log();
 
@@ -1113,7 +1111,7 @@ export async function runMain(options: CliOptions) {
 
     // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
     // This ensures bundles loaded via dynamic imports during API capture are available for rebuild
-    if (options.captureApi && (options.prepareRebuild || options.rebuild)) {
+    if (!options.noCapture && !options.noRebuild) {
         const sourceDir = join(options.output, hostname);
         const syncSpinner = ora({
             text: 'Syncing dynamically loaded bundles...',
@@ -1240,11 +1238,11 @@ export async function runMain(options: CliOptions) {
         }
     }
 
-    // Step 7: Prepare for rebuild if requested
-    if (options.prepareRebuild || options.rebuild) {
+    // Step 7: Rebuild (enabled by default, skip with --no-rebuild)
+    if (!options.noRebuild) {
         const sourceDir = join(options.output, hostname);
 
-        console.log(chalk.bold('\nPreparing for rebuild:'));
+        console.log(chalk.bold('\nRebuilding from source:'));
         console.log();
 
         const rebuildSpinner = ora({
@@ -1254,100 +1252,48 @@ export async function runMain(options: CliOptions) {
         registry.register(rebuildSpinner);
 
         try {
-            if (options.rebuild) {
-                // Full rebuild
-                const result = await runRebuild({
-                    projectDir: sourceDir,
-                    verbose: options.verbose,
-                    recovery: true,
-                    maxRecoveryAttempts: 3,
-                    packageManager:
-                        options.packageManager === 'auto'
-                            ? undefined
-                            : options.packageManager,
-                    sourceFiles: allExtractedFiles,
-                    onProgress: (message) => {
-                        rebuildSpinner.text = message;
-                    },
-                });
+            // Full rebuild (install + build)
+            const result = await runRebuild({
+                projectDir: sourceDir,
+                verbose: options.verbose,
+                recovery: true,
+                maxRecoveryAttempts: 3,
+                packageManager:
+                    options.packageManager === 'auto'
+                        ? undefined
+                        : options.packageManager,
+                sourceFiles: allExtractedFiles,
+                onProgress: (message) => {
+                    rebuildSpinner.text = message;
+                },
+            });
 
-                if (result.success) {
-                    rebuildSuccess = true;
-                    rebuildSpinner.succeed('Rebuild completed successfully');
-                    console.log(
-                        `    ${chalk.green('✓')} Built ${chalk.bold(result.bundles.length)} files`,
-                    );
-                    console.log(
-                        `    ${chalk.blue('→')} Output: ${chalk.cyan(result.outputDir)}`,
-                    );
-                    console.log(
-                        `    ${chalk.blue('→')} Build time: ${(result.durationMs / 1000).toFixed(1)}s`,
-                    );
-                } else {
-                    rebuildSpinner.fail('Rebuild failed');
-                    for (const error of result.errors) {
-                        console.log(chalk.red(`    ${error}`));
-                    }
-                }
-
-                if (result.warnings.length > 0 && options.verbose) {
-                    for (const warning of result.warnings) {
-                        console.log(chalk.yellow(`    Warning: ${warning}`));
-                    }
-                }
+            if (result.success) {
+                rebuildSuccess = true;
+                rebuildSpinner.succeed('Rebuild completed successfully');
+                console.log(
+                    `    ${chalk.green('✓')} Built ${chalk.bold(result.bundles.length)} files`,
+                );
+                console.log(
+                    `    ${chalk.blue('→')} Output: ${chalk.cyan(result.outputDir)}`,
+                );
+                console.log(
+                    `    ${chalk.blue('→')} Build time: ${(result.durationMs / 1000).toFixed(1)}s`,
+                );
             } else {
-                // Just prepare (generate config files)
-                const result = await prepareRebuild({
-                    projectDir: sourceDir,
-                    verbose: options.verbose,
-                    overwrite: false,
-                    onProgress: options.verbose
-                        ? (message) => registry.safeLog(message, false)
-                        : (message) => {
-                              rebuildSpinner.text = message;
-                          },
-                    onVerbose: options.verbose
-                        ? (message) => registry.safeLog(message, true)
-                        : undefined,
-                });
-
-                if (result.success) {
-                    rebuildSuccess = true;
-                    rebuildSpinner.succeed('Rebuild preparation completed');
-                    console.log(
-                        `    ${chalk.green('✓')} Entry points found: ${chalk.bold(result.entryPoints.length)}`,
-                    );
-                    if (result.generatedFiles.length > 0) {
-                        console.log(
-                            `    ${chalk.green('✓')} Generated: ${result.generatedFiles.join(', ')}`,
-                        );
-                    }
-                    console.log();
-                    console.log(chalk.gray('  To build the project, run:'));
-                    const pm =
-                        options.packageManager === 'auto'
-                            ? 'pnpm'
-                            : options.packageManager;
-                    console.log(
-                        chalk.cyan(
-                            `    cd ${sourceDir} && ${pm} install && ${pm === 'npm' ? 'npm run' : pm} build`,
-                        ),
-                    );
-                } else {
-                    rebuildSpinner.fail('Rebuild preparation failed');
-                    for (const error of result.errors) {
-                        console.log(chalk.red(`    ${error}`));
-                    }
+                rebuildSpinner.fail('Rebuild failed');
+                for (const error of result.errors) {
+                    console.log(chalk.red(`    ${error}`));
                 }
+            }
 
-                if (result.warnings.length > 0) {
-                    for (const warning of result.warnings) {
-                        console.log(chalk.yellow(`    Warning: ${warning}`));
-                    }
+            if (result.warnings.length > 0 && options.verbose) {
+                for (const warning of result.warnings) {
+                    console.log(chalk.yellow(`    Warning: ${warning}`));
                 }
             }
         } catch (error) {
-            rebuildSpinner.fail(`Rebuild preparation failed: ${error}`);
+            rebuildSpinner.fail(`Rebuild failed: ${error}`);
         }
 
         console.log();
