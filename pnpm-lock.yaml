@@ -4,6 +4,18 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    '@swc/types':
+      specifier: ^0.1.25
+      version: 0.1.25
+    '@types/node':
+      specifier: ^20.10.0
+      version: 20.19.25
+    typescript:
+      specifier: ^5.3.0
+      version: 5.9.3
+
 importers:
 
   .:
@@ -18,10 +30,10 @@ importers:
         specifier: ^1.15.3
         version: 1.15.3
       '@swc/types':
-        specifier: ^0.1.25
+        specifier: 'catalog:'
         version: 0.1.25
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.48.0
@@ -54,7 +66,7 @@ importers:
         specifier: ^2.5.4
         version: 2.6.3
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
@@ -79,13 +91,13 @@ importers:
         version: link:../types
     devDependencies:
       '@swc/types':
-        specifier: ^0.1.25
+        specifier: 'catalog:'
         version: 0.1.25
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/ast:
@@ -95,13 +107,13 @@ importers:
         version: 1.15.3
     devDependencies:
       '@swc/types':
-        specifier: ^0.1.25
+        specifier: 'catalog:'
         version: 0.1.25
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/cache:
@@ -111,10 +123,10 @@ importers:
         version: link:../ast
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/capture:
@@ -133,10 +145,10 @@ importers:
         version: 1.54.1
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/cli:
@@ -188,19 +200,19 @@ importers:
         version: 1.1.1
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/http:
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/manifest:
@@ -213,10 +225,10 @@ importers:
         version: link:../types
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/rebuild:
@@ -235,10 +247,10 @@ importers:
         version: 5.4.21(@types/node@20.19.25)
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/scraper:
@@ -257,10 +269,10 @@ importers:
         version: 7.0.1
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/server:
@@ -279,10 +291,10 @@ importers:
         version: 1.1.1
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
@@ -304,19 +316,19 @@ importers:
         version: link:../http
     devDependencies:
       '@swc/types':
-        specifier: ^0.1.25
+        specifier: 'catalog:'
         version: 0.1.25
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/types:
     devDependencies:
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
   packages/web2local:
@@ -326,10 +338,10 @@ importers:
         version: link:../cli
     devDependencies:
       '@types/node':
-        specifier: ^20.10.0
+        specifier: 'catalog:'
         version: 20.19.25
       typescript:
-        specifier: ^5.3.0
+        specifier: 'catalog:'
         version: 5.9.3
 
 packages:
