@@ -52,36 +52,46 @@ jobs:
 
             - name: Setup npm version
               if: matrix.package-manager == 'npm'
+              shell: bash
               run: npm install -g npm@${{ matrix.pm-version }}
 
             - name: Install dependencies
+              shell: bash
               run: ${{ matrix.package-manager }} install
 
             - name: Typecheck
+              shell: bash
               run: ${{ matrix.package-manager }} run typecheck
 
             - name: Lint
+              shell: bash
               run: ${{ matrix.package-manager }} run lint
 
             - name: Build
+              shell: bash
               run: ${{ matrix.package-manager }} run build
 
             - name: Test
+              shell: bash
               run: ${{ matrix.package-manager }} run test
 
             - name: Test CLI (dev mode via jiti)
+              shell: bash
               run: |
                   ${{ matrix.cli-cmd }} --help | grep -q "Extract and reconstruct original source code"
 
             - name: Test CLI (built binary)
+              shell: bash
               run: |
                   node packages/web2local/dist/index.mjs --help | grep -q "Extract and reconstruct original source code"
 
             - name: Test CLI serve subcommand
+              shell: bash
               run: |
                   node packages/web2local/dist/index.mjs serve --help | grep -q "Serve captured API fixtures"
 
             - name: Test CLI (global install)
+              shell: bash
               run: |
                   ${{ matrix.global-install-cmd }}
                   web2local --help | grep -q "Extract and reconstruct original source code"
