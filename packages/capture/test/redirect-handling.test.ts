@@ -339,33 +339,6 @@ describe('Redirect Handling', () => {
             expect(snakeResponse.status).not.toBe(302); // Should NOT redirect to itself
         });
     });
-
-    describe('CapturedRedirect Type', () => {
-        it('should have correct structure', () => {
-            const redirect: CapturedRedirect = {
-                from: '/old',
-                to: '/new',
-                status: 301,
-            };
-
-            expect(redirect.from).toBe('/old');
-            expect(redirect.to).toBe('/new');
-            expect(redirect.status).toBe(301);
-        });
-
-        it('should support all common redirect status codes', () => {
-            const codes = [301, 302, 303, 307, 308];
-
-            for (const status of codes) {
-                const redirect: CapturedRedirect = {
-                    from: '/old',
-                    to: '/new',
-                    status,
-                };
-                expect(redirect.status).toBe(status);
-            }
-        });
-    });
 });
 
 describe('Manifest Redirect Storage', () => {

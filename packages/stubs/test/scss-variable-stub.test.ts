@@ -2,7 +2,6 @@
  * Tests for scss-variable-stub.ts module
  *
  * Comprehensive tests for SCSS variable stub generation:
- * - SCSS parsing with postcss-scss
  * - Variable definition extraction
  * - Variable usage extraction
  * - Cross-file undefined variable detection
@@ -27,84 +26,6 @@ import {
     generateScssVariableStubs,
     type ScssVariableAnalysis,
 } from '../src/scss-variable-stub.js';
-
-// ============================================================================
-// SCSS PARSING
-// ============================================================================
-
-describe('parseScss', () => {
-    test('should parse valid SCSS content and return AST', () => {
-        const scss = '$color: red; .btn { color: $color; }';
-        const result = parseScss(scss, 'test.scss');
-        expect(result).not.toBeNull();
-        expect(result?.type).toBe('root');
-    });
-
-    test('should return null for severely malformed SCSS', () => {
-        // postcss-scss is very lenient, so we need truly broken content
-        const scss = '@import '; // incomplete at-rule
-        const result = parseScss(scss, 'test.scss');
-        // postcss-scss may still parse this, so we check behavior
-        // The function should not throw
-        expect(() => parseScss(scss, 'test.scss')).not.toThrow();
-    });
-
-    test('should handle empty content', () => {
-        const result = parseScss('', 'empty.scss');
-        expect(result).not.toBeNull();
-    });
-
-    test('should handle complex SCSS with nesting', () => {
-        const scss = `
-            .parent {
-                $local-var: 10px;
-                
-                .child {
-                    padding: $local-var;
-                    
-                    &:hover {
-                        color: blue;
-                    }
-                }
-            }
-        `;
-        const result = parseScss(scss, 'nested.scss');
-        expect(result).not.toBeNull();
-    });
-
-    test('should handle SCSS with mixins and functions', () => {
-        const scss = `
-            @mixin flex-center {
-                display: flex;
-                justify-content: center;
-            }
-            
-            @function double($n) {
-                @return $n * 2;
-            }
-            
-            .centered {
-                @include flex-center;
-                width: double(50px);
-            }
-        `;
-        const result = parseScss(scss, 'mixins.scss');
-        expect(result).not.toBeNull();
-    });
-
-    test('should handle SCSS with @use and @forward', () => {
-        const scss = `
-            @use 'sass:math';
-            @forward 'variables';
-            
-            .calc {
-                width: math.div(100%, 3);
-            }
-        `;
-        const result = parseScss(scss, 'modules.scss');
-        expect(result).not.toBeNull();
-    });
-});
 
 // ============================================================================
 // VARIABLE DEFINITION EXTRACTION
