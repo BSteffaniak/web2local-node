@@ -1,0 +1,9 @@
+{
+    "versionGroups": [
+        {
+            "dependencies": ["**"],
+            "packages": ["**"],
+            "dependencyTypes": ["!local"]
+        }
+    ]
+}
