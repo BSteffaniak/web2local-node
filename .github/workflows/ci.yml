@@ -1,4 +1,5 @@
 name: CI
+
 on:
     push:
         branches: [master]
@@ -8,6 +9,7 @@ on:
 jobs:
     test:
         runs-on: ubuntu-latest
+
         strategy:
             fail-fast: false
             matrix:
@@ -25,8 +27,10 @@ jobs:
                       run-cmd: bunx
                       global-install-cmd: bun link
                       cli-cmd: bun run cli
+
         steps:
             - uses: actions/checkout@v4
+
             - uses: pnpm/action-setup@v3
               with:
                   version: latest
@@ -35,38 +39,50 @@ jobs:
               if: matrix.package-manager == 'bun'
               with:
                   bun-version: latest
+
             - uses: actions/setup-node@v4
               if: matrix.package-manager != 'bun'
               with:
                   node-version: 20
                   cache: ${{ matrix.package-manager }}
+
             - uses: actions/setup-node@v4
               if: matrix.package-manager == 'bun'
               with:
                   node-version: 20
+
             - name: Setup npm
               if: matrix.package-manager == 'npm'
               run: npm install -g npm@10
+
             - name: Install dependencies
               run: ${{ matrix.package-manager }} install
+
             - name: Typecheck
               run: ${{ matrix.package-manager }} run typecheck
+
             - name: Lint
               run: ${{ matrix.package-manager }} run lint
+
             - name: Build
               run: ${{ matrix.package-manager }} run build
+
             - name: Test
               run: ${{ matrix.package-manager }} run test
+
             - name: Test CLI (dev mode via jiti)
               run: |
                   ${{ matrix.cli-cmd }} --help | grep -q "Extract and reconstruct original source code"
+
             - name: Test CLI (built binary)
               run: |
                   # Run the bundled CLI directly
                   node packages/web2local/dist/index.mjs --help | grep -q "Extract and reconstruct original source code"
+
             - name: Test CLI serve subcommand
               run: |
                   node packages/web2local/dist/index.mjs serve --help | grep -q "Serve captured API fixtures"
+
             - name: Setup global bin PATH
               run: |
                   if [ "${{ matrix.package-manager }}" = "bun" ]; then
@@ -76,6 +92,7 @@ jobs:
                   elif [ "${{ matrix.package-manager }}" = "npm" ]; then
                     echo "$(npm config get prefix)/bin" >> $GITHUB_PATH
                   fi
+
             - name: Test CLI (global install)
               run: |
                   ${{ matrix.global-install-cmd }}
