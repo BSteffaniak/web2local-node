@@ -1,5 +1,5 @@
 /**
- * Server manifest generation for mock-site-server
+ * Server manifest generation for web2local serve
  */
 
 import { mkdir, writeFile } from 'fs/promises';

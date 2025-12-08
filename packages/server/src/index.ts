@@ -1,5 +1,5 @@
 /**
- * mock-site-server - Serve captured API fixtures and static assets
+ * web2local serve - Serve captured API fixtures and static assets
  *
  * Programmatic API for using the mock server
  */

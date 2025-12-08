@@ -7,7 +7,7 @@
  * - Falls back to stubs when no resolution is found
  */
 
-import { readdir, readFile, stat } from 'fs/promises';
+import { readdir, readFile } from 'fs/promises';
 import { join, basename, relative, extname, dirname } from 'path';
 import { toPosixPath } from '@web2local/utils';
 import { extractExportsFromSource } from '@web2local/ast';
@@ -60,19 +60,6 @@ export interface ExportResolverOptions {
     onWarning?: (message: string) => void;
     /** Verbose mode - emit warnings to console too */
     verbose?: boolean;
-}
-
-/**
- * Check if a file exists
- * @internal Reserved for future use
- */
-async function _fileExists(filePath: string): Promise<boolean> {
-    try {
-        await stat(filePath);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 /**

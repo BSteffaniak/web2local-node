@@ -1,5 +1,5 @@
 {
-  description = "Source map extractor and mock site server";
+  description = "web2local - Reverse-engineer web apps from deployed bundles";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -36,8 +36,8 @@
 
           shellHook = ''
             echo ""
-            echo "  🔍 Source Map Extractor Dev Shell"
-            echo "  ─────────────────────────────────"
+            echo "  web2local Dev Shell"
+            echo "  ───────────────────"
             echo ""
             echo "  Node.js: $(node --version)"
             echo "  pnpm:    $(pnpm --version)"
@@ -49,7 +49,7 @@
             echo "    2. pnpm build"
             echo ""
             echo "  Usage:"
-            echo "    node dist/index.js <url> --capture-api"
+            echo "    pnpm cli <url>"
             echo ""
           '';
         };

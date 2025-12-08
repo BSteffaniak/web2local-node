@@ -1,5 +1,5 @@
 /**
- * Type definitions for mock-site-server
+ * Type definitions for web2local serve
  * These mirror the types from the capture tool
  */
 

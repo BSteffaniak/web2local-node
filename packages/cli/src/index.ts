@@ -83,8 +83,8 @@ export async function runMain(options: CliOptions) {
         disabled: options.noCache || options.forceRefresh,
     });
 
-    console.log(chalk.bold.cyan('\n  Source Map Extractor 9001'));
-    console.log(chalk.gray('  ' + '─'.repeat(20)));
+    console.log(chalk.bold.cyan('\n  web2local'));
+    console.log(chalk.gray('  ' + '─'.repeat(12)));
     console.log();
 
     // Step 1: Fetch the page and extract bundle URLs
@@ -1082,12 +1082,12 @@ export async function runMain(options: CliOptions) {
             console.log();
             console.log(
                 chalk.gray(
-                    '  Tip: Use mock-site-server to serve the captured API fixtures',
+                    '  Tip: Use `web2local serve` to serve the captured API fixtures',
                 ),
             );
             console.log(
                 chalk.gray(
-                    `  Example: npx mock-site-server serve ${join(options.output, hostname)}`,
+                    `  Example: web2local serve ${join(options.output, hostname)}`,
                 ),
             );
         } catch (error) {

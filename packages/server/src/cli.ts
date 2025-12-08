@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * CLI for mock-site-server
+ * CLI for web2local serve
  */
 
 import { Command } from 'commander';
@@ -20,7 +20,7 @@ import type { ServerOptions } from './types.js';
 const program = new Command();
 
 program
-    .name('mock-site-server')
+    .name('web2local serve')
     .description('Serve captured API fixtures and static assets')
     .version('1.0.0');
 
@@ -217,7 +217,7 @@ program
             console.log();
             console.log(
                 pc.gray(
-                    `  Use ${pc.bold('mock-site-server serve <dir>/<site>')} to start a server`,
+                    `  Use ${pc.bold('web2local serve <dir>/<site>')} to start a server`,
                 ),
             );
             console.log();

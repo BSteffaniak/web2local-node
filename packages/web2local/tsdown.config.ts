@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown';
 export default defineConfig({
     entry: ['src/index.ts'],
     format: 'esm',
-    target: 'node18',
+    target: 'node20',
     outDir: 'dist',
     clean: true,
     // Keep heavy native/binary dependencies external

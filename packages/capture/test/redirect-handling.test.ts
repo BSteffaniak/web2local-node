@@ -3,7 +3,7 @@
  *
  * These tests verify that:
  * 1. Redirects are properly stored in the server manifest
- * 2. The mock-site-server correctly replays captured redirects
+ * 2. The web2local serve command correctly replays captured redirects
  * 3. The manifest generator includes redirects when provided
  */
 
