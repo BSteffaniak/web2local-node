@@ -10,12 +10,12 @@
  * Respects the minimum Node version from package.json engines.node
  *
  * Configuration via environment variables:
- * - LAST_N_VERSIONS: Number of versions to include (default: 3)
+ * - LAST_N_VERSIONS: Number of versions to include (default: 2)
  */
 
 import { readFile, appendFile } from 'fs/promises';
 
-const LAST_N_VERSIONS = parseInt(process.env.LAST_N_VERSIONS || '3', 10);
+const LAST_N_VERSIONS = parseInt(process.env.LAST_N_VERSIONS || '2', 10);
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -222,37 +222,47 @@ async function generateMatrix() {
     const include = [];
 
     for (const nodeVersion of nodeVersions) {
+        // npm combinations - full cartesian product with pnpm versions for turbo interop
         for (const pmVersion of npmVersions) {
-            include.push({
-                'node-version': nodeVersion,
-                'package-manager': 'npm',
-                'pm-version': pmVersion,
-                'run-cmd': 'npx',
-                'global-install-cmd': 'npm install -g .',
-                'cli-cmd': 'npm run cli --',
-            });
+            for (const pnpmVersion of pnpmVersions) {
+                include.push({
+                    'node-version': nodeVersion,
+                    'package-manager': 'npm',
+                    'pm-version': pmVersion,
+                    'pnpm-version': pnpmVersion,
+                    'run-cmd': 'npx',
+                    'global-install-cmd': 'npm install -g .',
+                    'cli-cmd': 'npm run cli --',
+                });
+            }
         }
 
+        // pnpm combinations - pnpm-version equals pm-version (same tool for both)
         for (const pmVersion of pnpmVersions) {
             include.push({
                 'node-version': nodeVersion,
                 'package-manager': 'pnpm',
                 'pm-version': pmVersion,
+                'pnpm-version': pmVersion,
                 'run-cmd': 'pnpm exec',
                 'global-install-cmd': 'pnpm link -g .',
                 'cli-cmd': 'pnpm run cli',
             });
         }
 
+        // bun combinations - full cartesian product with pnpm versions for turbo interop
         for (const pmVersion of bunVersions) {
-            include.push({
-                'node-version': nodeVersion,
-                'package-manager': 'bun',
-                'pm-version': pmVersion,
-                'run-cmd': 'bunx',
-                'global-install-cmd': 'bun link',
-                'cli-cmd': 'bun run cli',
-            });
+            for (const pnpmVersion of pnpmVersions) {
+                include.push({
+                    'node-version': nodeVersion,
+                    'package-manager': 'bun',
+                    'pm-version': pmVersion,
+                    'pnpm-version': pnpmVersion,
+                    'run-cmd': 'bunx',
+                    'global-install-cmd': 'bun link',
+                    'cli-cmd': 'bun run cli',
+                });
+            }
         }
     }
 

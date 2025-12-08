@@ -23,7 +23,7 @@ jobs:
     test:
         needs: generate-matrix
         runs-on: ubuntu-latest
-        name: Node ${{ matrix.node-version }} / ${{ matrix.package-manager }}@${{ matrix.pm-version }}
+        name: Node ${{ matrix.node-version }} / ${{ matrix.package-manager }}@${{ matrix.pm-version }}${{ matrix.package-manager != 'pnpm' && format(' (pnpm@{0})', matrix.pnpm-version) || '' }}
         strategy:
             fail-fast: false
             matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
@@ -32,7 +32,7 @@ jobs:
 
             - uses: pnpm/action-setup@v3
               with:
-                  version: ${{ matrix.package-manager == 'pnpm' && matrix.pm-version || 'latest' }}
+                  version: ${{ matrix.pnpm-version }}
 
             - uses: oven-sh/setup-bun@v1
               if: matrix.package-manager == 'bun'
