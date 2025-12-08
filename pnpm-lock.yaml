@@ -258,6 +258,9 @@ importers:
       '@web2local/http':
         specifier: 0.0.1
         version: link:../http
+      '@web2local/sourcemap':
+        specifier: 0.0.1
+        version: link:../sourcemap
       '@web2local/types':
         specifier: 0.0.1
         version: link:../types
@@ -300,6 +303,22 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.26)(msw@2.12.4(@types/node@20.19.26)(typescript@5.9.3))
 
+  packages/sourcemap:
+    dependencies:
+      '@web2local/http':
+        specifier: 0.0.1
+        version: link:../http
+      '@web2local/types':
+        specifier: 0.0.1
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.26
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
   packages/stubs:
     dependencies:
       '@swc/core':
@@ -314,6 +333,9 @@ importers:
       '@web2local/http':
         specifier: 0.0.1
         version: link:../http
+      '@web2local/sourcemap':
+        specifier: 0.0.1
+        version: link:../sourcemap
       '@web2local/utils':
         specifier: 0.0.1
         version: link:../utils

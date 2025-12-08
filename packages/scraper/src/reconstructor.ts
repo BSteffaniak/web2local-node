@@ -2,7 +2,8 @@ import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
 import { toPosixPath } from '@web2local/utils';
-import { SourceFile, shouldIncludePath } from './sourcemap.js';
+import { SourceFile } from './sourcemap.js';
+import { shouldIncludeSource } from '@web2local/sourcemap';
 import type { BundleWithContent } from './scraper.js';
 
 export interface ReconstructionOptions {
@@ -94,11 +95,10 @@ export async function reconstructSources(
         try {
             // Check if we should include this file
             if (
-                !shouldIncludePath(
-                    file.path,
-                    options.includeNodeModules,
-                    options.internalPackages,
-                )
+                !shouldIncludeSource(file.path, {
+                    includeNodeModules: options.includeNodeModules,
+                    internalPackages: options.internalPackages,
+                })
             ) {
                 result.filesSkipped++;
                 continue;

@@ -28,51 +28,7 @@
 import { dirname, basename } from 'path';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 import { extractMemberAccesses, safeParse, walkAST } from '@web2local/ast';
-
-/**
- * Normalizes source paths from various bundler formats
- */
-function normalizePath(sourcePath: string, sourceRoot: string = ''): string {
-    let path = sourcePath;
-
-    // Handle webpack:// protocol
-    if (path.startsWith('webpack://')) {
-        path = path.replace(/^webpack:\/\/[^/]*\//, '');
-    }
-
-    // Handle vite/rollup paths
-    if (path.startsWith('\u0000')) {
-        path = path.slice(1);
-    }
-
-    // Apply source root if present
-    if (sourceRoot && !path.startsWith('/') && !path.startsWith('.')) {
-        path = sourceRoot + path;
-    }
-
-    // Remove leading ./
-    path = path.replace(/^\.\//, '');
-
-    // Resolve .. segments safely
-    const segments = path.split('/');
-    const resolved: string[] = [];
-
-    for (const segment of segments) {
-        if (segment === '..') {
-            // Only pop if we have segments and the last one isn't already ..
-            if (resolved.length > 0 && resolved[resolved.length - 1] !== '..') {
-                resolved.pop();
-            } else {
-                // Keep the .. if we can't resolve it
-                resolved.push(segment);
-            }
-        } else if (segment !== '.' && segment !== '') {
-            resolved.push(segment);
-        }
-    }
-
-    return resolved.join('/');
-}
+import { normalizeSourcePath } from '@web2local/sourcemap';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -359,8 +315,8 @@ export async function extractCssSourceMap(
                 continue;
             }
 
-            // Normalize the path
-            const normalizedPath = normalizePath(sourcePath, sourceRoot);
+            // Normalize the path using @web2local/sourcemap
+            const normalizedPath = normalizeSourcePath(sourcePath, sourceRoot);
 
             result.files.push({
                 path: normalizedPath,

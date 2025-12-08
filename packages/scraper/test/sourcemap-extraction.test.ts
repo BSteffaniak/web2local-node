@@ -212,8 +212,9 @@ describe('extractSourcesFromMap', () => {
             expect(result.errors[0]).toContain(
                 'https://example.com/invalid.js.map',
             );
+            // The new parser throws a validation error for missing sources
             expect(result.errors[0]).toContain(
-                'missing sources or sourcesContent',
+                'Invalid source map: Missing required field: sources',
             );
         });
 
@@ -240,8 +241,8 @@ describe('extractSourcesFromMap', () => {
             expect(result.errors[0]).toContain(
                 'https://example.com/no-content.js.map',
             );
-            expect(result.errors[0]).toContain(
-                'missing sources or sourcesContent',
+            expect(result.errors[0]).toBe(
+                'Source map from https://example.com/no-content.js.map is missing sourcesContent array',
             );
         });
 
@@ -263,7 +264,11 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.errors).toHaveLength(0);
+            // Empty sourcesContent is treated as an error since there's nothing to extract
+            expect(result.errors).toHaveLength(1);
+            expect(result.errors[0]).toBe(
+                'Source map from https://example.com/empty.js.map is missing sourcesContent array',
+            );
             expect(result.files).toHaveLength(0);
         });
 

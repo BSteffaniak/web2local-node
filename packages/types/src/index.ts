@@ -4,8 +4,132 @@
  * Shared TypeScript types for web2local packages
  */
 
+// ============================================================================
+// SOURCE MAP TYPES
+// ============================================================================
+
+/**
+ * Source Map V3 specification
+ * @see https://sourcemaps.info/spec.html
+ */
+export interface SourceMapV3 {
+    readonly version: 3;
+    readonly file?: string;
+    readonly sourceRoot?: string;
+    readonly sources: readonly string[];
+    readonly sourcesContent?: readonly (string | null)[];
+    readonly names?: readonly string[];
+    readonly mappings: string;
+}
+
 /**
  * A source file extracted from a source map
+ */
+export interface ExtractedSource {
+    /** Normalized path (after webpack://, vite, etc. processing) */
+    readonly path: string;
+    /** Original source content */
+    readonly content: string;
+    /** Original path before normalization (for debugging) */
+    readonly originalPath: string;
+}
+
+/**
+ * Metadata about a source map extraction
+ */
+export interface SourceMapMetadata {
+    readonly version: number;
+    readonly sourceRoot: string | null;
+    readonly totalSources: number;
+    readonly extractedCount: number;
+    readonly skippedCount: number;
+    readonly nullContentCount: number;
+}
+
+/**
+ * Result of source map extraction
+ */
+export interface SourceMapExtractionResult {
+    readonly bundleUrl: string;
+    readonly sourceMapUrl: string;
+    readonly sources: readonly ExtractedSource[];
+    readonly errors: readonly Error[];
+    readonly metadata: SourceMapMetadata;
+}
+
+/**
+ * How a source map was discovered
+ */
+export type SourceMapLocationType =
+    | 'http-header'
+    | 'js-comment'
+    | 'css-comment'
+    | 'inline-data-uri'
+    | 'url-probe';
+
+/**
+ * Result of source map discovery
+ */
+export interface SourceMapDiscoveryResult {
+    readonly found: boolean;
+    readonly sourceMapUrl: string | null;
+    readonly locationType: SourceMapLocationType | null;
+    /** Bundle content (available when discovery fetched the bundle) */
+    readonly bundleContent?: string;
+}
+
+/**
+ * Options for source map extraction
+ */
+export interface ExtractSourceMapOptions {
+    /** Include node_modules sources (default: false) */
+    readonly includeNodeModules?: boolean;
+    /** Package names that are "internal" and should always be included */
+    readonly internalPackages?: ReadonlySet<string>;
+    /** Additional path patterns to exclude */
+    readonly excludePatterns?: readonly RegExp[];
+    /** Callback for each extracted source (streaming) */
+    readonly onSource?: (source: ExtractedSource) => void;
+    /** Maximum source map size in bytes (default: 100MB) */
+    readonly maxSize?: number;
+    /** Fetch timeout in milliseconds (default: 30000) */
+    readonly timeout?: number;
+    /** Custom fetch headers */
+    readonly headers?: Record<string, string>;
+}
+
+/**
+ * Options for source map discovery
+ */
+export interface DiscoverSourceMapOptions {
+    /** Skip HTTP header check */
+    readonly skipHeaderCheck?: boolean;
+    /** Skip comment parsing */
+    readonly skipCommentCheck?: boolean;
+    /** Skip .map URL probing */
+    readonly skipProbe?: boolean;
+    /** Fetch timeout in milliseconds */
+    readonly timeout?: number;
+    /** Custom fetch headers */
+    readonly headers?: Record<string, string>;
+}
+
+/**
+ * Result of source map validation
+ */
+export interface SourceMapValidationResult {
+    readonly valid: boolean;
+    readonly errors: readonly string[];
+    readonly warnings: readonly string[];
+}
+
+// ============================================================================
+// LEGACY TYPES (for backwards compatibility)
+// ============================================================================
+
+/**
+ * A source file extracted from a source map
+ * @deprecated Use ExtractedSource instead
  */
 export interface SourceFile {
     /** The file path (relative to source root) */

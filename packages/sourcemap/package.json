@@ -1,7 +1,7 @@
 {
-    "name": "@web2local/stubs",
+    "name": "@web2local/sourcemap",
     "version": "0.0.1",
-    "description": "Stub file generation for web2local",
+    "description": "Professional source map parsing, discovery, and extraction for web2local",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -14,28 +14,22 @@
     "scripts": {
         "build": "tsc",
         "dev": "tsc --watch",
-        "test": "vitest run --passWithNoTests",
+        "test": "vitest run",
         "typecheck": "tsc --noEmit"
     },
     "keywords": [
         "web2local",
-        "stubs",
-        "css",
-        "typescript"
+        "sourcemap",
+        "source-map",
+        "extraction",
+        "parser"
     ],
     "license": "MIT",
     "dependencies": {
-        "@swc/core": "^1.15.3",
-        "@web2local/analyzer": "0.0.1",
-        "@web2local/ast": "0.0.1",
         "@web2local/http": "0.0.1",
-        "@web2local/sourcemap": "0.0.1",
-        "@web2local/utils": "0.0.1",
-        "postcss": "^8.5.6",
-        "postcss-scss": "^4.0.9"
+        "@web2local/types": "0.0.1"
     },
     "devDependencies": {
-        "@swc/types": "^0.1.25",
         "@types/node": "^20.10.0",
         "typescript": "^5.3.0"
     },

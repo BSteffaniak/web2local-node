@@ -23,6 +23,9 @@ export {
     type SourceFile,
     type SourceMapResult,
     extractSourcesFromMap,
+    normalizePath,
+    shouldIncludeSource,
+    getCleanFilename,
 } from './sourcemap.js';
 
 // From reconstructor.ts

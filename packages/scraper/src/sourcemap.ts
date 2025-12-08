@@ -1,6 +1,15 @@
+/**
+ * Source Map Extraction for @web2local/scraper
+ *
+ * This module provides caching-aware source map extraction.
+ * The core extraction logic lives in @web2local/sourcemap.
+ */
+
 import { getCache } from '@web2local/cache';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
+import { parseSourceMap, normalizeSourcePath } from '@web2local/sourcemap';
 
+// Re-export types for backwards compatibility
 export interface SourceFile {
     path: string;
     content: string;
@@ -13,10 +22,15 @@ export interface SourceMapResult {
     errors: string[];
 }
 
+// Re-export utilities from @web2local/sourcemap
+export {
+    normalizeSourcePath as normalizePath,
+    shouldIncludeSource,
+    getCleanFilename,
+} from '@web2local/sourcemap';
+
 /**
  * Streaming source map parser that extracts sources without loading entire file into memory.
- * Uses a custom incremental JSON parser to handle large source maps efficiently.
- *
  * Results are cached to avoid re-parsing on subsequent runs.
  */
 export async function extractSourcesFromMap(
@@ -74,16 +88,10 @@ export async function extractSourcesFromMap(
             await cache.setSourceMap(sourceMapUrl, text);
         }
 
-        // Parse the source map JSON
-        let sourceMap: {
-            version: number;
-            sources?: string[];
-            sourcesContent?: (string | null)[];
-            sourceRoot?: string;
-        };
-
+        // Parse and validate the source map using @web2local/sourcemap
+        let sourceMap;
         try {
-            sourceMap = JSON.parse(text);
+            sourceMap = parseSourceMap(text, sourceMapUrl);
         } catch (e) {
             // Provide helpful context about what we received instead of JSON
             const preview = text.slice(0, 1000).replace(/\n/g, ' ');
@@ -93,9 +101,12 @@ export async function extractSourcesFromMap(
             return result;
         }
 
-        if (!sourceMap.sources || !sourceMap.sourcesContent) {
+        if (
+            !sourceMap.sourcesContent ||
+            sourceMap.sourcesContent.length === 0
+        ) {
             result.errors.push(
-                `Source map from ${sourceMapUrl} is missing sources or sourcesContent arrays`,
+                `Source map from ${sourceMapUrl} is missing sourcesContent array`,
             );
             return result;
         }
@@ -110,8 +121,8 @@ export async function extractSourcesFromMap(
                 continue;
             }
 
-            // Normalize the path
-            const normalizedPath = normalizePath(sourcePath, sourceRoot);
+            // Normalize the path using @web2local/sourcemap
+            const normalizedPath = normalizeSourcePath(sourcePath, sourceRoot);
 
             const file: SourceFile = {
                 path: normalizedPath,
@@ -137,123 +148,4 @@ export async function extractSourcesFromMap(
         );
         return result;
     }
-}
-
-/**
- * Normalizes source paths from various bundler formats
- */
-export function normalizePath(
-    sourcePath: string,
-    sourceRoot: string = '',
-): string {
-    let path = sourcePath;
-
-    // Handle webpack:// protocol
-    if (path.startsWith('webpack://')) {
-        path = path.replace(/^webpack:\/\/[^/]*\//, '');
-    }
-
-    // Handle vite/rollup paths
-    if (path.startsWith('\u0000')) {
-        path = path.slice(1);
-    }
-
-    // Apply source root if present
-    if (sourceRoot && !path.startsWith('/') && !path.startsWith('.')) {
-        path = sourceRoot + path;
-    }
-
-    // Remove leading ./
-    path = path.replace(/^\.\//, '');
-
-    // Resolve .. segments safely
-    const segments = path.split('/');
-    const resolved: string[] = [];
-
-    for (const segment of segments) {
-        if (segment === '..') {
-            // Only pop if we have segments and the last one isn't already ..
-            if (resolved.length > 0 && resolved[resolved.length - 1] !== '..') {
-                resolved.pop();
-            } else {
-                // Keep the .. if we can't resolve it
-                resolved.push(segment);
-            }
-        } else if (segment !== '.' && segment !== '') {
-            resolved.push(segment);
-        }
-    }
-
-    return resolved.join('/');
-}
-
-/**
- * Checks if a path should be included based on filters
- * @param path - The source file path to check
- * @param includeNodeModules - Whether to include all node_modules
- * @param internalPackages - Set of package names that are internal (not on npm) and should always be included
- */
-export function shouldIncludePath(
-    path: string,
-    includeNodeModules: boolean,
-    internalPackages?: Set<string>,
-): boolean {
-    // Always exclude some paths
-    if (path.includes('\u0000')) {
-        return false;
-    }
-
-    // Handle node_modules filtering
-    if (path.includes('node_modules')) {
-        if (includeNodeModules) {
-            return true; // Include all node_modules when flag is set
-        }
-
-        // Check if this is an internal package that should always be included
-        if (internalPackages && internalPackages.size > 0) {
-            // Extract package name from path: node_modules/@scope/pkg/... or node_modules/pkg/...
-            const match = path.match(/node_modules\/(@[^/]+\/[^/]+|[^/]+)/);
-            if (match && internalPackages.has(match[1])) {
-                return true; // Always include internal packages
-            }
-        }
-
-        return false; // Skip other node_modules
-    }
-
-    // Exclude common virtual/internal paths
-    const excludePatterns = [
-        /^\(webpack\)/,
-        /^__vite/,
-        /^vite\//,
-        /^\?/,
-        /^data:/,
-    ];
-
-    for (const pattern of excludePatterns) {
-        if (pattern.test(path)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-/**
- * Gets a clean filename for a source path, handling edge cases
- */
-export function getCleanFilename(path: string): string {
-    // Remove query strings
-    const withoutQuery = path.split('?')[0];
-
-    // Get the filename
-    const parts = withoutQuery.split('/');
-    const filename = parts[parts.length - 1];
-
-    // If no extension, try to infer one
-    if (!filename.includes('.')) {
-        return filename + '.js';
-    }
-
-    return filename;
 }

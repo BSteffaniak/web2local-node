@@ -145,6 +145,7 @@
       "dependencies": {
         "@web2local/cache": "0.0.1",
         "@web2local/http": "0.0.1",
+        "@web2local/sourcemap": "0.0.1",
         "@web2local/types": "0.0.1",
         "@web2local/utils": "0.0.1",
         "node-html-parser": "^7.0.1",
@@ -169,6 +170,18 @@
         "vitest": "^2.1.0",
       },
     },
+    "packages/sourcemap": {
+      "name": "@web2local/sourcemap",
+      "version": "0.0.1",
+      "dependencies": {
+        "@web2local/http": "0.0.1",
+        "@web2local/types": "0.0.1",
+      },
+      "devDependencies": {
+        "@types/node": "^20.10.0",
+        "typescript": "^5.3.0",
+      },
+    },
     "packages/stubs": {
       "name": "@web2local/stubs",
       "version": "0.0.1",
@@ -177,6 +190,7 @@
         "@web2local/analyzer": "0.0.1",
         "@web2local/ast": "0.0.1",
         "@web2local/http": "0.0.1",
+        "@web2local/sourcemap": "0.0.1",
         "@web2local/utils": "0.0.1",
         "postcss": "^8.5.6",
         "postcss-scss": "^4.0.9",
@@ -504,6 +518,8 @@
     "@web2local/scraper": ["@web2local/scraper@workspace:packages/scraper"],
 
     "@web2local/server": ["@web2local/server@workspace:packages/server"],
+
+    "@web2local/sourcemap": ["@web2local/sourcemap@workspace:packages/sourcemap"],
 
     "@web2local/stubs": ["@web2local/stubs@workspace:packages/stubs"],
 
@@ -915,8 +931,6 @@
 
     "@typescript-eslint/typescript-estree/minimatch": ["minimatch@9.0.5", "", { "dependencies": { "brace-expansion": "^2.0.1" } }, "sha512-G6T0ZX48xgozx7587koeX9Ys2NYy6Gmv//P89sEte9V9whIapMNF4idKxnW2QtCcLiTWlb/wfCabAtAFWhhBow=="],
 
-    "@typescript-eslint/visitor-keys/eslint-visitor-keys": ["eslint-visitor-keys@4.2.1", "", {}, "sha512-Uhdk5sfqcee/9H/rCOJikYz67o0a2Tw2hGRPOG2Y1R2dg7brRe1uG0yaNQDHu+TO/uQPF/5eCapvYSmHUjt7JQ=="],
-
     "@web2local/capture/playwright": ["playwright@1.54.1", "", { "dependencies": { "playwright-core": "1.54.1" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": "cli.js" }, "sha512-peWpSwIBmSLi6aW2auvrUtf2DqY16YYcCMO8rTVx486jKmDTJg7UAhyrraP98GB8BoPURZP8+nxO7TSd4cPr5g=="],
 
     "ast-kit/pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
@@ -929,11 +943,7 @@
 
     "eslint/chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
 
-    "espree/eslint-visitor-keys": ["eslint-visitor-keys@4.2.1", "", {}, "sha512-Uhdk5sfqcee/9H/rCOJikYz67o0a2Tw2hGRPOG2Y1R2dg7brRe1uG0yaNQDHu+TO/uQPF/5eCapvYSmHUjt7JQ=="],
-
     "log-symbols/is-unicode-supported": ["is-unicode-supported@1.3.0", "", {}, "sha512-43r2mRvz+8JRIKnWJ+3j8JtjRKZ6GmjzfaE/qiBJnikNnYv/6bagRJ1kUhNk8R5EX/GkobD+r+sfxCPJsiKBLQ=="],
-
-    "ora/chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
     "tsdown/tinyexec": ["tinyexec@1.0.2", "", {}, "sha512-W/KYk+NFhkmsYpuHq5JykngiOCnxeVL8v8dFnqxSD8qEEdRfXk1SDM6JzNqcERbcGYj9tMrDQBYV9cjgnunFIg=="],
 

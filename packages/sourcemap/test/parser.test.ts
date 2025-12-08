@@ -1,0 +1,254 @@
+import { describe, it, expect } from 'vitest';
+import {
+    parseSourceMap,
+    parseInlineSourceMap,
+    parseSourceMapAuto,
+    validateSourceMap,
+} from '../src/parser.js';
+import { SourceMapError, SourceMapErrorCode } from '../src/errors.js';
+
+describe('validateSourceMap', () => {
+    it('validates a correct source map', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            sourcesContent: ['export default 1;'],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+    });
+
+    it('fails on non-object', () => {
+        const result = validateSourceMap('not an object');
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Source map must be an object');
+    });
+
+    it('fails on null', () => {
+        const result = validateSourceMap(null);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Source map must be an object');
+    });
+
+    it('fails on missing version', () => {
+        const result = validateSourceMap({
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Missing required field: version');
+    });
+
+    it('fails on wrong version', () => {
+        const result = validateSourceMap({
+            version: 2,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors[0]).toContain('Invalid version');
+    });
+
+    it('fails on missing sources', () => {
+        const result = validateSourceMap({
+            version: 3,
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Missing required field: sources');
+    });
+
+    it('fails on non-array sources', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: 'not an array',
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Field "sources" must be an array');
+    });
+
+    it('fails on missing mappings', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Missing required field: mappings');
+    });
+
+    it('fails on non-string mappings', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 123,
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Field "mappings" must be a string');
+    });
+
+    it('warns on sourcesContent length mismatch', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['a.ts', 'b.ts'],
+            sourcesContent: ['content'],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(true); // Mismatch is a warning, not error
+        expect(result.warnings).toHaveLength(1);
+        expect(result.warnings[0]).toContain('does not match');
+    });
+
+    it('validates optional names array', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            names: 'not an array',
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Field "names" must be an array');
+    });
+
+    it('validates sourceRoot is a string', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            sourceRoot: 123,
+        });
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('Field "sourceRoot" must be a string');
+    });
+});
+
+describe('parseSourceMap', () => {
+    it('parses valid JSON source map', () => {
+        const json = JSON.stringify({
+            version: 3,
+            sources: ['index.ts'],
+            sourcesContent: ['export default 1;'],
+            mappings: 'AAAA',
+        });
+
+        const result = parseSourceMap(json);
+        expect(result.version).toBe(3);
+        expect(result.sources).toEqual(['index.ts']);
+        expect(result.sourcesContent).toEqual(['export default 1;']);
+    });
+
+    it('throws on invalid JSON', () => {
+        expect(() => parseSourceMap('{ invalid json }')).toThrow(
+            SourceMapError,
+        );
+        expect(() => parseSourceMap('{ invalid json }')).toThrow(
+            /Failed to parse/,
+        );
+    });
+
+    it('throws on invalid source map structure', () => {
+        const json = JSON.stringify({ version: 2 });
+        expect(() => parseSourceMap(json)).toThrow(SourceMapError);
+    });
+
+    it('includes URL in error when provided', () => {
+        try {
+            parseSourceMap('invalid', 'https://example.com/bundle.js.map');
+            expect.fail('Should have thrown');
+        } catch (e) {
+            expect(e).toBeInstanceOf(SourceMapError);
+            expect((e as SourceMapError).url).toBe(
+                'https://example.com/bundle.js.map',
+            );
+        }
+    });
+
+    it('handles source maps with all optional fields', () => {
+        const json = JSON.stringify({
+            version: 3,
+            file: 'bundle.js',
+            sourceRoot: 'src/',
+            sources: ['index.ts'],
+            sourcesContent: ['export default 1;'],
+            names: ['foo', 'bar'],
+            mappings: 'AAAA',
+        });
+
+        const result = parseSourceMap(json);
+        expect(result.file).toBe('bundle.js');
+        expect(result.sourceRoot).toBe('src/');
+        expect(result.names).toEqual(['foo', 'bar']);
+    });
+});
+
+describe('parseInlineSourceMap', () => {
+    it('parses base64 encoded inline source map', () => {
+        // {"version":3,"sources":["index.ts"],"mappings":"AAAA"}
+        const base64 =
+            'eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbImluZGV4LnRzIl0sIm1hcHBpbmdzIjoiQUFBQSJ9';
+        const dataUri = `data:application/json;base64,${base64}`;
+
+        const result = parseInlineSourceMap(dataUri);
+        expect(result.version).toBe(3);
+        expect(result.sources).toEqual(['index.ts']);
+    });
+
+    it('throws on non-data-uri', () => {
+        expect(() =>
+            parseInlineSourceMap('https://example.com/file.map'),
+        ).toThrow(SourceMapError);
+        expect(() =>
+            parseInlineSourceMap('https://example.com/file.map'),
+        ).toThrow(/Not a valid data URI/);
+    });
+
+    it('throws on invalid base64', () => {
+        const dataUri = 'data:application/json;base64,!!invalid!!';
+        expect(() => parseInlineSourceMap(dataUri)).toThrow(SourceMapError);
+        expect(() => parseInlineSourceMap(dataUri)).toThrow(
+            /Failed to decode base64/,
+        );
+    });
+
+    it('throws on invalid JSON after decoding', () => {
+        // Base64 of "not json"
+        const base64 = Buffer.from('not json').toString('base64');
+        const dataUri = `data:application/json;base64,${base64}`;
+
+        expect(() => parseInlineSourceMap(dataUri)).toThrow(SourceMapError);
+    });
+});
+
+describe('parseSourceMapAuto', () => {
+    it('parses regular JSON', () => {
+        const json = JSON.stringify({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+        });
+
+        const result = parseSourceMapAuto(json);
+        expect(result.version).toBe(3);
+    });
+
+    it('parses data URIs', () => {
+        const base64 =
+            'eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbImluZGV4LnRzIl0sIm1hcHBpbmdzIjoiQUFBQSJ9';
+        const dataUri = `data:application/json;base64,${base64}`;
+
+        const result = parseSourceMapAuto(dataUri);
+        expect(result.version).toBe(3);
+    });
+
+    it('uses JSON parsing for non-data-uri strings', () => {
+        const json = JSON.stringify({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+        });
+
+        const result = parseSourceMapAuto(json);
+        expect(result.version).toBe(3);
+    });
+});
