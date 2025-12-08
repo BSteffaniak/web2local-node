@@ -245,7 +245,7 @@ async function generateMatrix() {
                 'pm-version': pmVersion,
                 'pnpm-version': pmVersion,
                 'run-cmd': 'pnpm exec',
-                'global-install-cmd': 'pnpm link -g .',
+                'global-install-cmd': 'pnpm link --global',
                 'cli-cmd': 'pnpm run cli',
             });
         }
