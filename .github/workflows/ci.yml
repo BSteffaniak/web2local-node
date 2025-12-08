@@ -15,9 +15,9 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - uses: pnpm/action-setup@v3
-              if: matrix.package-manager == 'pnpm'
               with:
                   version: latest
+
             - uses: oven-sh/setup-bun@v1
               if: matrix.package-manager == 'bun'
               with:
