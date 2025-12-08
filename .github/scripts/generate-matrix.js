@@ -16,6 +16,7 @@
 import { readFile, appendFile } from 'fs/promises';
 
 const LAST_N_VERSIONS = parseInt(process.env.LAST_N_VERSIONS || '2', 10);
+const OS_VERSIONS = ['ubuntu-latest', 'windows-latest', 'macos-latest'];
 
 async function fetchJson(url) {
     const response = await fetch(url);
@@ -214,6 +215,7 @@ async function generateMatrix() {
             getBunVersions(),
         ]);
 
+    console.error(`OS versions: ${OS_VERSIONS.join(', ')}`);
     console.error(`Node versions: ${nodeVersions.join(', ')}`);
     console.error(`npm versions: ${npmVersions.join(', ')}`);
     console.error(`pnpm versions: ${pnpmVersions.join(', ')}`);
@@ -221,47 +223,58 @@ async function generateMatrix() {
 
     const include = [];
 
-    for (const nodeVersion of nodeVersions) {
-        // npm combinations - full cartesian product with pnpm versions for turbo interop
-        for (const pmVersion of npmVersions) {
-            for (const pnpmVersion of pnpmVersions) {
+    for (const os of OS_VERSIONS) {
+        // Short OS name for display (strip -latest suffix)
+        const osName = os.replace('-latest', '');
+
+        for (const nodeVersion of nodeVersions) {
+            // npm combinations - full cartesian product with pnpm versions for turbo interop
+            for (const pmVersion of npmVersions) {
+                for (const pnpmVersion of pnpmVersions) {
+                    include.push({
+                        os,
+                        'os-name': osName,
+                        'node-version': nodeVersion,
+                        'package-manager': 'npm',
+                        'pm-version': pmVersion,
+                        'pnpm-version': pnpmVersion,
+                        'run-cmd': 'npx',
+                        'global-install-cmd': 'npm install -g .',
+                        'cli-cmd': 'npm run cli --',
+                    });
+                }
+            }
+
+            // pnpm combinations - pnpm-version equals pm-version (same tool for both)
+            for (const pmVersion of pnpmVersions) {
                 include.push({
+                    os,
+                    'os-name': osName,
                     'node-version': nodeVersion,
-                    'package-manager': 'npm',
+                    'package-manager': 'pnpm',
                     'pm-version': pmVersion,
-                    'pnpm-version': pnpmVersion,
-                    'run-cmd': 'npx',
-                    'global-install-cmd': 'npm install -g .',
-                    'cli-cmd': 'npm run cli --',
+                    'pnpm-version': pmVersion,
+                    'run-cmd': 'pnpm exec',
+                    'global-install-cmd': 'pnpm link --global',
+                    'cli-cmd': 'pnpm run cli',
                 });
             }
-        }
 
-        // pnpm combinations - pnpm-version equals pm-version (same tool for both)
-        for (const pmVersion of pnpmVersions) {
-            include.push({
-                'node-version': nodeVersion,
-                'package-manager': 'pnpm',
-                'pm-version': pmVersion,
-                'pnpm-version': pmVersion,
-                'run-cmd': 'pnpm exec',
-                'global-install-cmd': 'pnpm link --global',
-                'cli-cmd': 'pnpm run cli',
-            });
-        }
-
-        // bun combinations - full cartesian product with pnpm versions for turbo interop
-        for (const pmVersion of bunVersions) {
-            for (const pnpmVersion of pnpmVersions) {
-                include.push({
-                    'node-version': nodeVersion,
-                    'package-manager': 'bun',
-                    'pm-version': pmVersion,
-                    'pnpm-version': pnpmVersion,
-                    'run-cmd': 'bunx',
-                    'global-install-cmd': 'bun link',
-                    'cli-cmd': 'bun run cli',
-                });
+            // bun combinations - full cartesian product with pnpm versions for turbo interop
+            for (const pmVersion of bunVersions) {
+                for (const pnpmVersion of pnpmVersions) {
+                    include.push({
+                        os,
+                        'os-name': osName,
+                        'node-version': nodeVersion,
+                        'package-manager': 'bun',
+                        'pm-version': pmVersion,
+                        'pnpm-version': pnpmVersion,
+                        'run-cmd': 'bunx',
+                        'global-install-cmd': 'bun link',
+                        'cli-cmd': 'bun run cli',
+                    });
+                }
             }
         }
     }

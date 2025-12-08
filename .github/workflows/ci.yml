@@ -22,8 +22,8 @@ jobs:
 
     test:
         needs: generate-matrix
-        runs-on: ubuntu-latest
-        name: Node ${{ matrix.node-version }} / ${{ matrix.package-manager }}@${{ matrix.pm-version }}${{ matrix.package-manager != 'pnpm' && format(' (pnpm@{0})', matrix.pnpm-version) || '' }}
+        runs-on: ${{ matrix.os }}
+        name: ${{ matrix.os-name }} / Node ${{ matrix.node-version }} / ${{ matrix.package-manager }}@${{ matrix.pm-version }}${{ matrix.package-manager != 'pnpm' && format(' (pnpm@{0})', matrix.pnpm-version) || '' }}
         strategy:
             fail-fast: false
             matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
