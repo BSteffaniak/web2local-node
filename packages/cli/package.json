@@ -28,6 +28,7 @@
         "@web2local/manifest": "workspace:*",
         "@web2local/rebuild": "workspace:*",
         "@web2local/scraper": "workspace:*",
+        "@web2local/server": "workspace:*",
         "@web2local/stubs": "workspace:*",
         "@web2local/types": "workspace:*",
         "chalk": "^5.3.0",

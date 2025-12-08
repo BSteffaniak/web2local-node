@@ -1,6 +1,23 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { parseArgs } from './cli.js';
+
+/**
+ * Extract server options from parsed CLI options
+ */
+function getServerOptions(cliOptions: any, outputDir: string) {
+    return {
+        dir: outputDir,
+        port: cliOptions.port ? parseInt(cliOptions.port, 10) : 3000,
+        host: cliOptions.host || 'localhost',
+        delay: cliOptions.delay ? parseInt(cliOptions.delay, 10) : undefined,
+        noCors: cliOptions.cors === false,
+        staticOnly: cliOptions.staticOnly || false,
+        apiOnly: cliOptions.apiOnly || false,
+        verbose: cliOptions.verbose || false,
+        useRebuilt: cliOptions.useRebuilt || false,
+    };
+}
 import {
     extractBundleUrls,
     findAllSourceMaps,
@@ -46,9 +63,12 @@ import {
     resolveMissingDynamicImports,
     updateManifestWithResolvedFiles,
 } from '@web2local/analyzer';
+import type { CliOptions } from './cli.js';
 
-export async function main() {
-    const options = parseArgs();
+export async function runMain(options: CliOptions) {
+    // Track operation success for --serve flag
+    let captureSuccess = false;
+    let rebuildSuccess = false;
 
     // Initialize the fingerprint cache early (used by fingerprinting, peer dep inference, and source maps)
     // --force-refresh bypasses all caches, --no-cache also disables caching
@@ -794,6 +814,10 @@ export async function main() {
 
     console.log();
 
+    // Mark capture as successful if we extracted files, saved bundles, or captured API
+    captureSuccess =
+        totalFilesWritten > 0 || savedBundles.length > 0 || options.captureApi;
+
     // Step 6: Capture API calls if requested
     if (options.captureApi) {
         console.log(chalk.bold('\nCapturing API calls:'));
@@ -1193,6 +1217,7 @@ export async function main() {
                 });
 
                 if (result.success) {
+                    rebuildSuccess = true;
                     rebuildSpinner.succeed('Rebuild completed successfully');
                     console.log(
                         `    ${chalk.green('✓')} Built ${chalk.bold(result.bundles.length)} files`,
@@ -1227,6 +1252,7 @@ export async function main() {
                 });
 
                 if (result.success) {
+                    rebuildSuccess = true;
                     rebuildSpinner.succeed('Rebuild preparation completed');
                     console.log(
                         `    ${chalk.green('✓')} Entry points found: ${chalk.bold(result.entryPoints.length)}`,
@@ -1265,6 +1291,30 @@ export async function main() {
         }
 
         console.log();
+    }
+
+    // Start mock server if requested and operations were successful
+    if (options.serve) {
+        // Check if any operations succeeded
+        const canServe = captureSuccess || rebuildSuccess;
+
+        if (canServe) {
+            console.log('\nStarting mock server...');
+
+            const { runServer } = await import('@web2local/server');
+            const { join } = await import('path');
+
+            const serverOptions = getServerOptions(
+                options,
+                join(options.output, hostname),
+            );
+
+            await runServer(serverOptions);
+        } else {
+            console.log(
+                'Skipping server start - operations were not successful',
+            );
+        }
     }
 }
 
@@ -1384,4 +1434,8 @@ async function syncDynamicBundles(
     }
 
     return { jsFiles, cssFiles, errors };
+}
+
+export async function main() {
+    parseArgs();
 }

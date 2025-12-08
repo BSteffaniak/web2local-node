@@ -165,6 +165,9 @@ importers:
       '@web2local/scraper':
         specifier: workspace:*
         version: link:../scraper
+      '@web2local/server':
+        specifier: workspace:*
+        version: link:../server
       '@web2local/stubs':
         specifier: workspace:*
         version: link:../stubs

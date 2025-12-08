@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import type { ServerOptions } from '@web2local/server';
 
 export interface CliOptions {
     url: string;
@@ -26,6 +27,7 @@ export interface CliOptions {
     prepareRebuild: boolean;
     rebuild: boolean;
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
+    serve: boolean;
     // Fallback options
     saveBundles: boolean;
     // Crawl options
@@ -36,11 +38,41 @@ export interface CliOptions {
     resolveMaxIterations: number;
 }
 
+/**
+ * Extract server options from parsed CLI options
+ */
+function getServerOptions(cliOptions: any, outputDir: string): ServerOptions {
+    return {
+        dir: outputDir,
+        port: cliOptions.port ? parseInt(cliOptions.port, 10) : 3000,
+        host: cliOptions.host || 'localhost',
+        delay: cliOptions.delay ? parseInt(cliOptions.delay, 10) : undefined,
+        noCors: cliOptions.cors === false,
+        staticOnly: cliOptions.staticOnly || false,
+        apiOnly: cliOptions.apiOnly || false,
+        verbose: cliOptions.verbose || false,
+        useRebuilt: cliOptions.useRebuilt || false,
+    };
+}
+
+function serverCliOptions(program: Command): Command {
+    return program
+        .option('-p, --port <number>', 'Mock server port', '3000')
+        .option('-h, --host <string>', 'Mock server host', 'localhost')
+        .option('-d, --delay <ms>', 'Mock server response delay')
+        .option('--no-cors', 'Disable CORS on mock server')
+        .option('--static-only', 'Mock server serves only static files')
+        .option('--api-only', 'Mock server serves only API fixtures');
+}
+
 export function parseArgs(): CliOptions {
     const program = new Command();
 
+    // Check if --serve is present to conditionally add server options
+    const hasServe = process.argv.includes('--serve');
+
     program
-        .name('top-secret-source-reverse-engineerer-9001')
+        .name('web2local')
         .description(
             'Extract and reconstruct original source code from publicly available source maps',
         )
@@ -59,7 +91,7 @@ export function parseArgs(): CliOptions {
             '5',
         )
         .option(
-            '-p, --generate-package-json',
+            '--generate-package-json',
             'Generate package.json with detected dependencies',
             false,
         )
@@ -146,6 +178,18 @@ export function parseArgs(): CliOptions {
             'auto',
         )
         .option(
+            '--serve',
+            'Start mock server after successful operations',
+            false,
+        );
+
+    // Add server options conditionally when --serve is present
+    if (hasServe) {
+        serverCliOptions(program);
+    }
+
+    program
+        .option(
             '--save-bundles',
             'Additionally save minified bundles that have source maps (bundles without source maps are always saved)',
             false,
@@ -170,7 +214,37 @@ export function parseArgs(): CliOptions {
             'Maximum iterations for resolving dynamic imports from bundles (default: 10)',
             '10',
         )
-        .parse();
+        .action(async (url, options) => {
+            const fullOptions = { ...options, url };
+            const { runMain } = await import('./index.js');
+            await runMain(fullOptions);
+        });
+
+    /**
+     * Serve command - start the mock server
+     */
+    serverCliOptions(
+        program
+            .command('serve')
+            .description('Serve captured API fixtures and static assets')
+            .argument('<dir>', 'Directory containing the captured site'),
+    )
+        .option('-v, --verbose', 'Enable verbose logging', false)
+        .option(
+            '--use-rebuilt',
+            'Serve from rebuilt source instead of captured files',
+            false,
+        )
+        .action(async (dir: string, opts: any) => {
+            const { runServer } = await import('@web2local/server');
+            const { resolve } = await import('path');
+
+            const serverOptions = getServerOptions(opts, resolve(dir));
+
+            await runServer(serverOptions);
+        });
+
+    program.parse();
 
     const options = program.opts();
     const [url] = program.args;
@@ -209,6 +283,7 @@ export function parseArgs(): CliOptions {
         prepareRebuild: options.prepareRebuild || false,
         rebuild: options.rebuild || false,
         packageManager: options.packageManager || 'auto',
+        serve: options.serve || false,
         // Fallback options
         saveBundles: options.saveBundles || false,
         // Crawl options (--no-crawl sets crawl to false)
