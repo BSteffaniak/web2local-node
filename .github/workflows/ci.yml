@@ -38,12 +38,12 @@ jobs:
             - uses: actions/setup-node@v4
               if: matrix.package-manager != 'bun'
               with:
-                  node-version: 18
+                  node-version: 20
                   cache: ${{ matrix.package-manager }}
             - uses: actions/setup-node@v4
               if: matrix.package-manager == 'bun'
               with:
-                  node-version: 18
+                  node-version: 20
             - name: Setup npm
               if: matrix.package-manager == 'npm'
               run: npm install -g npm@10
