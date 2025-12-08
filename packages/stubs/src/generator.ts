@@ -470,9 +470,9 @@ export async function generateIndexFile(
                         fileBaseName.toLowerCase() === dirName.toLowerCase();
                     const matchesPackageName =
                         safeName.toLowerCase() ===
-                        packageDirName.toLowerCase() ||
+                            packageDirName.toLowerCase() ||
                         fileBaseName.toLowerCase() ===
-                        packageDirName.toLowerCase();
+                            packageDirName.toLowerCase();
 
                     if (
                         (matchesDirName || matchesPackageName) &&

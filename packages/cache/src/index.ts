@@ -400,7 +400,7 @@ export class FingerprintCache {
             }
 
             // Cache expired, delete file
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -459,7 +459,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -530,7 +530,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -601,7 +601,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -656,7 +656,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -725,7 +725,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -799,7 +799,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -877,7 +877,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -950,7 +950,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -1028,7 +1028,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -1176,7 +1176,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -1250,7 +1250,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
@@ -1335,7 +1335,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => { });
+            await unlink(filePath).catch(() => {});
         } catch {
             // Cache miss
         }
