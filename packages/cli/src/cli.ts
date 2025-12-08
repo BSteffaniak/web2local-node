@@ -29,6 +29,7 @@ export interface CliOptions {
     rebuild: boolean;
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
     serve: boolean;
+    useRebuilt: boolean;
     // Fallback options
     saveBundles: boolean;
     // Crawl options
@@ -325,6 +326,7 @@ export function parseArgs(): CliOptions {
         rebuild: options.rebuild || false,
         packageManager: options.packageManager || 'auto',
         serve: options.serve || false,
+        useRebuilt: options.useRebuilt || false,
         // Fallback options
         saveBundles: options.saveBundles || false,
         // Crawl options (--no-crawl sets crawl to false)

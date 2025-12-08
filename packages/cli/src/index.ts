@@ -1321,8 +1321,12 @@ export async function runMain(options: CliOptions) {
 
     // Start mock server if requested and operations were successful
     if (options.serve) {
-        // Check if any operations succeeded
-        const canServe = captureSuccess || rebuildSuccess;
+        // When using --use-rebuilt, both capture and rebuild must succeed
+        // (because we're serving rebuilt assets, not just captured ones).
+        // Otherwise, just capture success is enough to serve the mock server.
+        const canServe = options.useRebuilt
+            ? captureSuccess && rebuildSuccess
+            : captureSuccess || rebuildSuccess;
 
         if (canServe) {
             console.log('\nStarting mock server...');
@@ -1337,9 +1341,10 @@ export async function runMain(options: CliOptions) {
 
             await runServer(serverOptions);
         } else {
-            console.log(
-                'Skipping server start - operations were not successful',
-            );
+            const reason = options.useRebuilt
+                ? 'both capture and rebuild must succeed when using --use-rebuilt'
+                : 'operations were not successful';
+            console.log(`Skipping server start - ${reason}`);
         }
     }
 
