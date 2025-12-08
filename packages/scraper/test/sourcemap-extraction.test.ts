@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { extractSourcesFromMap } from '@web2local/scraper';
-import { server } from './helpers/msw-handlers.js';
+import { server } from '../../../helpers/msw-handlers.js';
 import { initCache } from '@web2local/cache';
 
 // ============================================================================

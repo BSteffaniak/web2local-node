@@ -15,7 +15,7 @@ import {
     createCssHandler,
     createCssSourceMapHandler,
     create404Handler,
-} from './helpers/fixtures.js';
+} from '../../../helpers/fixtures.js';
 import { http, HttpResponse } from 'msw';
 import {
     findCssSourceMappingUrl,

@@ -4,8 +4,8 @@ import { resolve } from 'path';
 export default defineConfig({
     test: {
         environment: 'node',
-        include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
-        setupFiles: ['./test/setup.ts'],
+        include: ['packages/**/*.test.ts'],
+        setupFiles: ['./setup.ts'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html'],

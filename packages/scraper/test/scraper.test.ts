@@ -14,7 +14,7 @@ import {
     extractBundleUrls,
     findAllSourceMaps,
 } from '@web2local/scraper';
-import { server } from './helpers/msw-handlers.js';
+import { server } from '../../../helpers/msw-handlers.js';
 import { initCache } from '@web2local/cache';
 
 // ============================================================================

@@ -7,7 +7,7 @@ import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { http, HttpResponse } from 'msw';
-import { server } from './helpers/msw-handlers.js';
+import { server } from '../../../helpers/msw-handlers.js';
 import {
     extractDynamicImportPaths,
     extractCssImportUrls,

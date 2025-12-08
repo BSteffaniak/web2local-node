@@ -15,7 +15,7 @@ import {
     validateNpmVersionsBatch,
 } from '@web2local/analyzer';
 import { initCache } from '@web2local/cache';
-import { server } from './helpers/msw-handlers.js';
+import { server } from '../../../helpers/msw-handlers.js';
 
 // ============================================================================
 // Test Setup
