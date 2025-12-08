@@ -16,7 +16,7 @@
 import { readFile, appendFile } from 'fs/promises';
 
 const LAST_N_VERSIONS = parseInt(process.env.LAST_N_VERSIONS || '2', 10);
-const OS_VERSIONS = ['ubuntu-latest', 'windows-latest', 'macos-latest'];
+const OS_VERSIONS = ['ubuntu-latest', 'macos-latest'];
 
 async function fetchJson(url) {
     const response = await fetch(url);
