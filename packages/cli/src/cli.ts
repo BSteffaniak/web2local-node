@@ -30,6 +30,13 @@ export interface CliOptions {
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
     serve: boolean;
     useRebuilt: boolean;
+    // Server options (when --serve is used)
+    port?: number;
+    host?: string;
+    delay?: number;
+    noCors?: boolean;
+    staticOnly?: boolean;
+    apiOnly?: boolean;
     // Fallback options
     saveBundles: boolean;
     // Crawl options
@@ -60,7 +67,7 @@ function getServerOptions(cliOptions: any, outputDir: string): ServerOptions {
 function serverCliOptions(program: Command): Command {
     return program
         .option('-p, --port <number>', 'Mock server port', '3000')
-        .option('-h, --host <string>', 'Mock server host', 'localhost')
+        .option('-H, --host <string>', 'Mock server host', 'localhost')
         .option('-d, --delay <ms>', 'Mock server response delay')
         .option('--no-cors', 'Disable CORS on mock server')
         .option('--static-only', 'Mock server serves only static files')
@@ -238,6 +245,13 @@ export function parseArgs(): CliOptions {
                 packageManager: options.packageManager || 'auto',
                 serve: options.serve || false,
                 useRebuilt: options.useRebuilt || false,
+                // Server options (when --serve is used)
+                port: options.port ? parseInt(options.port, 10) : undefined,
+                host: options.host,
+                delay: options.delay ? parseInt(options.delay, 10) : undefined,
+                noCors: options.cors === false,
+                staticOnly: options.staticOnly || false,
+                apiOnly: options.apiOnly || false,
                 // Fallback options
                 saveBundles: options.saveBundles || false,
                 // Crawl options
