@@ -24,9 +24,9 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/analyzer": "1.0.0",
-        "@web2local/stubs": "1.0.0",
-        "@web2local/types": "1.0.0",
+        "@web2local/analyzer": "workspace:*",
+        "@web2local/stubs": "workspace:*",
+        "@web2local/types": "workspace:*",
         "vite": "^5.4.0"
     },
     "devDependencies": {

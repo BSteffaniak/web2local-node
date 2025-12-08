@@ -1554,7 +1554,7 @@ export function generatePackageJson(
             }
         } else if (info.isPrivate) {
             // Private packages get a workspace or local reference hint
-            target[packageName] = '1.0.0';
+            target[packageName] = 'workspace:*';
         } else {
             // Mark as unknown for manual resolution
             target[packageName] = '*';

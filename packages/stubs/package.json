@@ -26,9 +26,9 @@
     "license": "MIT",
     "dependencies": {
         "@swc/core": "^1.15.3",
-        "@web2local/analyzer": "1.0.0",
-        "@web2local/ast": "1.0.0",
-        "@web2local/http": "1.0.0"
+        "@web2local/analyzer": "workspace:*",
+        "@web2local/ast": "workspace:*",
+        "@web2local/http": "workspace:*"
     },
     "devDependencies": {
         "@swc/types": "^0.1.25",

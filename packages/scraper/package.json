@@ -24,9 +24,9 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/cache": "1.0.0",
-        "@web2local/http": "1.0.0",
-        "@web2local/types": "1.0.0",
+        "@web2local/cache": "workspace:*",
+        "@web2local/http": "workspace:*",
+        "@web2local/types": "workspace:*",
         "node-html-parser": "^7.0.1"
     },
     "devDependencies": {

@@ -25,10 +25,10 @@
     "license": "MIT",
     "dependencies": {
         "@swc/core": "^1.15.3",
-        "@web2local/ast": "1.0.0",
-        "@web2local/cache": "1.0.0",
-        "@web2local/http": "1.0.0",
-        "@web2local/types": "1.0.0"
+        "@web2local/ast": "workspace:*",
+        "@web2local/cache": "workspace:*",
+        "@web2local/http": "workspace:*",
+        "@web2local/types": "workspace:*"
     },
     "devDependencies": {
         "@swc/types": "^0.1.25",
