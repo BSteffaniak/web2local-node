@@ -15,7 +15,8 @@
         "pretty:write": "prettier --write \"**/*.{js,cjs,mjs,jsx,ts,tsx}\"",
         "typecheck": "turbo typecheck",
         "validate": "pnpm typecheck && pnpm lint && pnpm pretty",
-        "clean": "rm -rf packages/*/dist node_modules/.cache"
+        "clean": "rm -rf packages/*/dist node_modules/.cache",
+        "cli": "jiti packages/cli/src/run.ts"
     },
     "keywords": [
         "sourcemap",
@@ -40,6 +41,7 @@
         "eslint-config-prettier": "^9.1.2",
         "eslint-plugin-diff": "^2.0.3",
         "globals": "^15.15.0",
+        "jiti": "^2.6.1",
         "msw": "^2.4.0",
         "playwright": "^1.54.1",
         "prettier": "^3.7.3",
