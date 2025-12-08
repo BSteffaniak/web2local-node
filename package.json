@@ -1,9 +1,11 @@
 {
     "name": "web2local",
     "version": "1.0.0",
-    "private": true,
     "description": "CLI tool to extract and reconstruct original source code from publicly available source maps",
     "type": "module",
+    "bin": {
+        "web2local": "./packages/web2local/dist/index.mjs"
+    },
     "scripts": {
         "build": "turbo build",
         "dev": "turbo dev",
