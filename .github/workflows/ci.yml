@@ -15,10 +15,16 @@ jobs:
                 include:
                     - package-manager: npm
                       run-cmd: npx
+                      global-install-cmd: npm install -g .
+                      cli-cmd: npm run cli --
                     - package-manager: pnpm
                       run-cmd: pnpm exec
+                      global-install-cmd: pnpm link -g .
+                      cli-cmd: pnpm run cli
                     - package-manager: bun
                       run-cmd: bunx
+                      global-install-cmd: bun link
+                      cli-cmd: bun run cli
         steps:
             - uses: actions/checkout@v4
             - uses: pnpm/action-setup@v3
@@ -53,10 +59,25 @@ jobs:
               run: ${{ matrix.package-manager }} run test
             - name: Test CLI (dev mode via jiti)
               run: |
-                  ${{ matrix.package-manager }} run cli --help | grep -q "Extract and reconstruct original source code"
+                  ${{ matrix.cli-cmd }} --help | grep -q "Extract and reconstruct original source code"
             - name: Test CLI (built binary)
               run: |
-                  ${{ matrix.run-cmd }} web2local --help | grep -q "Extract and reconstruct original source code"
+                  # Run the bundled CLI directly
+                  node packages/web2local/dist/index.mjs --help | grep -q "Extract and reconstruct original source code"
             - name: Test CLI serve subcommand
               run: |
-                  ${{ matrix.run-cmd }} web2local serve --help | grep -q "Serve captured API fixtures"
+                  node packages/web2local/dist/index.mjs serve --help | grep -q "Serve captured API fixtures"
+            - name: Setup global bin PATH
+              run: |
+                  if [ "${{ matrix.package-manager }}" = "bun" ]; then
+                    echo "$HOME/.bun/bin" >> $GITHUB_PATH
+                  elif [ "${{ matrix.package-manager }}" = "pnpm" ]; then
+                    echo "$PNPM_HOME" >> $GITHUB_PATH
+                  elif [ "${{ matrix.package-manager }}" = "npm" ]; then
+                    echo "$(npm config get prefix)/bin" >> $GITHUB_PATH
+                  fi
+            - name: Test CLI (global install)
+              run: |
+                  ${{ matrix.global-install-cmd }}
+                  web2local --help | grep -q "Extract and reconstruct original source code"
+                  web2local serve --help | grep -q "Serve captured API fixtures"
