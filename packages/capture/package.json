@@ -24,9 +24,9 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/http": "workspace:*",
-        "@web2local/manifest": "workspace:*",
-        "@web2local/types": "workspace:*",
+        "@web2local/http": "1.0.0",
+        "@web2local/manifest": "1.0.0",
+        "@web2local/types": "1.0.0",
         "playwright": "1.54.1"
     },
     "devDependencies": {
