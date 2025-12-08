@@ -66,16 +66,16 @@ importers:
         specifier: ^1.15.3
         version: 1.15.3
       '@web2local/ast':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../ast
       '@web2local/cache':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../cache
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
     devDependencies:
       '@swc/types':
@@ -107,7 +107,7 @@ importers:
   packages/cache:
     dependencies:
       '@web2local/ast':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../ast
     devDependencies:
       '@types/node':
@@ -120,13 +120,13 @@ importers:
   packages/capture:
     dependencies:
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
       '@web2local/manifest':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../manifest
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
       playwright:
         specifier: 1.54.1
@@ -142,37 +142,37 @@ importers:
   packages/cli:
     dependencies:
       '@web2local/analyzer':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../analyzer
       '@web2local/ast':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../ast
       '@web2local/cache':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../cache
       '@web2local/capture':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../capture
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
       '@web2local/manifest':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../manifest
       '@web2local/rebuild':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../rebuild
       '@web2local/scraper':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../scraper
       '@web2local/server':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../server
       '@web2local/stubs':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../stubs
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
       chalk:
         specifier: ^5.3.0
@@ -206,10 +206,10 @@ importers:
   packages/manifest:
     dependencies:
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
     devDependencies:
       '@types/node':
@@ -222,13 +222,13 @@ importers:
   packages/rebuild:
     dependencies:
       '@web2local/analyzer':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../analyzer
       '@web2local/stubs':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../stubs
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
       vite:
         specifier: ^5.4.0
@@ -244,13 +244,13 @@ importers:
   packages/scraper:
     dependencies:
       '@web2local/cache':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../cache
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
       '@web2local/types':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../types
       node-html-parser:
         specifier: ^7.0.1
@@ -294,13 +294,13 @@ importers:
         specifier: ^1.15.3
         version: 1.15.3
       '@web2local/analyzer':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../analyzer
       '@web2local/ast':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../ast
       '@web2local/http':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../http
     devDependencies:
       '@swc/types':
@@ -322,7 +322,7 @@ importers:
   packages/web2local:
     dependencies:
       '@web2local/cli':
-        specifier: workspace:*
+        specifier: 1.0.0
         version: link:../cli
     devDependencies:
       '@types/node':
