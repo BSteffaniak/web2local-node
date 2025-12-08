@@ -116,6 +116,7 @@ export async function captureWebsite(
     let maxPagesReached = false;
 
     // Initialize browser
+    opts.onProgress?.('Launching browser...');
     const browser = new BrowserManager({
         headless: opts.headless,
     });
@@ -153,6 +154,7 @@ export async function captureWebsite(
 
     try {
         await browser.launch();
+        opts.onProgress?.('Creating page and attaching interceptors...');
         const page = await browser.newPage();
 
         // Attach interceptors - they stay attached throughout the crawl
@@ -160,6 +162,8 @@ export async function captureWebsite(
         if (opts.captureStatic) {
             staticCapturer.attach(page, opts.url);
         }
+
+        opts.onProgress?.('Starting crawl...');
 
         // Initialize the crawl queue with the entry URL
         urlQueue.push({ url: opts.url, depth: 0 });
@@ -185,7 +189,7 @@ export async function captureWebsite(
             const isFirstPage = pagesVisited === 0;
             if (crawlEnabled && maxPages > 1) {
                 opts.onProgress?.(
-                    `Crawling [${pagesVisited + 1}/${maxPages}] depth=${depth}: ${currentUrl}`,
+                    `Crawling page ${pagesVisited + 1}/${maxPages} (depth ${depth}/${maxDepth}, ${urlQueue.length} queued): ${currentUrl}`,
                 );
             } else {
                 opts.onProgress?.(`Navigating to ${currentUrl}...`);
@@ -217,10 +221,14 @@ export async function captureWebsite(
                 }
 
                 // Wait for network to settle
+                opts.onProgress?.('Waiting for network to settle...');
                 await waitForNetworkIdle(page, { timeout: 10000 });
 
                 // Auto-scroll to trigger lazy loading
                 if (opts.autoScroll) {
+                    opts.onProgress?.(
+                        'Scrolling page to trigger lazy content...',
+                    );
                     await autoScrollPage(page, {
                         step: 500,
                         delay: 100,
@@ -232,9 +240,13 @@ export async function captureWebsite(
                 const waitTime = isFirstPage
                     ? opts.browseTimeout
                     : Math.min(opts.browseTimeout, 3000);
+                opts.onProgress?.(
+                    `Waiting for page activity (${(waitTime / 1000).toFixed(1)}s)...`,
+                );
                 await page.waitForTimeout(waitTime);
 
                 // Wait for network to be idle again
+                opts.onProgress?.('Waiting for final network idle...');
                 await waitForNetworkIdle(page, { timeout: 5000 });
 
                 // Capture the HTML document only for the first page

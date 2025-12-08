@@ -870,7 +870,10 @@ export async function runMain(options: CliOptions) {
                     ? [scrapedRedirect]
                     : undefined,
                 onProgress: options.verbose
-                    ? (message) => registry.safeLog(message, false)
+                    ? (message) => {
+                          captureSpinner.text = message;
+                          registry.safeLog(message, false);
+                      }
                     : (message) => {
                           captureSpinner.text = message;
                       },
