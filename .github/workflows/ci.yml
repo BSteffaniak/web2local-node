@@ -12,6 +12,13 @@ jobs:
             fail-fast: false
             matrix:
                 package-manager: [npm, pnpm, bun]
+                include:
+                    - package-manager: npm
+                      run-cmd: npx
+                    - package-manager: pnpm
+                      run-cmd: pnpm exec
+                    - package-manager: bun
+                      run-cmd: bunx
         steps:
             - uses: actions/checkout@v4
             - uses: pnpm/action-setup@v3
@@ -44,3 +51,12 @@ jobs:
               run: ${{ matrix.package-manager }} run build
             - name: Test
               run: ${{ matrix.package-manager }} run test
+            - name: Test CLI (dev mode via jiti)
+              run: |
+                  ${{ matrix.package-manager }} run cli --help | grep -q "Extract and reconstruct original source code"
+            - name: Test CLI (built binary)
+              run: |
+                  ${{ matrix.run-cmd }} web2local --help | grep -q "Extract and reconstruct original source code"
+            - name: Test CLI serve subcommand
+              run: |
+                  ${{ matrix.run-cmd }} web2local serve --help | grep -q "Serve captured API fixtures"
