@@ -5,9 +5,6 @@
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
-    "bin": {
-        "web2local-cli": "./dist/cli.js"
-    },
     "scripts": {
         "build": "tsc",
         "dev": "tsc --watch",

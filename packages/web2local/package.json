@@ -4,9 +4,6 @@
     "description": "Extract and reconstruct original source code from publicly available source maps",
     "type": "module",
     "main": "./dist/index.js",
-    "bin": {
-        "web2local": "./dist/index.mjs"
-    },
     "scripts": {
         "build": "tsdown",
         "typecheck": "tsc --noEmit"
