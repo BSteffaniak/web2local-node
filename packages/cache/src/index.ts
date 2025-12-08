@@ -229,8 +229,7 @@ export class FingerprintCache {
 
     constructor(options: CacheOptions = {}) {
         this.cacheDir =
-            options.cacheDir ||
-            join(homedir(), '.cache', 'source-reverse-engineerer');
+            options.cacheDir || join(homedir(), '.cache', 'web2local-node');
         this.ttl = options.ttl || DEFAULT_CACHE_TTL;
         this.disabled = options.disabled || false;
     }
@@ -401,7 +400,7 @@ export class FingerprintCache {
             }
 
             // Cache expired, delete file
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -460,7 +459,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -531,7 +530,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -602,7 +601,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -657,7 +656,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -726,7 +725,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -800,7 +799,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -878,7 +877,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -951,7 +950,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -1029,7 +1028,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -1177,7 +1176,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -1251,7 +1250,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
@@ -1336,7 +1335,7 @@ export class FingerprintCache {
                 return cached;
             }
 
-            await unlink(filePath).catch(() => {});
+            await unlink(filePath).catch(() => { });
         } catch {
             // Cache miss
         }
