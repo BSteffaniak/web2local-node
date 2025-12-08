@@ -1,6 +1,6 @@
 {
     "name": "@web2local/cache",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "Caching system for web2local",
     "type": "module",
     "main": "./dist/index.js",
@@ -23,7 +23,7 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/ast": "1.0.0"
+        "@web2local/ast": "0.0.1"
     },
     "devDependencies": {
         "@types/node": "^20.10.0",

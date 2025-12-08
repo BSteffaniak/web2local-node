@@ -1,6 +1,6 @@
 {
     "name": "web2local",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "CLI tool to extract and reconstruct original source code from publicly available source maps",
     "type": "module",
     "bin": {

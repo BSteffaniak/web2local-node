@@ -1,6 +1,6 @@
 {
     "name": "@web2local/types",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "Shared TypeScript types for web2local packages",
     "type": "module",
     "main": "./dist/index.js",

@@ -1,6 +1,6 @@
 {
     "name": "@web2local/server",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "Serve captured API fixtures and static assets from a mock server",
     "type": "module",
     "main": "./dist/index.js",

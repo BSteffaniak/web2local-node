@@ -1,6 +1,6 @@
 {
     "name": "@web2local/scraper",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "Source map extraction and file reconstruction for web2local",
     "type": "module",
     "main": "./dist/index.js",
@@ -24,10 +24,10 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/cache": "1.0.0",
-        "@web2local/http": "1.0.0",
-        "@web2local/types": "1.0.0",
-        "@web2local/utils": "1.0.0",
+        "@web2local/cache": "0.0.1",
+        "@web2local/http": "0.0.1",
+        "@web2local/types": "0.0.1",
+        "@web2local/utils": "0.0.1",
         "node-html-parser": "^7.0.1"
     },
     "devDependencies": {

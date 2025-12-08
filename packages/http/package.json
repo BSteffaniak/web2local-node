@@ -1,6 +1,6 @@
 {
     "name": "@web2local/http",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "description": "HTTP utilities for web2local",
     "type": "module",
     "main": "./dist/index.js",
