@@ -7,7 +7,7 @@
     "types": "./dist/index.d.ts",
     "scripts": {
         "build": "tsc",
-        "typecheck": "pnpm exec tsc --noEmit",
+        "typecheck": "tsc --noEmit",
         "test": "vitest run --passWithNoTests"
     },
     "license": "MIT",

@@ -15,7 +15,7 @@
         "build": "tsc",
         "dev": "tsc --watch",
         "test": "vitest run --passWithNoTests",
-        "typecheck": "pnpm exec tsc --noEmit"
+        "typecheck": "tsc --noEmit"
     },
     "keywords": [
         "web2local",
