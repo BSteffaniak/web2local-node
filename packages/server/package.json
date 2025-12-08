@@ -10,7 +10,7 @@
         "dev": "tsc --watch",
         "test": "vitest run --passWithNoTests",
         "start": "node dist/cli.js",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "pnpm exec tsc --noEmit"
     },
     "keywords": [
         "mock",

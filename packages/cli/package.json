@@ -9,7 +9,7 @@
         "build": "tsc",
         "dev": "tsc --watch",
         "test": "vitest run --passWithNoTests",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "pnpm exec tsc --noEmit"
     },
     "keywords": [
         "web2local",

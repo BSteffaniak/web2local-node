@@ -6,7 +6,7 @@
     "main": "./dist/index.js",
     "scripts": {
         "build": "tsdown",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "pnpm exec tsc --noEmit"
     },
     "keywords": [
         "web2local",
