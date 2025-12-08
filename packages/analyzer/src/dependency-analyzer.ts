@@ -1509,6 +1509,7 @@ export function generatePackageJson(
     dependencies: Map<string, DependencyInfo>,
     aliasMap?: AliasMap,
     projectConfig?: DetectedProjectConfig,
+    onVerbose?: (message: string) => void,
 ): object {
     const deps: Record<string, string> = {};
     const privateDeps: Record<string, string> = {};
@@ -1539,7 +1540,7 @@ export function generatePackageJson(
 
             // Debug: log when exact versions are used
             if (isExact) {
-                console.log(
+                onVerbose?.(
                     `[version] Using exact version for ${packageName}: ${info.version} (confidence: ${info.confidence})`,
                 );
             }
@@ -2561,6 +2562,8 @@ export async function generateDependencyManifest(
             packageName: string,
             classification: string,
         ) => void;
+        /** Verbose log callback - use this instead of console.log when spinner is active */
+        onVerbose?: (message: string) => void;
     } = {},
 ): Promise<{
     packageJson: object;
@@ -2584,6 +2587,7 @@ export async function generateDependencyManifest(
         vendorBundles = [],
         onVendorBundleProgress,
         onClassificationProgress,
+        onVerbose,
     } = options;
 
     const cache = getCache();
@@ -3250,6 +3254,7 @@ export async function generateDependencyManifest(
         analysis.dependencies,
         aliasMap,
         projectConfig,
+        onVerbose,
     );
     const tsconfig = generateTsConfig(
         aliasPathMappings,

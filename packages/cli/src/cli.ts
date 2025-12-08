@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { ServerOptions } from '@web2local/server';
+import { runMain } from './index.js';
 
 export interface CliOptions {
     url: string;
@@ -62,7 +63,12 @@ function serverCliOptions(program: Command): Command {
         .option('-d, --delay <ms>', 'Mock server response delay')
         .option('--no-cors', 'Disable CORS on mock server')
         .option('--static-only', 'Mock server serves only static files')
-        .option('--api-only', 'Mock server serves only API fixtures');
+        .option('--api-only', 'Mock server serves only API fixtures')
+        .option(
+            '--use-rebuilt',
+            'Serve from rebuilt source instead of captured files',
+            false,
+        );
 }
 
 export function parseArgs(): CliOptions {
@@ -215,8 +221,48 @@ export function parseArgs(): CliOptions {
             '10',
         )
         .action(async (url, options) => {
-            const fullOptions = { ...options, url };
-            const { runMain } = await import('./index.js');
+            const fullOptions = {
+                url,
+                ...options,
+                concurrency: parseInt(options.concurrency, 10),
+                maxVersions: parseInt(options.maxVersions, 10),
+                cacheDir: options.cacheDir || '',
+                noCache: options.noCache || false,
+                includePrereleases: options.includePrereleases || false,
+                forceRefresh: options.forceRefresh || false,
+                // API capture options
+                captureApi: options.captureApi || false,
+                apiFilter: options.apiFilter || [
+                    '**/api/**',
+                    '**/graphql**',
+                    '**/v1/**',
+                    '**/v2/**',
+                    '**/v3/**',
+                ],
+                // Note: commander's --no-X flags set the option to true when NOT specified
+                // and false when specified, so we need to handle this correctly
+                captureStatic: options.static !== false,
+                captureRenderedHtml: options.captureRenderedHtml || false,
+                headless: options.headless !== false,
+                browseTimeout: parseInt(options.browseTimeout, 10),
+                autoScroll: options.scroll !== false,
+                // Rebuild options
+                prepareRebuild: options.prepareRebuild || false,
+                rebuild: options.rebuild || false,
+                packageManager: options.packageManager || 'auto',
+                serve: options.serve || false,
+                // Fallback options
+                saveBundles: options.saveBundles || false,
+                // Crawl options (--no-crawl sets crawl to false)
+                crawl: options.crawl !== false,
+                crawlMaxDepth: parseInt(options.crawlMaxDepth, 10),
+                crawlMaxPages: parseInt(options.crawlMaxPages, 10),
+                // Dynamic import resolution options
+                resolveMaxIterations: parseInt(
+                    options.resolveMaxIterations,
+                    10,
+                ),
+            };
             await runMain(fullOptions);
         });
 
@@ -230,11 +276,6 @@ export function parseArgs(): CliOptions {
             .argument('<dir>', 'Directory containing the captured site'),
     )
         .option('-v, --verbose', 'Enable verbose logging', false)
-        .option(
-            '--use-rebuilt',
-            'Serve from rebuilt source instead of captured files',
-            false,
-        )
         .action(async (dir: string, opts: any) => {
             const { runServer } = await import('@web2local/server');
             const { resolve } = await import('path');

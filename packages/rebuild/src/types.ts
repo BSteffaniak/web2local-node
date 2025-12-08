@@ -80,6 +80,8 @@ export interface PrepareRebuildOptions {
     verbose?: boolean;
     /** Progress callback */
     onProgress?: (message: string) => void;
+    /** Verbose log callback - use this instead of console.log when spinner is active */
+    onVerbose?: (message: string) => void;
     /**
      * Source files extracted from source maps.
      * When provided, enables accurate alias detection by analyzing actual imports.

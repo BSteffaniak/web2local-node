@@ -268,6 +268,7 @@ export async function prepareRebuild(
         overwrite = false,
         verbose = false,
         onProgress,
+        onVerbose,
         sourceFiles,
     } = options;
 
@@ -468,7 +469,10 @@ export async function prepareRebuild(
     // Generate CSS class name mapping (for CSS module hash resolution)
     onProgress?.('Generating CSS class name mappings...');
     try {
-        const classNameMap = await generateClassNameMapFile(projectDir);
+        const classNameMap = await generateClassNameMapFile(
+            projectDir,
+            onVerbose,
+        );
         if (classNameMap) {
             generatedFiles.push('_class-name-map.json');
             const totalMappings = Object.keys(classNameMap.mappings).length;

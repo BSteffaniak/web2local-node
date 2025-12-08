@@ -230,6 +230,7 @@ function isBundledCss(filename: string): boolean {
  */
 export async function generateClassNameMapFile(
     projectDir: string,
+    onVerbose?: (message: string) => void,
 ): Promise<ClassNameMap | null> {
     const staticDir = join(projectDir, '_server', 'static');
     const outputPath = join(projectDir, '_class-name-map.json');
@@ -238,11 +239,11 @@ export async function generateClassNameMapFile(
     const cssFiles = await findCssBundles(staticDir);
 
     if (cssFiles.length === 0) {
-        console.log('No CSS bundle files found');
+        onVerbose?.('No CSS bundle files found');
         return null;
     }
 
-    console.log(`Found ${cssFiles.length} CSS file(s) to parse`);
+    onVerbose?.(`Found ${cssFiles.length} CSS file(s) to parse`);
 
     // Build the mapping
     const classNameMap = await buildClassNameMap(staticDir, cssFiles);
@@ -254,13 +255,13 @@ export async function generateClassNameMapFile(
         0,
     );
 
-    console.log(
+    onVerbose?.(
         `Extracted ${totalMappings} base class names with ${totalHashedNames} hashed variants`,
     );
 
     // Save to file
     await writeFile(outputPath, JSON.stringify(classNameMap, null, 2), 'utf-8');
-    console.log(`Class name map saved to ${basename(outputPath)}`);
+    onVerbose?.(`Class name map saved to ${basename(outputPath)}`);
 
     return classNameMap;
 }

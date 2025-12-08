@@ -26,6 +26,8 @@ export interface InterceptorOptions {
     verbose: boolean;
     /** Progress callback */
     onCapture?: (fixture: ApiFixture) => void;
+    /** Verbose log callback - use this instead of console.log when spinner is active */
+    onVerbose?: (message: string) => void;
 }
 
 const DEFAULT_OPTIONS: InterceptorOptions = {
@@ -285,14 +287,16 @@ export class ApiInterceptor {
                     this.options.onCapture?.(fixture);
 
                     if (this.options.verbose) {
-                        console.log(
-                            `  Captured: ${fixture.request.method} ${fixture.request.pattern} (${fixture.response.status})`,
+                        this.options.onVerbose?.(
+                            `Captured: ${fixture.request.method} ${fixture.request.pattern} (${fixture.response.status})`,
                         );
                     }
                 }
             } catch (error) {
                 if (this.options.verbose) {
-                    console.error(`  Error capturing ${url}: ${error}`);
+                    this.options.onVerbose?.(
+                        `Error capturing ${url}: ${error}`,
+                    );
                 }
             }
         });

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import ora from 'ora';
 import { parseArgs } from './cli.js';
+import { SpinnerRegistry } from './spinner-registry.js';
 
 /**
  * Extract server options from parsed CLI options
@@ -66,6 +67,10 @@ import {
 import type { CliOptions } from './cli.js';
 
 export async function runMain(options: CliOptions) {
+    // Initialize spinner registry for synchronized logging
+    const registry = new SpinnerRegistry();
+    registry.setupSignalHandlers();
+
     // Track operation success for --serve flag
     let captureSuccess = false;
     let rebuildSuccess = false;
@@ -86,6 +91,7 @@ export async function runMain(options: CliOptions) {
         text: `Fetching ${options.url}...`,
         color: 'cyan',
     }).start();
+    registry.register(spinner);
 
     let bundles: BundleInfo[];
     let scrapedRedirect: ScrapedRedirect | undefined;
@@ -139,6 +145,7 @@ export async function runMain(options: CliOptions) {
         text: 'Searching for source maps...',
         color: 'cyan',
     }).start();
+    registry.register(mapSpinner);
 
     const { bundlesWithMaps, vendorBundles, bundlesWithoutMaps } =
         await findAllSourceMaps(
@@ -182,6 +189,7 @@ export async function runMain(options: CliOptions) {
             text: 'Saving minified bundles...',
             color: 'cyan',
         }).start();
+        registry.register(bundleSpinner);
 
         try {
             const result = await saveBundles(bundlesWithoutMaps, {
@@ -264,6 +272,7 @@ export async function runMain(options: CliOptions) {
             text: `Extracting ${chalk.cyan(bundleName)}...`,
             indent: 2,
         }).start();
+        registry.register(extractSpinner);
 
         try {
             const result = await extractSourcesFromMap(
@@ -330,6 +339,7 @@ export async function runMain(options: CliOptions) {
                 text: `Checking ${nodeModulesPackages.length} packages against npm registry...`,
                 indent: 2,
             }).start();
+            registry.register(internalSpinner);
 
             internalPackages = await identifyInternalPackages(
                 nodeModulesPackages,
@@ -360,6 +370,7 @@ export async function runMain(options: CliOptions) {
             text: `Writing ${chalk.cyan(bundleName)}...`,
             indent: 2,
         }).start();
+        registry.register(reconstructSpinner);
 
         try {
             // Reconstruct the files on disk
@@ -412,6 +423,7 @@ export async function runMain(options: CliOptions) {
             text: 'Generating stub entry point...',
             color: 'cyan',
         }).start();
+        registry.register(stubSpinner);
 
         try {
             const stubResult = await generateBundleStubs({
@@ -469,6 +481,7 @@ export async function runMain(options: CliOptions) {
             text: 'Analyzing dependencies...',
             color: 'cyan',
         }).start();
+        registry.register(depSpinner);
 
         try {
             const sourceDir = join(options.output, hostname);
@@ -588,6 +601,9 @@ export async function runMain(options: CliOptions) {
                             content: vb.content,
                             inferredPackage: vb.inferredPackage,
                         })),
+                        onVerbose: options.verbose
+                            ? (message) => registry.safeLog(message, true)
+                            : undefined,
                     },
                 );
 
@@ -608,6 +624,7 @@ export async function runMain(options: CliOptions) {
                 text: 'Generating stub files for internal packages...',
                 color: 'cyan',
             }).start();
+            registry.register(stubSpinner);
 
             try {
                 // Extract installed package names from the generated package.json
@@ -827,6 +844,7 @@ export async function runMain(options: CliOptions) {
             text: 'Starting browser for API capture...',
             color: 'cyan',
         }).start();
+        registry.register(captureSpinner);
 
         try {
             const captureResult = await captureWebsite({
@@ -847,17 +865,14 @@ export async function runMain(options: CliOptions) {
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]
                     : undefined,
-                onProgress: (message) => {
-                    captureSpinner.text = message;
-                },
+                onProgress: options.verbose
+                    ? (message) => registry.safeLog(message, false)
+                    : (message) => {
+                          captureSpinner.text = message;
+                      },
                 // Verbose logging that works with the spinner
                 onVerbose: options.verbose
-                    ? (message) => {
-                          // Clear spinner, log message, re-render spinner
-                          captureSpinner.clear();
-                          console.log(chalk.gray(`  ${message}`));
-                          captureSpinner.render();
-                      }
+                    ? (message) => registry.safeLog(message, true)
                     : undefined,
             });
 
@@ -1083,11 +1098,15 @@ export async function runMain(options: CliOptions) {
             text: 'Syncing dynamically loaded bundles...',
             color: 'cyan',
         }).start();
+        registry.register(syncSpinner);
 
         try {
             const syncResult = await syncDynamicBundles(
                 sourceDir,
                 options.verbose,
+                options.verbose
+                    ? (message) => registry.safeLog(message, true)
+                    : undefined,
             );
 
             if (syncResult.jsFiles > 0 || syncResult.cssFiles > 0) {
@@ -1119,6 +1138,7 @@ export async function runMain(options: CliOptions) {
             text: 'Resolving dynamic imports...',
             color: 'cyan',
         }).start();
+        registry.register(resolveSpinner);
 
         try {
             const resolveResult = await resolveMissingDynamicImports({
@@ -1197,6 +1217,7 @@ export async function runMain(options: CliOptions) {
             text: 'Analyzing project...',
             color: 'cyan',
         }).start();
+        registry.register(rebuildSpinner);
 
         try {
             if (options.rebuild) {
@@ -1246,9 +1267,14 @@ export async function runMain(options: CliOptions) {
                     projectDir: sourceDir,
                     verbose: options.verbose,
                     overwrite: false,
-                    onProgress: (message) => {
-                        rebuildSpinner.text = message;
-                    },
+                    onProgress: options.verbose
+                        ? (message) => registry.safeLog(message, false)
+                        : (message) => {
+                              rebuildSpinner.text = message;
+                          },
+                    onVerbose: options.verbose
+                        ? (message) => registry.safeLog(message, true)
+                        : undefined,
                 });
 
                 if (result.success) {
@@ -1316,6 +1342,9 @@ export async function runMain(options: CliOptions) {
             );
         }
     }
+
+    // Clean up spinner registry
+    registry.cleanup();
 }
 
 /**
@@ -1388,6 +1417,7 @@ async function fileExists(path: string): Promise<boolean> {
 async function syncDynamicBundles(
     sourceDir: string,
     verbose: boolean = false,
+    onVerbose?: (message: string) => void,
 ): Promise<{ jsFiles: number; cssFiles: number; errors: string[] }> {
     const staticDir = join(sourceDir, '_server', 'static');
     const bundlesDir = join(sourceDir, '_bundles');
@@ -1421,11 +1451,7 @@ async function syncDynamicBundles(
                 }
 
                 if (verbose) {
-                    console.log(
-                        chalk.gray(
-                            `    Synced dynamic bundle: ${relativePath}`,
-                        ),
-                    );
+                    onVerbose?.(`Synced dynamic bundle: ${relativePath}`);
                 }
             } catch (error) {
                 errors.push(`Failed to sync ${relativePath}: ${error}`);

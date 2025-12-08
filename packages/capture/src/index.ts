@@ -129,6 +129,7 @@ export async function captureWebsite(
                 `API: ${fixture.request.method} ${fixture.request.pattern}`,
             );
         },
+        onVerbose: opts.onVerbose,
     });
 
     const staticCapturer = new StaticCapturer({
