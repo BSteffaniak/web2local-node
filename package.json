@@ -25,6 +25,9 @@
         "web2local"
     ],
     "license": "MIT",
+    "workspaces": [
+        "packages/*"
+    ],
     "devDependencies": {
         "@eslint/eslintrc": "^3.3.3",
         "@eslint/js": "^9.39.1",
