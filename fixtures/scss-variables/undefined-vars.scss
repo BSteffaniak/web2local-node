@@ -1,0 +1,25 @@
+// File that uses variables that are not defined
+// These should be detected as undefined
+
+.header {
+    background-color: $brand-primary;
+    color: $text-white;
+    padding: $header-padding;
+}
+
+.footer {
+    background-color: $brand-secondary;
+    font-size: $font-size-sm;
+}
+
+// Interpolated variable usage
+.icon-#{$icon-prefix}-home {
+    content: $icon-content;
+}
+
+// Variable in @media query
+@media (min-width: $breakpoint-md) {
+    .container {
+        max-width: $container-max-width;
+    }
+}

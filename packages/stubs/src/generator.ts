@@ -23,6 +23,11 @@ import {
 } from './css-recovery.js';
 
 import {
+    generateScssVariableStubs,
+    type ScssVariableStubResult,
+} from './scss-variable-stub.js';
+
+import {
     findAndResolveAssetStubs,
     resolvePackageMissingExports,
     generateExportStatement,
@@ -3477,6 +3482,7 @@ export async function generateStubFiles(
         aliases?: AliasMapping[];
         capturedCssBundles?: CapturedCssBundle[];
         generateScssDeclarations?: boolean;
+        generateScssVariableStubs?: boolean;
         generateDirectoryIndexes?: boolean;
         generateCssModuleStubs?: boolean;
         generateExternalStubs?: boolean;
@@ -3492,6 +3498,7 @@ export async function generateStubFiles(
     indexFilesGenerated: number;
     directoryIndexesGenerated: number;
     scssDeclarationsGenerated: number;
+    scssVariableStubsGenerated: number;
     cssModuleStubsGenerated: number;
     externalPackageStubsGenerated: number;
     typeFileStubsGenerated: number;
@@ -3510,6 +3517,7 @@ export async function generateStubFiles(
         aliases = [],
         capturedCssBundles = [],
         generateScssDeclarations = true,
+        generateScssVariableStubs: generateScssVariableStubsOpt = true,
         generateDirectoryIndexes = true,
         generateCssModuleStubs = true,
         generateExternalStubs = true,
@@ -3526,6 +3534,7 @@ export async function generateStubFiles(
         indexFilesGenerated: 0,
         directoryIndexesGenerated: 0,
         scssDeclarationsGenerated: 0,
+        scssVariableStubsGenerated: 0,
         cssModuleStubsGenerated: 0,
         externalPackageStubsGenerated: 0,
         typeFileStubsGenerated: 0,
@@ -3618,6 +3627,24 @@ export async function generateStubFiles(
                 internalPackages,
             },
         );
+    }
+
+    // Generate SCSS variable stubs for undefined variables
+    // This scans all SCSS files, finds variables that are used but not defined,
+    // and generates stub files with placeholder values (e.g., $var: unset !default;)
+    if (generateScssVariableStubsOpt) {
+        onProgress?.('Scanning for undefined SCSS variables...');
+        const scssVarResult = await generateScssVariableStubs(sourceDir, {
+            dryRun,
+            onProgress,
+        });
+        result.scssVariableStubsGenerated = scssVarResult.stubFilesGenerated;
+
+        if (scssVarResult.errors.length > 0 && verbose) {
+            for (const error of scssVarResult.errors) {
+                onWarning?.(error);
+            }
+        }
     }
 
     // Generate stubs for external packages

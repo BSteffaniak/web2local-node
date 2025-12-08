@@ -1,0 +1,45 @@
+// Complex SCSS with loops, conditions, and mixins
+$breakpoints: (
+    'sm': 576px,
+    'md': 768px,
+    'lg': 992px,
+    'xl': 1200px,
+);
+
+$colors: red, green, blue;
+
+// Variables in @each loop
+@each $name, $value in $breakpoints {
+    .container-#{$name} {
+        max-width: $value;
+    }
+}
+
+// Variables in @for loop
+@for $i from 1 through 5 {
+    .mt-#{$i} {
+        margin-top: $i * 8px;
+    }
+}
+
+// Variable in @each with single value
+@each $color in $colors {
+    .text-#{$color} {
+        color: $color;
+    }
+}
+
+// Conditional with variable
+$theme: 'dark';
+
+@if $theme == 'dark' {
+    body {
+        background: #000;
+    }
+}
+
+// Variable with !default flag
+$base-font-size: 14px !default;
+
+// Variable referencing another variable
+$heading-size: $base-font-size * 1.5;

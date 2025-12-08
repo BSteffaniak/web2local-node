@@ -45,6 +45,7 @@ import {
 } from '@web2local/analyzer';
 import {
     generateStubFiles,
+    generateScssVariableStubs,
     updateCssStubsWithCapturedBundles,
     type CssStubUpdateResult,
 } from '@web2local/stubs';
@@ -667,6 +668,7 @@ export async function runMain(options: CliOptions) {
                     stubResult.indexFilesGenerated +
                     stubResult.directoryIndexesGenerated +
                     stubResult.scssDeclarationsGenerated +
+                    stubResult.scssVariableStubsGenerated +
                     stubResult.cssModuleStubsGenerated +
                     stubResult.externalPackageStubsGenerated +
                     stubResult.missingSourceStubsGenerated;
@@ -684,6 +686,10 @@ export async function runMain(options: CliOptions) {
                     if (stubResult.scssDeclarationsGenerated > 0)
                         parts.push(
                             `${stubResult.scssDeclarationsGenerated} SCSS declarations`,
+                        );
+                    if (stubResult.scssVariableStubsGenerated > 0)
+                        parts.push(
+                            `${stubResult.scssVariableStubsGenerated} SCSS variable stubs`,
                         );
                     if (stubResult.cssModuleStubsGenerated > 0)
                         parts.push(
@@ -1088,6 +1094,21 @@ export async function runMain(options: CliOptions) {
         }
 
         console.log();
+
+        // Generate SCSS variable stubs for captured static assets
+        // This handles SCSS files that reference undefined variables
+        const captureSourceDir = join(options.output, hostname);
+        const serverStaticDir = join(captureSourceDir, '_server', 'static');
+        const scssVarResult = await generateScssVariableStubs(serverStaticDir, {
+            onProgress: options.verbose
+                ? (msg) => registry.safeLog(msg, true)
+                : undefined,
+        });
+        if (scssVarResult.stubFilesGenerated > 0) {
+            console.log(
+                `    ${chalk.green('✓')} Generated ${chalk.bold(scssVarResult.stubFilesGenerated)} SCSS variable stubs for captured assets`,
+            );
+        }
     }
 
     // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
@@ -1202,6 +1223,19 @@ export async function runMain(options: CliOptions) {
         } catch (error) {
             resolveSpinner.warn(
                 `Dynamic import resolution had issues: ${error}`,
+            );
+        }
+
+        // Generate SCSS variable stubs for any newly fetched SCSS files
+        const staticDir = join(sourceDir, '_server', 'static');
+        const scssVarResult2 = await generateScssVariableStubs(staticDir, {
+            onProgress: options.verbose
+                ? (msg) => registry.safeLog(msg, true)
+                : undefined,
+        });
+        if (scssVarResult2.stubFilesGenerated > 0) {
+            console.log(
+                `    ${chalk.green('✓')} Generated ${chalk.bold(scssVarResult2.stubFilesGenerated)} SCSS variable stubs for resolved imports`,
             );
         }
     }

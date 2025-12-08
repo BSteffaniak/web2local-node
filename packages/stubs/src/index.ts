@@ -35,5 +35,21 @@ export {
     type CssRecoveryOptions,
 } from './css-recovery.js';
 
+// SCSS variable stub generation
+export {
+    parseScss,
+    extractVariableDefinitions,
+    extractVariableUsages,
+    analyzeScssFile,
+    findUndefinedVariables,
+    generateVariableStubContent,
+    getStubFilename,
+    hasStubImport,
+    injectStubImport,
+    generateScssVariableStubs,
+    type ScssVariableAnalysis,
+    type ScssVariableStubResult,
+} from './scss-variable-stub.js';
+
 // Generator utilities (will be split later)
 export * from './generator.js';
