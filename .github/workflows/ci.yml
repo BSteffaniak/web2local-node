@@ -7,53 +7,52 @@ on:
         branches: [master]
 
 jobs:
-    test:
+    generate-matrix:
         runs-on: ubuntu-latest
+        outputs:
+            matrix: ${{ steps.generate.outputs.matrix }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+            - name: Generate test matrix
+              id: generate
+              run: node .github/scripts/generate-matrix.js
 
+    test:
+        needs: generate-matrix
+        runs-on: ubuntu-latest
+        name: Node ${{ matrix.node-version }} / ${{ matrix.package-manager }}@${{ matrix.pm-version }}
         strategy:
             fail-fast: false
-            matrix:
-                package-manager: [npm, pnpm, bun]
-                include:
-                    - package-manager: npm
-                      run-cmd: npx
-                      global-install-cmd: npm install -g .
-                      cli-cmd: npm run cli --
-                    - package-manager: pnpm
-                      run-cmd: pnpm exec
-                      global-install-cmd: pnpm link -g .
-                      cli-cmd: pnpm run cli
-                    - package-manager: bun
-                      run-cmd: bunx
-                      global-install-cmd: bun link
-                      cli-cmd: bun run cli
-
+            matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
         steps:
             - uses: actions/checkout@v4
 
             - uses: pnpm/action-setup@v3
               with:
-                  version: latest
+                  version: ${{ matrix.package-manager == 'pnpm' && matrix.pm-version || 'latest' }}
 
             - uses: oven-sh/setup-bun@v1
               if: matrix.package-manager == 'bun'
               with:
-                  bun-version: latest
+                  bun-version: ${{ matrix.pm-version }}
 
             - uses: actions/setup-node@v4
               if: matrix.package-manager != 'bun'
               with:
-                  node-version: 20
+                  node-version: ${{ matrix.node-version }}
                   cache: ${{ matrix.package-manager }}
 
             - uses: actions/setup-node@v4
               if: matrix.package-manager == 'bun'
               with:
-                  node-version: 20
+                  node-version: ${{ matrix.node-version }}
 
-            - name: Setup npm
+            - name: Setup npm version
               if: matrix.package-manager == 'npm'
-              run: npm install -g npm@10
+              run: npm install -g npm@${{ matrix.pm-version }}
 
             - name: Install dependencies
               run: ${{ matrix.package-manager }} install
@@ -76,7 +75,6 @@ jobs:
 
             - name: Test CLI (built binary)
               run: |
-                  # Run the bundled CLI directly
                   node packages/web2local/dist/index.mjs --help | grep -q "Extract and reconstruct original source code"
 
             - name: Test CLI serve subcommand
