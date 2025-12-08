@@ -83,16 +83,6 @@ jobs:
               run: |
                   node packages/web2local/dist/index.mjs serve --help | grep -q "Serve captured API fixtures"
 
-            - name: Setup global bin PATH
-              run: |
-                  if [ "${{ matrix.package-manager }}" = "bun" ]; then
-                    echo "$HOME/.bun/bin" >> $GITHUB_PATH
-                  elif [ "${{ matrix.package-manager }}" = "pnpm" ]; then
-                    echo "$PNPM_HOME" >> $GITHUB_PATH
-                  elif [ "${{ matrix.package-manager }}" = "npm" ]; then
-                    echo "$(npm config get prefix)/bin" >> $GITHUB_PATH
-                  fi
-
             - name: Test CLI (global install)
               run: |
                   ${{ matrix.global-install-cmd }}
