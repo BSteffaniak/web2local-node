@@ -139,12 +139,10 @@ function categorizeTest(name: string): TestCategory {
 /**
  * Known limitations of our current parser:
  *
- * 1. VLQ/Mapping validation: Our parser validates the structure but doesn't
- *    decode VLQ mappings to check for invalid values (negative indices, etc.)
+ * VLQ/Mapping validation: Our parser validates the structure but doesn't
+ * decode VLQ mappings to check for invalid values (negative indices, etc.)
  *
- * 2. Index maps: We don't currently support index maps (sections field)
- *
- * Tests in this set are expected to fail until we add support.
+ * Tests in this set are expected to fail until we add VLQ decoding support.
  */
 const KNOWN_LIMITATIONS: Set<string> = new Set([
     // VLQ/Mapping validation - we don't decode mappings yet
@@ -172,25 +170,6 @@ const KNOWN_LIMITATIONS: Set<string> = new Set([
     'invalidMappingSegmentWithOriginalLineExceeding32Bits',
     'invalidMappingSegmentWithOriginalColumnExceeding32Bits',
     'invalidMappingSegmentWithNameIndexExceeding32Bits',
-
-    // Index maps - we don't support sections field yet
-    'indexMapWrongTypeSections',
-    'indexMapWrongTypeOffset',
-    'indexMapWrongTypeMap',
-    'indexMapInvalidBaseMappings',
-    'indexMapInvalidOverlap',
-    'indexMapInvalidOrder',
-    'indexMapMissingMap',
-    'indexMapMissingOffset',
-    'indexMapMissingSections',
-    'indexMapNestedIndexMap',
-    'indexMapValid',
-    'indexMapValidWithInnerSourceRoot',
-    'indexMapValidMultipleSections',
-    'indexMapEmptySections',
-    'basicMappingWithIndexMap',
-    'indexMapWithMissingFile',
-    'indexMapWithTwoConcatenatedSources',
 ]);
 
 // ============================================================================

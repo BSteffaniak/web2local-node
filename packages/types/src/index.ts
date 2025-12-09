@@ -9,7 +9,7 @@
 // ============================================================================
 
 /**
- * Source Map V3 specification
+ * Source Map V3 specification (regular source map, not index map)
  * @see https://tc39.es/ecma426/
  */
 export interface SourceMapV3 {
@@ -24,6 +24,42 @@ export interface SourceMapV3 {
     /** Indices into sources array that should be ignored (e.g., library code) */
     readonly ignoreList?: readonly number[];
 }
+
+/**
+ * Offset for a section in an index map
+ * @see https://tc39.es/ecma426/
+ */
+export interface IndexMapOffset {
+    readonly line: number;
+    readonly column: number;
+}
+
+/**
+ * A section in an index map, containing an offset and a nested source map
+ * @see https://tc39.es/ecma426/
+ */
+export interface IndexMapSection {
+    readonly offset: IndexMapOffset;
+    readonly map: SourceMapV3;
+}
+
+/**
+ * Index Map V3 specification (concatenated source maps)
+ * An index map contains sections, each with an offset and a nested regular source map.
+ * Index maps cannot be nested (a section's map cannot be another index map).
+ * @see https://tc39.es/ecma426/
+ */
+export interface IndexMapV3 {
+    readonly version: 3;
+    readonly file?: string;
+    readonly sections: readonly IndexMapSection[];
+}
+
+/**
+ * Union type for any valid source map (regular or index map)
+ * @see https://tc39.es/ecma426/
+ */
+export type SourceMap = SourceMapV3 | IndexMapV3;
 
 /**
  * A source file extracted from a source map

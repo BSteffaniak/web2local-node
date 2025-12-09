@@ -7,6 +7,8 @@
 
 import type {
     SourceMapV3,
+    IndexMapV3,
+    SourceMap,
     SourceMapValidationResult,
     SourceMapValidationError,
 } from '@web2local/types';
@@ -23,7 +25,7 @@ import {
 import { decodeDataUri, isDataUri } from './utils/url.js';
 
 // ============================================================================
-// RAW SOURCE MAP TYPE (before validation)
+// RAW SOURCE MAP TYPES (before validation)
 // ============================================================================
 
 interface RawSourceMap {
@@ -35,6 +37,19 @@ interface RawSourceMap {
     names?: unknown;
     mappings?: unknown;
     ignoreList?: unknown;
+    sections?: unknown;
+    [key: string]: unknown;
+}
+
+interface RawIndexMapSection {
+    offset?: unknown;
+    map?: unknown;
+    [key: string]: unknown;
+}
+
+interface RawIndexMapOffset {
+    line?: unknown;
+    column?: unknown;
     [key: string]: unknown;
 }
 
@@ -53,40 +68,30 @@ function validationError(
     return { code, message, field };
 }
 
+/**
+ * Checks if a raw source map object is an index map (has sections field).
+ * Per ECMA-426, an index map has `sections` instead of `sources`/`mappings`.
+ */
+function isIndexMap(obj: RawSourceMap): boolean {
+    return 'sections' in obj;
+}
+
 // ============================================================================
-// VALIDATION
+// REGULAR SOURCE MAP VALIDATION
 // ============================================================================
 
 /**
- * Validates a raw parsed object against the Source Map V3 specification.
+ * Validates a regular source map (not index map) against the ECMA-426 spec.
+ * This is an internal function - use validateSourceMap() for public API.
  *
- * Checks:
- * - version === 3
- * - sources is a string array
- * - mappings is a string
- * - sourcesContent (if present) aligns with sources length
- *
- * @param raw - The parsed JSON object
- * @returns Validation result with structured errors (including error codes)
+ * @param obj - The raw source map object (already verified to be an object)
+ * @returns Validation result with structured errors
  */
-export function validateSourceMap(raw: unknown): SourceMapValidationResult {
+function validateRegularSourceMap(
+    obj: RawSourceMap,
+): SourceMapValidationResult {
     const errors: SourceMapValidationError[] = [];
     const warnings: string[] = [];
-
-    if (typeof raw !== 'object' || raw === null) {
-        return {
-            valid: false,
-            errors: [
-                validationError(
-                    SourceMapErrorCode.INVALID_JSON,
-                    'Source map must be an object',
-                ),
-            ],
-            warnings: [],
-        };
-    }
-
-    const obj = raw as RawSourceMap;
 
     // Version check
     if (obj.version === undefined) {
@@ -283,6 +288,316 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         errors,
         warnings,
     };
+}
+
+// ============================================================================
+// INDEX MAP VALIDATION
+// ============================================================================
+
+/**
+ * Validates an index map against the ECMA-426 spec.
+ * Index maps have `sections` array with offset/map pairs instead of sources/mappings.
+ *
+ * @param obj - The raw source map object (already verified to have sections)
+ * @returns Validation result with structured errors
+ */
+function validateIndexMapInternal(
+    obj: RawSourceMap,
+): SourceMapValidationResult {
+    const errors: SourceMapValidationError[] = [];
+    const warnings: string[] = [];
+
+    // Version check
+    if (obj.version === undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.MISSING_VERSION,
+                'Missing required field: version',
+                'version',
+            ),
+        );
+    } else if (obj.version !== SUPPORTED_SOURCE_MAP_VERSION) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_VERSION,
+                `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
+                'version',
+            ),
+        );
+    }
+
+    // Index maps cannot have mappings field (they use sections instead)
+    if (obj.mappings !== undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
+                'Index map cannot have both "sections" and "mappings" fields',
+                'mappings',
+            ),
+        );
+    }
+
+    // file check (optional) - must be string if present
+    if (obj.file !== undefined && typeof obj.file !== 'string') {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_FILE,
+                'Field "file" must be a string',
+                'file',
+            ),
+        );
+    }
+
+    // Sections validation
+    if (!Array.isArray(obj.sections)) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                'Field "sections" must be an array',
+                'sections',
+            ),
+        );
+        return { valid: false, errors, warnings };
+    }
+
+    // Track previous offset for order/overlap validation
+    let prevLine = -1;
+    let prevColumn = -1;
+
+    for (let i = 0; i < obj.sections.length; i++) {
+        const section = obj.sections[i] as RawIndexMapSection | null;
+        const fieldPrefix = `sections[${i}]`;
+
+        if (typeof section !== 'object' || section === null) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                    `${fieldPrefix} must be an object`,
+                    fieldPrefix,
+                ),
+            );
+            continue;
+        }
+
+        // Validate offset
+        if (section.offset === undefined) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                    `${fieldPrefix}.offset is required`,
+                    `${fieldPrefix}.offset`,
+                ),
+            );
+        } else if (
+            typeof section.offset !== 'object' ||
+            section.offset === null
+        ) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                    `${fieldPrefix}.offset must be an object`,
+                    `${fieldPrefix}.offset`,
+                ),
+            );
+        } else {
+            const offset = section.offset as RawIndexMapOffset;
+
+            // Validate offset.line
+            if (offset.line === undefined) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                        `${fieldPrefix}.offset.line is required`,
+                        `${fieldPrefix}.offset.line`,
+                    ),
+                );
+            } else if (
+                typeof offset.line !== 'number' ||
+                !Number.isInteger(offset.line) ||
+                offset.line < 0
+            ) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                        `${fieldPrefix}.offset.line must be a non-negative integer`,
+                        `${fieldPrefix}.offset.line`,
+                    ),
+                );
+            }
+
+            // Validate offset.column
+            if (offset.column === undefined) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                        `${fieldPrefix}.offset.column is required`,
+                        `${fieldPrefix}.offset.column`,
+                    ),
+                );
+            } else if (
+                typeof offset.column !== 'number' ||
+                !Number.isInteger(offset.column) ||
+                offset.column < 0
+            ) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                        `${fieldPrefix}.offset.column must be a non-negative integer`,
+                        `${fieldPrefix}.offset.column`,
+                    ),
+                );
+            }
+
+            // Check ordering and overlap (only if both line and column are valid numbers)
+            if (
+                typeof offset.line === 'number' &&
+                typeof offset.column === 'number' &&
+                Number.isInteger(offset.line) &&
+                Number.isInteger(offset.column)
+            ) {
+                const currentLine = offset.line;
+                const currentColumn = offset.column;
+
+                if (i > 0) {
+                    // Check for invalid order (current section starts before previous)
+                    if (
+                        currentLine < prevLine ||
+                        (currentLine === prevLine && currentColumn < prevColumn)
+                    ) {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+                                `${fieldPrefix} has offset before previous section (sections must be in order)`,
+                                `${fieldPrefix}.offset`,
+                            ),
+                        );
+                    }
+                    // Check for overlap (same position as previous)
+                    else if (
+                        currentLine === prevLine &&
+                        currentColumn === prevColumn
+                    ) {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                                `${fieldPrefix} overlaps with previous section (same offset)`,
+                                `${fieldPrefix}.offset`,
+                            ),
+                        );
+                    }
+                }
+
+                prevLine = currentLine;
+                prevColumn = currentColumn;
+            }
+        }
+
+        // Validate map
+        if (section.map === undefined) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                    `${fieldPrefix}.map is required`,
+                    `${fieldPrefix}.map`,
+                ),
+            );
+        } else if (typeof section.map !== 'object' || section.map === null) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                    `${fieldPrefix}.map must be an object`,
+                    `${fieldPrefix}.map`,
+                ),
+            );
+        } else {
+            const sectionMap = section.map as RawSourceMap;
+
+            // Check for nested index map (not allowed per spec)
+            if (isIndexMap(sectionMap)) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INDEX_MAP_NESTED,
+                        `${fieldPrefix}.map cannot be an index map (nested index maps not allowed)`,
+                        `${fieldPrefix}.map`,
+                    ),
+                );
+            } else {
+                // Recursively validate the section map as a regular source map
+                const sectionResult = validateRegularSourceMap(sectionMap);
+                for (const error of sectionResult.errors) {
+                    errors.push(
+                        validationError(
+                            error.code as SourceMapErrorCode,
+                            `${fieldPrefix}.map: ${error.message}`,
+                            error.field
+                                ? `${fieldPrefix}.map.${error.field}`
+                                : `${fieldPrefix}.map`,
+                        ),
+                    );
+                }
+                for (const warning of sectionResult.warnings) {
+                    warnings.push(`${fieldPrefix}.map: ${warning}`);
+                }
+            }
+        }
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        warnings,
+    };
+}
+
+// ============================================================================
+// PUBLIC VALIDATION API
+// ============================================================================
+
+/**
+ * Validates a raw parsed object against the ECMA-426 Source Map specification.
+ * Automatically detects and validates both regular source maps and index maps.
+ *
+ * For regular source maps, checks:
+ * - version === 3
+ * - sources is a string array (entries can be null)
+ * - mappings is a string
+ * - sourcesContent (if present) contains strings or null
+ * - names (if present) is a string array
+ * - file (if present) is a string
+ * - ignoreList (if present) is array of valid indices
+ *
+ * For index maps, additionally checks:
+ * - sections is an array of valid section objects
+ * - Each section has valid offset (line, column) and map
+ * - Sections are in order and don't overlap
+ * - Nested index maps are not allowed
+ * - Cannot have both sections and mappings
+ *
+ * @param raw - The parsed JSON object
+ * @returns Validation result with structured errors (including error codes)
+ */
+export function validateSourceMap(raw: unknown): SourceMapValidationResult {
+    if (typeof raw !== 'object' || raw === null) {
+        return {
+            valid: false,
+            errors: [
+                validationError(
+                    SourceMapErrorCode.INVALID_JSON,
+                    'Source map must be an object',
+                ),
+            ],
+            warnings: [],
+        };
+    }
+
+    const obj = raw as RawSourceMap;
+
+    // Dispatch to appropriate validator based on presence of sections field
+    if (isIndexMap(obj)) {
+        return validateIndexMapInternal(obj);
+    }
+
+    return validateRegularSourceMap(obj);
 }
 
 /**
