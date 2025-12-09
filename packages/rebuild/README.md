@@ -82,3 +82,9 @@ console.log(config.aliases); // [{ pattern: '@/*', target: './src/*' }]
 - `enhancePackageJson(options)` - Add build dependencies
 - `runBuild(options)` - Execute the build process
 - `injectGlobalCss(options)` - Inject captured CSS into entry points
+
+## Notes
+
+### pnpm workspace handling
+
+When using pnpm, `installDependencies` automatically passes `--ignore-workspace` to avoid conflicts when the output directory is inside a pnpm workspace. If you run `pnpm install` manually in an output directory that's inside a workspace, you'll need to include this flag yourself.

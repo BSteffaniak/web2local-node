@@ -200,6 +200,21 @@ pnpm pretty:write
 pnpm cli https://example.com
 ```
 
+## Troubleshooting
+
+### pnpm workspace conflicts
+
+If your output directory is inside a pnpm workspace (e.g., inside the web2local repo), running `pnpm install` will try to link workspace packages instead of installing from the local `package.json`.
+
+**Solution:** Use the `--ignore-workspace` flag:
+
+```bash
+cd output/example.com
+pnpm install --ignore-workspace
+```
+
+The CLI handles this automatically during rebuild, but you'll need the flag for manual installs.
+
 ## License
 
 MIT
