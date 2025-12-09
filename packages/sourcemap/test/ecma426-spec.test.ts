@@ -92,7 +92,6 @@ function loadSourceMap(filename: string): unknown | null {
 
 // ============================================================================
 // TEST CATEGORIES
-// These help organize tests and identify which spec areas need work
 // ============================================================================
 
 type TestCategory =
@@ -132,20 +131,6 @@ function categorizeTest(name: string): TestCategory {
 }
 
 // ============================================================================
-// KNOWN LIMITATIONS
-// Tests that our current implementation doesn't handle yet
-// ============================================================================
-
-/**
- * Known limitations of our current parser:
- *
- * All ECMA-426 spec tests are now implemented! This set is empty.
- */
-const KNOWN_LIMITATIONS: Set<string> = new Set([
-    // All spec tests implemented!
-]);
-
-// ============================================================================
 // TEST SUITE
 // ============================================================================
 
@@ -183,21 +168,6 @@ describe('ECMA-426 Source Map Specification Conformance', () => {
     });
 
     describe('Validation Tests', () => {
-        // Group tests by category for better organization
-        const testsByCategory = new Map<TestCategory, SpecTest[]>();
-
-        beforeAll(() => {
-            if (!specTests) return;
-
-            for (const test of specTests.tests) {
-                const category = categorizeTest(test.name);
-                if (!testsByCategory.has(category)) {
-                    testsByCategory.set(category, []);
-                }
-                testsByCategory.get(category)!.push(test);
-            }
-        });
-
         it.skipIf(!isSubmoduleInitialized())(
             'should load all spec test fixtures',
             () => {
@@ -223,21 +193,10 @@ describe('ECMA-426 Source Map Specification Conformance', () => {
 
         // Run each spec test
         describe.skipIf(!isSubmoduleInitialized())('Individual Tests', () => {
-            // This will be populated after beforeAll runs
-            const runTests = () => {
-                const tests = loadSpecTests();
-                if (!tests) return [];
-                return tests.tests;
-            };
-
-            // Use a factory function to generate tests
-            const allTests = runTests();
+            const allTests = loadSpecTests()?.tests ?? [];
 
             for (const test of allTests) {
-                const isKnownLimitation = KNOWN_LIMITATIONS.has(test.name);
-                const testFn = isKnownLimitation ? it.skip : it;
-
-                testFn(`${test.name}: ${test.description}`, () => {
+                it(`${test.name}: ${test.description}`, () => {
                     const sourceMap = loadSourceMap(test.sourceMapFile);
                     expect(sourceMap).not.toBeNull();
 
@@ -265,45 +224,28 @@ describe('ECMA-426 Source Map Specification Conformance', () => {
             if (!specTests) return;
 
             const total = specTests.tests.length;
-            const knownLimitations = specTests.tests.filter((t) =>
-                KNOWN_LIMITATIONS.has(t.name),
-            ).length;
-            const implemented = total - knownLimitations;
 
             console.log('\n' + '='.repeat(70));
             console.log('ECMA-426 Spec Test Coverage');
             console.log('='.repeat(70));
             console.log(`Total spec tests:     ${total}`);
-            console.log(
-                `Implemented:          ${implemented} (${((implemented / total) * 100).toFixed(1)}%)`,
-            );
-            console.log(`Known limitations:    ${knownLimitations}`);
+            console.log(`Implemented:          ${total} (100.0%)`);
             console.log('='.repeat(70) + '\n');
 
             // Count by category
-            const categoryCounts = new Map<
-                TestCategory,
-                { total: number; implemented: number }
-            >();
+            const categoryCounts = new Map<TestCategory, number>();
             for (const test of specTests.tests) {
                 const category = categorizeTest(test.name);
-                if (!categoryCounts.has(category)) {
-                    categoryCounts.set(category, { total: 0, implemented: 0 });
-                }
-                const counts = categoryCounts.get(category)!;
-                counts.total++;
-                if (!KNOWN_LIMITATIONS.has(test.name)) {
-                    counts.implemented++;
-                }
+                categoryCounts.set(
+                    category,
+                    (categoryCounts.get(category) ?? 0) + 1,
+                );
             }
 
             console.log('Coverage by category:');
-            for (const [category, counts] of categoryCounts) {
-                const pct = ((counts.implemented / counts.total) * 100).toFixed(
-                    0,
-                );
+            for (const [category, count] of categoryCounts) {
                 console.log(
-                    `  ${category.padEnd(15)} ${counts.implemented}/${counts.total} (${pct}%)`,
+                    `  ${category.padEnd(15)} ${count}/${count} (100%)`,
                 );
             }
             console.log('');
