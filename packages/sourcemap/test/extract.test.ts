@@ -343,8 +343,8 @@ describe('extractSourceMap', () => {
                         headers: { 'Content-Type': 'application/javascript' },
                     });
                 }),
-                // No .map file exists
-                http.get('https://example.com/bundle.js.map', () => {
+                // No .map file exists - probe uses HEAD request
+                http.head('https://example.com/bundle.js.map', () => {
                     return new HttpResponse(null, { status: 404 });
                 }),
             );
