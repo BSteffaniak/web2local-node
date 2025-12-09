@@ -1234,7 +1234,7 @@ function detectWorkspacePackageRoots(
     // e.g., if we detected "r1s" at "navigation/site-kit/r1s", then
     // "site-kit" at "navigation/site-kit" is likely also a package
     const detectedRoots = Array.from(packageRoots.entries());
-    for (const [packageName, packagePath] of detectedRoots) {
+    for (const [, packagePath] of detectedRoots) {
         // Get the parent directory
         const pathParts = packagePath.split('/');
         if (pathParts.length >= 2) {
@@ -2031,22 +2031,19 @@ export function detectSubpathImports(
                     continue;
                 }
 
-                // Get the package name and subpath
+                // Get the package name (subpath is extracted but not used currently)
                 let packageName: string;
-                let subpath: string;
 
                 if (specifier.startsWith('@')) {
                     // Scoped package: @scope/package/subpath
                     const parts = specifier.split('/');
                     if (parts.length <= 2) continue; // No subpath
                     packageName = parts.slice(0, 2).join('/');
-                    subpath = parts.slice(2).join('/');
                 } else {
                     // Regular package: package/subpath
                     const parts = specifier.split('/');
                     if (parts.length <= 1) continue; // No subpath
                     packageName = parts[0];
-                    subpath = parts.slice(1).join('/');
                 }
 
                 // Check if this is an aliased package or workspace package
@@ -2221,7 +2218,7 @@ export function detectSubpathImports(
  */
 function sanitizeSourceMapPath(relativePath: string): string {
     // Remove leading ./ if present
-    let path = relativePath.replace(/^\.[\\/]+/, '');
+    const path = relativePath.replace(/^\.[\\/]+/, '');
 
     // Split into segments
     const segments = path.split(/[/\\]/);

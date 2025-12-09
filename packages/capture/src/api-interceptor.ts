@@ -328,7 +328,7 @@ export class ApiInterceptor {
     private async captureRequestResponse(
         request: Request,
         response: Response,
-        responseTimeMs: number,
+        _responseTimeMs: number,
     ): Promise<ApiFixture | null> {
         const url = request.url();
         const urlObj = new URL(url);

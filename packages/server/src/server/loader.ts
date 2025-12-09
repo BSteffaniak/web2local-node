@@ -21,7 +21,7 @@ export async function loadManifest(dir: string): Promise<ServerManifest> {
     try {
         const content = await readFile(manifestPath, 'utf-8');
         return JSON.parse(content) as ServerManifest;
-    } catch (error) {
+    } catch (_error) {
         // Try the pointer file
         const pointerPath = join(dir, '_server.json');
         try {
@@ -47,7 +47,7 @@ export async function loadFixtureIndex(dir: string): Promise<FixtureIndex> {
     try {
         const content = await readFile(indexPath, 'utf-8');
         return JSON.parse(content) as FixtureIndex;
-    } catch (error) {
+    } catch (_error) {
         throw new Error(`Could not find fixture index at ${indexPath}`);
     }
 }

@@ -97,7 +97,7 @@ export function extractDynamicImportPaths(
 
     const paths: Set<string> = new Set();
 
-    walkAST(ast, (node: any) => {
+    walkAST(ast, (node: Record<string, unknown>) => {
         // Look for CallExpression where callee is Import
         if (node.type === 'CallExpression') {
             const callee = node.callee as Record<string, unknown>;
@@ -156,7 +156,7 @@ export function extractStaticImportPaths(
 
     const paths: Set<string> = new Set();
 
-    walkAST(ast, (node: any) => {
+    walkAST(ast, (node: Record<string, unknown>) => {
         // Import declarations: import ... from "..."
         if (node.type === 'ImportDeclaration') {
             const source = node.source as Record<string, unknown> | undefined;

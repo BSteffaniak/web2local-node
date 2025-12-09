@@ -1,6 +1,5 @@
 import { parseSync } from '@swc/core';
 import type {
-    Module,
     ModuleItem,
     Declaration,
     Pattern,

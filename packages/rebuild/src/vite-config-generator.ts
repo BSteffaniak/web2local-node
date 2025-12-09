@@ -18,7 +18,6 @@ import {
     buildAliasPathMappings,
     extractBareImports,
     inferAliasesFromImports,
-    type AliasMap,
 } from '@web2local/analyzer';
 
 /**

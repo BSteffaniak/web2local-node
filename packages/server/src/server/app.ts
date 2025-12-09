@@ -6,7 +6,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { readFile } from 'fs/promises';
-import { join, extname } from 'path';
+import { join } from 'path';
 
 import type { ServerManifest, ServerOptions, HttpMethod } from '../types.js';
 import { FixtureMatcher, normalizePath } from './matcher.js';
@@ -18,45 +18,6 @@ import {
 } from './loader.js';
 import { delayMiddleware, fixedDelayMiddleware } from '../middleware/delay.js';
 import { loggerMiddleware } from '../middleware/logger.js';
-
-/**
- * MIME types for static files
- */
-const MIME_TYPES: Record<string, string> = {
-    '.html': 'text/html',
-    '.htm': 'text/html',
-    '.css': 'text/css',
-    '.js': 'application/javascript',
-    '.mjs': 'application/javascript',
-    '.json': 'application/json',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.webp': 'image/webp',
-    '.ico': 'image/x-icon',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.ttf': 'font/ttf',
-    '.eot': 'application/vnd.ms-fontobject',
-    '.otf': 'font/otf',
-    '.mp4': 'video/mp4',
-    '.webm': 'video/webm',
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.ogg': 'audio/ogg',
-    '.txt': 'text/plain',
-    '.xml': 'application/xml',
-};
-
-/**
- * Get MIME type from file extension
- */
-function getMimeType(filepath: string): string {
-    const ext = extname(filepath).toLowerCase();
-    return MIME_TYPES[ext] || 'application/octet-stream';
-}
 
 /**
  * Create a Hono app configured for serving captured fixtures
@@ -162,9 +123,13 @@ export async function createApp(options: ServerOptions): Promise<{
                 c.header('X-Fixture-Id', fixture.id);
 
                 // Return the response
+                // Note: We cast to ContentfulStatusCode since Hono expects a specific union type
+                // but our captured responses have arbitrary status numbers
                 if (response.bodyType === 'json') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return c.json(response.body, response.status as any);
                 } else {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     c.status(response.status as any);
                     return c.body(
                         typeof response.body === 'string'

@@ -26,7 +26,9 @@
  *
  * @param name Optional name for debugging (will appear in console warnings)
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createUniversalStub(name?: string): any {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler: ProxyHandler<any> = {
         // Called as function: stub()
         apply(_target, _thisArg, args) {

@@ -9,7 +9,7 @@ import type { LoadedFixture, MatchedFixture, HttpMethod } from '../types.js';
  */
 function patternToRegex(pattern: string): RegExp {
     // Escape special regex characters except for our param syntax
-    let regexStr = pattern
+    const regexStr = pattern
         .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         .replace(/\\:([a-zA-Z][a-zA-Z0-9]*)/g, '([^/]+)');
 

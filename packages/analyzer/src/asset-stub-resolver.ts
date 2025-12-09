@@ -404,7 +404,7 @@ export async function resolveAssetStubs(
                 resolved++;
                 byExtension[stubInfo.extension] =
                     (byExtension[stubInfo.extension] || 0) + 1;
-            } catch (error) {
+            } catch (_error) {
                 onProgress?.(
                     `Failed to write placeholder: ${relative(sourceDir, filePath)}`,
                 );

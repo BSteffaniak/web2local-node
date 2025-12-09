@@ -112,7 +112,7 @@ function extractFromImportDeclaration(
                 info.hasNamespaceImport = true;
                 break;
 
-            case 'ImportSpecifier':
+            case 'ImportSpecifier': {
                 // Named import - use the local name
                 // Check for inline type modifier: import { type Foo } from './mod'
                 const isSpecTypeOnly = spec.isTypeOnly ?? false;
@@ -122,6 +122,7 @@ function extractFromImportDeclaration(
                     isTypeOnly: isSpecTypeOnly,
                 });
                 break;
+            }
         }
     }
 

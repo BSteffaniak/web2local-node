@@ -9,14 +9,38 @@ import {
 } from './progress/index.js';
 
 /**
+ * CLI options for server-related commands
+ */
+interface ServerCliOptions {
+    port?: number;
+    host?: string;
+    delay?: number;
+    cors?: boolean;
+    staticOnly?: boolean;
+    apiOnly?: boolean;
+    verbose?: boolean;
+    useRebuilt?: boolean;
+}
+
+/**
+ * Generated package.json structure with custom fields
+ */
+interface GeneratedPackageJson {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    _internalDependencies?: Record<string, string>;
+    _importAliases?: Record<string, string>;
+}
+
+/**
  * Extract server options from parsed CLI options
  */
-function getServerOptions(cliOptions: any, outputDir: string) {
+function getServerOptions(cliOptions: ServerCliOptions, outputDir: string) {
     return {
         dir: outputDir,
-        port: cliOptions.port ? parseInt(cliOptions.port, 10) : 3000,
+        port: cliOptions.port ?? 3000,
         host: cliOptions.host || 'localhost',
-        delay: cliOptions.delay ? parseInt(cliOptions.delay, 10) : undefined,
+        delay: cliOptions.delay,
         noCors: cliOptions.cors === false,
         staticOnly: cliOptions.staticOnly || false,
         apiOnly: cliOptions.apiOnly || false,
@@ -53,7 +77,6 @@ import {
     generateStubFiles,
     generateScssVariableStubs,
     updateCssStubsWithCapturedBundles,
-    type CssStubUpdateResult,
 } from '@web2local/stubs';
 import { type CapturedCssBundle, extractCssBaseName } from '@web2local/stubs';
 import { initCache } from '@web2local/cache';
@@ -61,7 +84,6 @@ import { join, basename, relative, dirname } from 'path';
 import { readFile, readdir, stat, copyFile, mkdir } from 'fs/promises';
 import { captureWebsite, generateCaptureSummary } from '@web2local/capture';
 import {
-    prepareRebuild,
     rebuild as runRebuild,
     extractAliasesFromTsConfig,
 } from '@web2local/rebuild';
@@ -371,7 +393,7 @@ export async function runMain(options: CliOptions) {
     console.log(chalk.bold('Reconstructing files:'));
     console.log();
 
-    for (const { bundle, bundleName, files, errors } of bundleExtractions) {
+    for (const { bundle, bundleName, files } of bundleExtractions) {
         const reconstructSpinner = ora({
             text: `Writing ${chalk.cyan(bundleName)}...`,
             indent: 2,
@@ -397,7 +419,7 @@ export async function runMain(options: CliOptions) {
                 sourceMapUrl: bundle.sourceMapUrl!,
                 filesExtracted: reconstructResult.filesWritten,
                 files: files
-                    .filter((f) =>
+                    .filter((_f) =>
                         reconstructResult.filesWritten > 0 ? true : false,
                     )
                     .map((f) => f.path)
@@ -522,9 +544,12 @@ export async function runMain(options: CliOptions) {
                                     depSpinner.text = `Checking ${packageName}`;
                                     break;
                                 case 'fingerprinted':
-                                    if (result) {
+                                    if (result && 'similarity' in result) {
+                                        const similarity = (
+                                            result as { similarity: number }
+                                        ).similarity;
                                         depSpinner.text = chalk.green(
-                                            `Matched ${packageName}@${result.version} (${((result as any).similarity * 100).toFixed(0)}%)`,
+                                            `Matched ${packageName}@${result.version} (${(similarity * 100).toFixed(0)}%)`,
                                         );
                                     }
                                     break;
@@ -642,11 +667,11 @@ export async function runMain(options: CliOptions) {
                 // This ensures aliased packages like 'sarsaparilla' -> '@fp/sarsaparilla'
                 // don't get stub files generated for them
                 const installedPackages = new Set<string>();
-                const pkgDeps = (packageJson as any).dependencies || {};
-                const pkgDevDeps = (packageJson as any).devDependencies || {};
-                const pkgInternal =
-                    (packageJson as any)._internalDependencies || {};
-                const pkgAliases = (packageJson as any)._importAliases || {};
+                const pkgData = packageJson as GeneratedPackageJson;
+                const pkgDeps = pkgData.dependencies || {};
+                const pkgDevDeps = pkgData.devDependencies || {};
+                const pkgInternal = pkgData._internalDependencies || {};
+                const pkgAliases = pkgData._importAliases || {};
                 for (const pkg of [
                     ...Object.keys(pkgDeps),
                     ...Object.keys(pkgDevDeps),

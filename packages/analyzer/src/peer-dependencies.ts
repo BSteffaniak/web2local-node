@@ -11,6 +11,18 @@
 import { getPackageMetadata } from './source-fingerprint.js';
 import { VersionResult, VersionConfidence } from './version-detector.js';
 
+/**
+ * Version details from npm package metadata
+ */
+interface VersionDetails {
+    main?: string;
+    module?: string;
+    exports?: Record<string, unknown>;
+    types?: string;
+    peerDependencies?: Record<string, string>;
+    dependencies?: Record<string, string>;
+}
+
 export interface PeerDepResult extends VersionResult {
     inferredFrom: string;
     peerRange: string;
@@ -212,7 +224,7 @@ export async function inferFromKnownPeers(
 
         for (const [version, details] of Object.entries(
             metadata.versionDetails,
-        ) as [string, any][]) {
+        ) as [string, VersionDetails][]) {
             if (!details.peerDependencies) continue;
 
             let peerMatchCount = 0;
@@ -221,12 +233,12 @@ export async function inferFromKnownPeers(
 
             for (const [peerName, peerRange] of Object.entries(
                 details.peerDependencies,
-            ) as [string, any][]) {
+            )) {
                 peerTotalCount++;
                 const known = knownVersions.get(peerName);
 
                 if (known) {
-                    if (satisfiesRange(known.version, peerRange as string)) {
+                    if (satisfiesRange(known.version, peerRange)) {
                         peerMatchCount++;
                     } else {
                         // This version's peer deps don't match our known version
@@ -338,7 +350,7 @@ export async function inferFromPeerRequirements(
 
         for (const [version, details] of Object.entries(
             metadata.versionDetails,
-        ) as [string, any][]) {
+        ) as [string, VersionDetails][]) {
             if (!details.peerDependencies) continue;
 
             for (const [peerName, peerRange] of Object.entries(
@@ -347,23 +359,21 @@ export async function inferFromPeerRequirements(
                 const known = knownVersions.get(peerName);
                 if (!known) continue;
 
-                if (satisfiesRange(known.version, peerRange as string)) {
+                if (satisfiesRange(known.version, peerRange)) {
                     // Calculate specificity - more specific ranges are better
                     let specificity = 0;
-                    if (/^\d+\.\d+\.\d+$/.test(peerRange as string)) {
+                    if (/^\d+\.\d+\.\d+$/.test(peerRange)) {
                         specificity = 3; // Exact version
-                    } else if (
-                        /^[\^~]\d+\.\d+\.\d+$/.test(peerRange as string)
-                    ) {
+                    } else if (/^[\^~]\d+\.\d+\.\d+$/.test(peerRange)) {
                         specificity = 2; // Patch-level range
-                    } else if (/^[\^~]?\d+\.\d+/.test(peerRange as string)) {
+                    } else if (/^[\^~]?\d+\.\d+/.test(peerRange)) {
                         specificity = 1; // Minor-level range
                     }
 
                     candidates.push({
                         version,
                         matchedPeer: peerName,
-                        peerRange: peerRange as string,
+                        peerRange,
                         specificity,
                     });
                 }

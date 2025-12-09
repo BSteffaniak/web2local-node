@@ -431,7 +431,7 @@ export function preserveServerRenderedHtml(
 
             if (rebuiltPath) {
                 // Remove defer attribute (redundant for modules)
-                let attrs = (beforeSrc + afterSrc)
+                const attrs = (beforeSrc + afterSrc)
                     .replace(/\sdefer(?:=["'][^"']*["'])?/gi, '')
                     .replace(/\s+/g, ' ')
                     .trim();

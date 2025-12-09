@@ -909,7 +909,7 @@ export function stripComments(sourceCode: string): string {
             // Check if this could be a regex (after certain tokens)
             const before = sourceCode.slice(Math.max(0, i - 10), i).trim();
             const regexPreceding =
-                /[=(:,\[!&|?{};]$/.test(before) ||
+                /[=(:,[!&|?{};]$/.test(before) ||
                 before === '' ||
                 /\breturn$/.test(before);
 

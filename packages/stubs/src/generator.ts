@@ -22,10 +22,7 @@ import {
     generateCssStubFromBundle,
 } from './css-recovery.js';
 
-import {
-    generateScssVariableStubs,
-    type ScssVariableStubResult,
-} from './scss-variable-stub.js';
+import { generateScssVariableStubs } from './scss-variable-stub.js';
 
 import {
     findAndResolveAssetStubs,

@@ -276,7 +276,6 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
         projectDir,
         recovery = true,
         maxRecoveryAttempts = 3,
-        lenient = false,
         verbose = false,
         onProgress,
         packageManager: explicitPackageManager,

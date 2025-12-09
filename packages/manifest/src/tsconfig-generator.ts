@@ -228,7 +228,7 @@ export async function writeTsConfig(
  */
 function sanitizeSourceMapPath(relativePath: string): string {
     // Remove leading ./ if present
-    let path = relativePath.replace(/^\.[\\/]+/, '');
+    const path = relativePath.replace(/^\.[\\/]+/, '');
 
     // Split into segments
     const segments = path.split(/[/\\]/);

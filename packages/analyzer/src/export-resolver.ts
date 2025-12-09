@@ -202,7 +202,8 @@ export async function findDependencyReexport(
 
                 // Check if this import includes the name we're looking for
                 const namedImport = imp.namedImportDetails.find(
-                    (n: any) => n.name === exportName,
+                    (n: { name: string; isTypeOnly: boolean }) =>
+                        n.name === exportName,
                 );
 
                 if (namedImport) {

@@ -261,7 +261,7 @@ export async function findSourceMapUrl(
 
         // No source map found - return bundle content for fallback saving and vendor analysis
         return { sourceMapUrl: null, bundleContent: text };
-    } catch (error) {
+    } catch (_error) {
         // Cache negative result on error
         await cache.setSourceMapDiscovery(bundleUrl, null);
         return { sourceMapUrl: null };

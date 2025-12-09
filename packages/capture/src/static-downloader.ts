@@ -321,7 +321,7 @@ function urlToLocalPath(url: string, baseUrl: string): string {
     ) {
         // Extract subdomain prefix (cdn, static, etc.)
         const subdomain = urlHost.split('.')[0];
-        let path = urlObj.pathname;
+        const path = urlObj.pathname;
 
         // Remove leading slash and prefix with _subdomain/
         return `_${subdomain}${path}`;

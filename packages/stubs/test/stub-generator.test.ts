@@ -2380,8 +2380,6 @@ describe('duplicate identifier prevention', () => {
 
         expect(generated).toBe(true);
 
-        // Count occurrences of LocationSuggestion exports
-        const matches = content.match(/LocationSuggestion/g) || [];
         // Should only appear once in an export statement (either as type or value, not both)
         const exportMatches =
             content.match(/export.*LocationSuggestion/g) || [];

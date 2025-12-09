@@ -79,9 +79,41 @@ export interface CliOptions {
 }
 
 /**
+ * CLI options for serve command
+ */
+interface ServeCliOptions {
+    port?: string;
+    host?: string;
+    delay?: string;
+    cors?: boolean;
+    staticOnly?: boolean;
+    apiOnly?: boolean;
+    verbose?: boolean;
+    useRebuilt?: boolean;
+}
+
+/**
+ * CLI options for extract command
+ */
+interface ExtractCliOptions {
+    output: string;
+    verbose?: boolean;
+    includeNodeModules?: boolean;
+    concurrency: string;
+    cache?: boolean;
+    crawl?: boolean;
+    crawlMaxDepth: string;
+    crawlMaxPages: string;
+    headless?: boolean;
+}
+
+/**
  * Extract server options from parsed CLI options
  */
-function getServerOptions(cliOptions: any, outputDir: string): ServerOptions {
+function getServerOptions(
+    cliOptions: ServeCliOptions,
+    outputDir: string,
+): ServerOptions {
     return {
         dir: outputDir,
         port: cliOptions.port ? parseInt(cliOptions.port, 10) : 3000,
@@ -383,7 +415,7 @@ export function parseArgs(): CliOptions {
             .argument('<dir>', 'Directory containing the captured site'),
     )
         .option('-v, --verbose', 'Enable verbose logging', false)
-        .action(async (dir: string, opts: any) => {
+        .action(async (dir: string, opts: ServeCliOptions) => {
             const { runServer } = await import('@web2local/server');
             const { resolve } = await import('path');
 
@@ -433,7 +465,7 @@ export function parseArgs(): CliOptions {
             '100',
         )
         .option('--no-headless', 'Run browser in visible mode (not headless)')
-        .action(async (url: string, opts: any) => {
+        .action(async (url: string, opts: ExtractCliOptions) => {
             const { runExtract } = await import('./run-extract.js');
             await runExtract({
                 url,

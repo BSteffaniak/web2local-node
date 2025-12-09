@@ -6,26 +6,17 @@
  */
 
 import { join } from 'path';
-import {
-    BrowserManager,
-    autoScrollPage,
-    waitForNetworkIdle,
-    extractPageLinks,
-    normalizeUrlForCrawl,
-} from './browser.js';
+import { BrowserManager } from './browser.js';
 import {
     ApiInterceptor,
     deduplicateFixtures,
     sortFixturesByPriority,
 } from './api-interceptor.js';
 import { StaticCapturer } from './static-downloader.js';
-import {
-    generateServerManifest,
-    generateCaptureSummary,
-} from '@web2local/manifest';
+import { generateServerManifest } from '@web2local/manifest';
 import { CrawlQueue } from './crawl-queue.js';
 import { CrawlWorker, type SharedCrawlState } from './crawl-worker.js';
-import { smartWaitForPage } from './smart-wait.js';
+
 import type {
     CaptureOptions,
     CaptureResult,

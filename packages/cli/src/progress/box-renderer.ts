@@ -17,6 +17,7 @@ export interface BoxContent {
 }
 
 // ANSI escape code regex for stripping colors
+// eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 
 /**
