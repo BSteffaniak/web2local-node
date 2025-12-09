@@ -10,6 +10,7 @@
 import { Root } from 'postcss';
 import { parse as parseScssFile } from 'postcss-scss';
 import { dirname, basename, join } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import { readFile, writeFile, readdir } from 'fs/promises';
 
 /**
@@ -244,7 +245,7 @@ export function generateVariableStubContent(variables: Set<string>): string {
 export function getStubFilename(scssFilePath: string): string {
     const dir = dirname(scssFilePath);
     const base = basename(scssFilePath, '.scss');
-    return join(dir, `${base}._variables-stub.scss`);
+    return toPosixPath(join(dir, `${base}._variables-stub.scss`));
 }
 
 /**
@@ -338,7 +339,7 @@ async function findScssFiles(dir: string): Promise<string[]> {
             ) {
                 // Skip already-generated stub files
                 if (!entry.name.includes('._variables-stub')) {
-                    files.push(fullPath);
+                    files.push(toPosixPath(fullPath));
                 }
             }
         }
