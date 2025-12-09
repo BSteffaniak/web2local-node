@@ -456,3 +456,713 @@ describe('parseSourceMapAuto', () => {
         expect(result.version).toBe(3);
     });
 });
+
+// ============================================================================
+// INDEX MAP VALIDATION TESTS
+// ============================================================================
+
+describe('validateSourceMap - Index Maps', () => {
+    // Helper to create a minimal valid regular source map
+    function validRegularMap() {
+        return {
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+        };
+    }
+
+    // Helper to create a minimal valid index map
+    function validIndexMap(sections: unknown[] = []) {
+        return {
+            version: 3,
+            sections,
+        };
+    }
+
+    // Helper to create a valid section
+    function validSection(line = 0, column = 0) {
+        return {
+            offset: { line, column },
+            map: validRegularMap(),
+        };
+    }
+
+    describe('index map detection', () => {
+        it('detects object with sections as index map', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [],
+            });
+            // Empty sections is valid for an index map
+            expect(result.valid).toBe(true);
+        });
+
+        it('detects object without sections as regular source map', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sources: ['index.ts'],
+                mappings: 'AAAA',
+            });
+            expect(result.valid).toBe(true);
+        });
+
+        it('treats object with sections as index map even if it has sources', () => {
+            // If sections is present, it's an index map - sources would be ignored
+            // but mappings being present would cause an error
+            const result = validateSourceMap({
+                version: 3,
+                sections: [validSection()],
+                sources: ['index.ts'], // This is ignored for index maps
+            });
+            expect(result.valid).toBe(true);
+        });
+    });
+
+    describe('valid index maps', () => {
+        it('accepts empty sections array', () => {
+            const result = validateSourceMap(validIndexMap([]));
+            expect(result.valid).toBe(true);
+        });
+
+        it('accepts single section with valid offset and map', () => {
+            const result = validateSourceMap(validIndexMap([validSection()]));
+            expect(result.valid).toBe(true);
+        });
+
+        it('accepts multiple sections in ascending order by line', () => {
+            const result = validateSourceMap(
+                validIndexMap([
+                    validSection(0, 0),
+                    validSection(1, 0),
+                    validSection(2, 0),
+                ]),
+            );
+            expect(result.valid).toBe(true);
+        });
+
+        it('accepts multiple sections in ascending order by column', () => {
+            const result = validateSourceMap(
+                validIndexMap([
+                    validSection(0, 0),
+                    validSection(0, 10),
+                    validSection(0, 20),
+                ]),
+            );
+            expect(result.valid).toBe(true);
+        });
+
+        it('accepts index map with optional file field', () => {
+            const result = validateSourceMap({
+                version: 3,
+                file: 'bundle.js',
+                sections: [validSection()],
+            });
+            expect(result.valid).toBe(true);
+        });
+
+        it('accepts section map with all optional fields', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: {
+                            version: 3,
+                            file: 'chunk.js',
+                            sourceRoot: 'src/',
+                            sources: ['index.ts'],
+                            sourcesContent: ['export default 1;'],
+                            names: ['foo'],
+                            mappings: 'AAAA',
+                            ignoreList: [],
+                        },
+                    },
+                ],
+            });
+            expect(result.valid).toBe(true);
+        });
+    });
+
+    describe('invalid sections field', () => {
+        it('rejects sections as string', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: 'not an array',
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects sections as number', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: 123,
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects sections as null', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: null,
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects section entry that is not an object', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: ['not an object'],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'must be an object')).toBe(
+                true,
+            );
+        });
+
+        it('rejects section entry that is null', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [null],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'must be an object')).toBe(
+                true,
+            );
+        });
+
+        it('rejects section entry that is a number', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [123],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'must be an object')).toBe(
+                true,
+            );
+        });
+    });
+
+    describe('invalid offset', () => {
+        it('rejects missing offset', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ map: validRegularMap() }],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'offset is required')).toBe(
+                true,
+            );
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects offset as string', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: 'invalid', map: validRegularMap() }],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'offset must be an object'),
+            ).toBe(true);
+        });
+
+        it('rejects offset as null', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: null, map: validRegularMap() }],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'offset must be an object'),
+            ).toBe(true);
+        });
+
+        it('rejects missing offset.line', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: { column: 0 }, map: validRegularMap() }],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'offset.line is required'),
+            ).toBe(true);
+        });
+
+        it('rejects missing offset.column', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: { line: 0 }, map: validRegularMap() }],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'offset.column is required'),
+            ).toBe(true);
+        });
+
+        it('rejects offset.line as string', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 'zero', column: 0 },
+                        map: validRegularMap(),
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.line must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects offset.column as string', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 'zero' },
+                        map: validRegularMap(),
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.column must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects negative offset.line', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    { offset: { line: -1, column: 0 }, map: validRegularMap() },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.line must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects negative offset.column', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    { offset: { line: 0, column: -1 }, map: validRegularMap() },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.column must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects float offset.line', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 1.5, column: 0 },
+                        map: validRegularMap(),
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.line must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects float offset.column', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 1.5 },
+                        map: validRegularMap(),
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'offset.column must be a non-negative integer',
+                ),
+            ).toBe(true);
+        });
+    });
+
+    describe('section ordering', () => {
+        it('rejects sections out of order by line', () => {
+            const result = validateSourceMap(
+                validIndexMap([validSection(5, 0), validSection(3, 0)]),
+            );
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'sections must be in order'),
+            ).toBe(true);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects sections out of order by column on same line', () => {
+            const result = validateSourceMap(
+                validIndexMap([validSection(0, 20), validSection(0, 10)]),
+            );
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'sections must be in order'),
+            ).toBe(true);
+        });
+
+        it('accepts valid order with gaps between offsets', () => {
+            const result = validateSourceMap(
+                validIndexMap([
+                    validSection(0, 0),
+                    validSection(10, 0),
+                    validSection(100, 50),
+                ]),
+            );
+            expect(result.valid).toBe(true);
+        });
+    });
+
+    describe('section overlap', () => {
+        it('rejects two sections with same offset', () => {
+            const result = validateSourceMap(
+                validIndexMap([validSection(5, 10), validSection(5, 10)]),
+            );
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'overlaps')).toBe(true);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects three sections with same offset', () => {
+            const result = validateSourceMap(
+                validIndexMap([
+                    validSection(0, 0),
+                    validSection(0, 0),
+                    validSection(0, 0),
+                ]),
+            );
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'overlaps')).toBe(true);
+            // Should have multiple overlap errors
+            expect(
+                result.errors.filter(
+                    (e) => e.code === SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                ).length,
+            ).toBeGreaterThanOrEqual(2);
+        });
+    });
+
+    describe('invalid section map', () => {
+        it('rejects missing map field', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: { line: 0, column: 0 } }],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'map is required')).toBe(
+                true,
+            );
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects map as string', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    { offset: { line: 0, column: 0 }, map: 'not an object' },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'map must be an object'),
+            ).toBe(true);
+        });
+
+        it('rejects map as null', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: { line: 0, column: 0 }, map: null }],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'map must be an object'),
+            ).toBe(true);
+        });
+
+        it('rejects map missing required fields', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: { version: 3 }, // Missing sources and mappings
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'Missing required field'),
+            ).toBe(true);
+        });
+
+        it('propagates errors from invalid mappings in section map', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: {
+                            version: 3,
+                            sources: ['index.ts'],
+                            mappings: 'INVALID$MAPPINGS',
+                        },
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(hasErrorMessage(result.errors, 'non-base64 character')).toBe(
+                true,
+            );
+        });
+    });
+
+    describe('nested index maps', () => {
+        it('rejects section map that is itself an index map', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: {
+                            version: 3,
+                            sections: [], // This makes it an index map
+                        },
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(result.errors, 'nested index maps not allowed'),
+            ).toBe(true);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_NESTED,
+                ),
+            ).toBe(true);
+        });
+
+        it('rejects deeply nested index map', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: {
+                            version: 3,
+                            sections: [
+                                {
+                                    offset: { line: 0, column: 0 },
+                                    map: validRegularMap(),
+                                },
+                            ],
+                        },
+                    },
+                ],
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_NESTED,
+                ),
+            ).toBe(true);
+        });
+    });
+
+    describe('index map with mappings field', () => {
+        it('rejects index map with both sections and mappings', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [validSection()],
+                mappings: 'AAAA',
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorMessage(
+                    result.errors,
+                    'cannot have both "sections" and "mappings"',
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INDEX_MAP_WITH_MAPPINGS error code', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [],
+                mappings: 'AAAA',
+            });
+            expect(result.valid).toBe(false);
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
+                ),
+            ).toBe(true);
+        });
+    });
+
+    describe('error codes', () => {
+        it('returns INVALID_INDEX_MAP_SECTIONS for invalid sections array', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: 'invalid',
+            });
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INVALID_INDEX_MAP_OFFSET for offset errors', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: null, map: validRegularMap() }],
+            });
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INVALID_INDEX_MAP_SECTION_MAP for map errors', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [{ offset: { line: 0, column: 0 }, map: null }],
+            });
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INDEX_MAP_OVERLAP for overlapping sections', () => {
+            const result = validateSourceMap(
+                validIndexMap([validSection(0, 0), validSection(0, 0)]),
+            );
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INDEX_MAP_INVALID_ORDER for out-of-order sections', () => {
+            const result = validateSourceMap(
+                validIndexMap([validSection(10, 0), validSection(5, 0)]),
+            );
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INDEX_MAP_NESTED for nested index maps', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [
+                    {
+                        offset: { line: 0, column: 0 },
+                        map: { version: 3, sections: [] },
+                    },
+                ],
+            });
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_NESTED,
+                ),
+            ).toBe(true);
+        });
+
+        it('returns INDEX_MAP_WITH_MAPPINGS for mixed format', () => {
+            const result = validateSourceMap({
+                version: 3,
+                sections: [],
+                mappings: 'AAAA',
+            });
+            expect(
+                hasErrorCode(
+                    result.errors,
+                    SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
+                ),
+            ).toBe(true);
+        });
+    });
+});
