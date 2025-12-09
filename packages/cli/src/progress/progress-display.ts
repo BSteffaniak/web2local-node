@@ -256,7 +256,6 @@ export class ProgressDisplay {
         // Last resort - process.on('exit') is synchronous only
         const exitHandler = () => {
             if (this.started) {
-                terminal.write(terminal.resetScrollRegion());
                 terminal.write(terminal.showCursor());
             }
         };
@@ -287,9 +286,6 @@ export class ProgressDisplay {
 
         // Move cursor to top of cleared area
         terminal.write(terminal.moveTo(this.tuiStartRow, 1));
-
-        // Reset any scroll region (safety)
-        terminal.write(terminal.resetScrollRegion());
 
         // Show cursor
         terminal.write(terminal.showCursor());
@@ -391,9 +387,6 @@ export class ProgressDisplay {
 
         // Move cursor to top of cleared area
         terminal.write(terminal.moveTo(this.tuiStartRow, 1));
-
-        // Reset scroll region (safety)
-        terminal.write(terminal.resetScrollRegion());
 
         // Show cursor
         terminal.write(terminal.showCursor());
