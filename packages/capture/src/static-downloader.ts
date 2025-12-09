@@ -268,6 +268,70 @@ export function passesFilter(
 }
 
 /**
+ * Early filter check using only URL information.
+ * Returns false if the URL definitely fails the filter.
+ * Returns true if the URL might pass (needs full check with contentType later).
+ *
+ * This is used for optimization - we can skip assets early without fetching
+ * their response body if we know they'll fail URL-based filter criteria.
+ *
+ * Note: MIME type filtering cannot be done early as it requires the Content-Type
+ * header. If the filter has mimeTypes, this function will return true and the
+ * full passesFilter() check must be done later.
+ *
+ * @param url - The URL of the asset
+ * @param filter - The filter to apply (optional)
+ * @returns false if definitely filtered out, true if might pass
+ */
+export function passesFilterEarly(
+    url: string,
+    filter?: StaticAssetFilter,
+): boolean {
+    // No filter means capture everything
+    if (!filter) {
+        return true;
+    }
+
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const ext = extname(pathname).toLowerCase();
+
+    // Check extension filter (definitive - URL only)
+    if (filter.extensions && filter.extensions.length > 0) {
+        const normalizedExts = filter.extensions.map((e) =>
+            e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`,
+        );
+        if (!normalizedExts.includes(ext)) {
+            return false;
+        }
+    }
+
+    // Check include patterns (definitive - URL only)
+    if (filter.includePatterns && filter.includePatterns.length > 0) {
+        const matchesInclude = filter.includePatterns.some((pattern) =>
+            minimatch(pathname, pattern, { matchBase: true }),
+        );
+        if (!matchesInclude) {
+            return false;
+        }
+    }
+
+    // Check exclude patterns (definitive - URL only)
+    if (filter.excludePatterns && filter.excludePatterns.length > 0) {
+        const matchesExclude = filter.excludePatterns.some((pattern) =>
+            minimatch(pathname, pattern, { matchBase: true }),
+        );
+        if (matchesExclude) {
+            return false;
+        }
+    }
+
+    // MIME type check requires Content-Type header - can't check early
+    // Return true to indicate "might pass, needs full check later"
+    return true;
+}
+
+/**
  * Extract the base domain from a host (removes www. prefix)
  */
 function getBaseDomain(host: string): string {
@@ -615,6 +679,17 @@ export class StaticCapturer {
                 return;
             }
 
+            // Early URL-based filtering (avoids fetching body for filtered assets)
+            // This checks extensions, include patterns, and exclude patterns.
+            // MIME type filtering is deferred to captureAsset() since it needs headers.
+            if (
+                this.options.staticFilter &&
+                !passesFilterEarly(url, this.options.staticFilter)
+            ) {
+                this.log(`[Static] Skipping ${url} (does not pass URL filter)`);
+                return;
+            }
+
             // Only capture successful responses
             if (!response.ok()) {
                 this.log(
@@ -653,7 +728,31 @@ export class StaticCapturer {
     ): Promise<void> {
         try {
             const headers = response.headers();
-            // Check content length header first
+
+            // Get content type early (from headers, doesn't require body)
+            const contentType = getContentType(response, url);
+
+            // Apply MIME type filter BEFORE fetching body (optimization)
+            // Note: Extension/pattern checks were already done in response handler
+            // via passesFilterEarly(). Here we only need to check if MIME type
+            // filtering is configured and if so, apply the full filter.
+            if (this.options.staticFilter?.mimeTypes?.length) {
+                if (
+                    !passesFilter(
+                        url,
+                        contentType,
+                        resourceType,
+                        this.options.staticFilter,
+                    )
+                ) {
+                    this.log(
+                        `[Static] Skipping ${url} (does not pass MIME type filter)`,
+                    );
+                    return;
+                }
+            }
+
+            // Check content length header
             const contentLength = parseInt(
                 headers['content-length'] || '0',
                 10,
@@ -665,7 +764,7 @@ export class StaticCapturer {
                 return;
             }
 
-            // Get the body from Playwright
+            // NOW fetch the body (only for assets that passed all filters)
             let body: Buffer;
             try {
                 body = await response.body();
@@ -722,24 +821,6 @@ export class StaticCapturer {
             if (body.length > this.options.maxFileSize) {
                 this.log(
                     `[Static] Skipping large file (body): ${url} (${body.length} bytes)`,
-                );
-                return;
-            }
-
-            const contentType = getContentType(response, url);
-
-            // Apply static filter if provided
-            if (
-                this.options.staticFilter &&
-                !passesFilter(
-                    url,
-                    contentType,
-                    resourceType,
-                    this.options.staticFilter,
-                )
-            ) {
-                this.log(
-                    `[Static] Skipping ${url} (does not pass static filter)`,
                 );
                 return;
             }

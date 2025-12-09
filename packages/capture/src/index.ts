@@ -50,6 +50,7 @@ export {
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
     passesFilter,
+    passesFilterEarly,
 } from './static-downloader.js';
 export {
     extractUrlPattern,

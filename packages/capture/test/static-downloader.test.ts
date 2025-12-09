@@ -9,6 +9,7 @@ import {
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
     passesFilter,
+    passesFilterEarly,
 } from '@web2local/capture';
 import type { StaticAssetFilter, ResourceType } from '@web2local/capture';
 
@@ -1109,6 +1110,198 @@ describe('passesFilter', () => {
                     filter,
                 ),
             ).toBe(false);
+        });
+    });
+});
+
+// ============================================================================
+// passesFilterEarly Tests
+// ============================================================================
+
+describe('passesFilterEarly', () => {
+    describe('no filter (pass-through)', () => {
+        it('should return true when no filter is provided', () => {
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                undefined,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should return true when filter is an empty object', () => {
+            const result = passesFilterEarly('https://example.com/app.js', {});
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('extension filtering', () => {
+        it('should return false when extension does not match', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilterEarly(
+                'https://example.com/image.png',
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should return true when extension matches', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should normalize extensions with leading dot', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should normalize extensions without leading dot', () => {
+            const filter: StaticAssetFilter = { extensions: ['js'] };
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should be case-insensitive for extensions', () => {
+            const filter: StaticAssetFilter = { extensions: ['.JS'] };
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle URLs with query strings', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilterEarly(
+                'https://example.com/app.js?v=123',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('include patterns', () => {
+        it('should return false when pathname does not match any include pattern', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/assets/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/scripts/app.js',
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should return true when pathname matches include pattern', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/assets/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/static/assets/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('exclude patterns', () => {
+        it('should return false when pathname matches exclude pattern', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/node_modules/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/node_modules/lodash/index.js',
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should return true when pathname does not match any exclude pattern', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/node_modules/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/src/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('MIME type filtering deferred', () => {
+        it('should return true when only mimeTypes filter is present (cannot check early)', () => {
+            const filter: StaticAssetFilter = {
+                mimeTypes: ['application/javascript'],
+            };
+            // Even though this is an image URL, we can't check MIME early
+            // so it returns true (needs full check later)
+            const result = passesFilterEarly(
+                'https://example.com/image.png',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('combined filters', () => {
+        it('should return false if extension fails even if patterns would pass', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                includePatterns: ['**/assets/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/assets/image.png',
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should return false if exclude pattern matches even if extension passes', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                excludePatterns: ['**/vendor/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/vendor/jquery.js',
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should return true when extension and patterns all pass', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js', '.css'],
+                includePatterns: ['**/assets/**'],
+                excludePatterns: ['**/vendor/**'],
+            };
+            const result = passesFilterEarly(
+                'https://example.com/assets/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should return true when extension passes but mimeTypes also present (deferred)', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                mimeTypes: ['application/javascript'],
+            };
+            // Extension passes, mimeTypes can't be checked early -> returns true
+            const result = passesFilterEarly(
+                'https://example.com/app.js',
+                filter,
+            );
+            expect(result).toBe(true);
         });
     });
 });
