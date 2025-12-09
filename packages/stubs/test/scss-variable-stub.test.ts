@@ -13,6 +13,7 @@ import { test, expect, describe, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile, mkdir } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { toPosixPath } from '@web2local/utils';
 import {
     parseScss,
     extractVariableDefinitions,
@@ -857,9 +858,13 @@ describe('generateScssVariableStubs', () => {
 
         // Only styles.scss should be processed
         expect(result.stubFilesGenerated).toBe(1);
-        expect(result.stubFiles.has(join(tempDir, 'styles.scss'))).toBe(true);
         expect(
-            result.stubFiles.has(join(tempDir, 'node_modules', 'pkg.scss')),
+            result.stubFiles.has(toPosixPath(join(tempDir, 'styles.scss'))),
+        ).toBe(true);
+        expect(
+            result.stubFiles.has(
+                toPosixPath(join(tempDir, 'node_modules', 'pkg.scss')),
+            ),
         ).toBe(false);
     });
 
@@ -877,7 +882,9 @@ describe('generateScssVariableStubs', () => {
         const result = await generateScssVariableStubs(tempDir);
 
         expect(result.stubFilesGenerated).toBe(1);
-        expect(result.stubFiles.has(join(tempDir, 'visible.scss'))).toBe(true);
+        expect(
+            result.stubFiles.has(toPosixPath(join(tempDir, 'visible.scss'))),
+        ).toBe(true);
     });
 
     test('should skip _rebuilt directory', async () => {
@@ -913,7 +920,9 @@ describe('generateScssVariableStubs', () => {
         // file is not included in the analysis. A new stub will be generated/overwritten.
         // This is correct behavior - on re-runs, the stub gets regenerated.
         expect(result.stubFilesGenerated).toBe(1);
-        expect(result.stubFiles.has(join(tempDir, 'styles.scss'))).toBe(true);
+        expect(
+            result.stubFiles.has(toPosixPath(join(tempDir, 'styles.scss'))),
+        ).toBe(true);
     });
 
     test('should not generate stub when variable is defined in another source file', async () => {
@@ -941,15 +950,19 @@ describe('generateScssVariableStubs', () => {
         const result = await generateScssVariableStubs(tempDir);
 
         expect(result.stubFilesGenerated).toBe(1);
-        const stubPath = join(
-            tempDir,
-            'components',
-            'button',
-            'button._variables-stub.scss',
+        const stubPath = toPosixPath(
+            join(
+                tempDir,
+                'components',
+                'button',
+                'button._variables-stub.scss',
+            ),
         );
         expect(
             result.stubFiles.get(
-                join(tempDir, 'components', 'button', 'button.scss'),
+                toPosixPath(
+                    join(tempDir, 'components', 'button', 'button.scss'),
+                ),
             ),
         ).toBe(stubPath);
     });
@@ -1019,7 +1032,9 @@ describe('generateScssVariableStubs', () => {
         const result = await generateScssVariableStubs(tempDir);
 
         // Should process .sass files
-        expect(result.stubFiles.has(join(tempDir, 'styles.sass'))).toBe(true);
+        expect(
+            result.stubFiles.has(toPosixPath(join(tempDir, 'styles.sass'))),
+        ).toBe(true);
     });
 
     test('should not re-inject import if already present', async () => {
