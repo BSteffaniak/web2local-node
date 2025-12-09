@@ -19,7 +19,7 @@ pnpm cli serve ./my-project
 
 ## Features
 
-- **Source Extraction** - Discovers JavaScript/CSS bundles and extracts original source files from source maps
+- **Source Extraction** - Discovers JavaScript/CSS bundles and extracts original source files from source maps with full [ECMA-426](https://tc39.es/ecma426/) spec compliance
 - **Multi-Page Crawling** - Follows links to discover bundles across an entire site
 - **Dependency Analysis** - Detects npm packages, infers versions from banners/lockfiles/fingerprinting
 - **API Capture** - Records API calls as fixtures for offline development
@@ -157,6 +157,19 @@ web2local serve <dir> [--port 3000]
 | [@web2local/manifest](./packages/manifest)   | Server manifest generation                    |
 | [@web2local/types](./packages/types)         | Shared TypeScript types                       |
 | [@web2local/utils](./packages/utils)         | Common utilities                              |
+
+## Spec Compliance
+
+The source map parser implements the [ECMA-426 Source Map](https://tc39.es/ecma426/) specification:
+
+- 100% of the official [tc39/source-map-tests](https://github.com/tc39/source-map-tests) test suite passes (99 tests)
+- Validates both regular source maps and index maps (concatenated source maps)
+- Full VLQ mapping validation including:
+    - Base64 character validation
+    - Segment field count (1, 4, or 5 fields)
+    - 32-bit integer range checking
+    - Source/name index bounds checking
+- `sourceMappingURL` extraction per sections 11.1.2.1 and 11.1.2.2
 
 ## Development
 

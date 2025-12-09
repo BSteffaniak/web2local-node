@@ -133,4 +133,13 @@ try {
 
 ## Spec Compliance
 
-The `sourceMappingURL` extraction follows [ECMA-426](https://tc39.es/ecma426/) sections 11.1.2.1 and 11.1.2.2. Per spec, only URLs in trailing comments are valid—if code follows a `sourceMappingURL` comment, that URL is ignored.
+This package implements the [ECMA-426 Source Map](https://tc39.es/ecma426/) specification:
+
+- 100% of the official [tc39/source-map-tests](https://github.com/tc39/source-map-tests) test suite passes (99 tests)
+- Validates both regular source maps and index maps (concatenated source maps)
+- Full VLQ mapping validation including:
+    - Base64 character validation
+    - Segment field count (1, 4, or 5 fields)
+    - 32-bit integer range checking
+    - Source/name index bounds checking
+- `sourceMappingURL` extraction per sections 11.1.2.1 and 11.1.2.2
