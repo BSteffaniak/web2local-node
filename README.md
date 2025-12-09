@@ -4,6 +4,11 @@ Extract and reconstruct original source code from production websites using publ
 
 ## Quick Start
 
+### Prerequisites
+
+- Node.js >= 20.12.0
+- pnpm >= 10.24.0
+
 ```bash
 git clone https://github.com/BSteffaniak/web2local-node
 cd web2local-node
@@ -172,19 +177,6 @@ The source map parser implements the [ECMA-426 Source Map](https://tc39.es/ecma4
 - `sourceMappingURL` extraction per sections 11.1.2.1 and 11.1.2.2
 
 ## Development
-
-### Prerequisites
-
-- Node.js >= 20.12.0
-- pnpm >= 10.24.0
-
-### Setup
-
-```bash
-git clone https://github.com/user/web2local.git
-cd web2local
-pnpm install
-```
 
 ### Commands
 
