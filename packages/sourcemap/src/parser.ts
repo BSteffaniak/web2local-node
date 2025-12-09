@@ -158,7 +158,7 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         if (!Array.isArray(obj.sourcesContent)) {
             errors.push(
                 validationError(
-                    SourceMapErrorCode.SOURCES_CONTENT_LENGTH_MISMATCH,
+                    SourceMapErrorCode.SOURCES_NOT_ARRAY,
                     'Field "sourcesContent" must be an array',
                     'sourcesContent',
                 ),

@@ -1,5 +1,5 @@
 /**
- * Source Map Extractor
+ * Source Extraction
  *
  * Extracts source files from a parsed source map.
  * Handles path normalization and filtering.

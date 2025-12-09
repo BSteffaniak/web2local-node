@@ -24,6 +24,28 @@ import {
 import { resolveSourceMapUrl, isDataUri } from './utils/url.js';
 
 // ============================================================================
+// INTERNAL HELPERS
+// ============================================================================
+
+/**
+ * Creates an AbortSignal that combines a timeout with an optional user signal.
+ * If both are provided, the signal aborts when either triggers.
+ */
+function createSignalWithTimeout(
+    timeout?: number,
+    signal?: AbortSignal,
+): AbortSignal | undefined {
+    if (!timeout && !signal) return undefined;
+    if (!timeout) return signal;
+
+    const timeoutSignal = AbortSignal.timeout(timeout);
+    if (!signal) return timeoutSignal;
+
+    // Combine both signals - abort when either fires
+    return AbortSignal.any([signal, timeoutSignal]);
+}
+
+// ============================================================================
 // HEADER DETECTION
 // ============================================================================
 
@@ -154,6 +176,7 @@ export async function probeSourceMapUrl(
     options?: DiscoverSourceMapOptions,
 ): Promise<string | null> {
     const mapUrl = bundleUrl + '.map';
+    const signal = createSignalWithTimeout(options?.timeout, options?.signal);
 
     try {
         const response = await robustFetch(mapUrl, {
@@ -162,7 +185,7 @@ export async function probeSourceMapUrl(
                 ...BROWSER_HEADERS,
                 ...options?.headers,
             },
-            signal: options?.signal,
+            signal,
         });
 
         if (!response.ok) {
@@ -201,7 +224,8 @@ export async function discoverSourceMap(
     bundleUrl: string,
     options?: DiscoverSourceMapOptions,
 ): Promise<SourceMapDiscoveryResult> {
-    const { headers = {}, signal } = options ?? {};
+    const { timeout, headers = {} } = options ?? {};
+    const signal = createSignalWithTimeout(timeout, options?.signal);
 
     try {
         // Fetch the bundle

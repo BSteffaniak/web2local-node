@@ -60,6 +60,24 @@ function createErrorResult(
     };
 }
 
+/**
+ * Creates an AbortSignal that combines a timeout with an optional user signal.
+ * If both are provided, the signal aborts when either triggers.
+ */
+function createSignalWithTimeout(
+    timeout?: number,
+    signal?: AbortSignal,
+): AbortSignal | undefined {
+    if (!timeout && !signal) return undefined;
+    if (!timeout) return signal;
+
+    const timeoutSignal = AbortSignal.timeout(timeout);
+    if (!signal) return timeoutSignal;
+
+    // Combine both signals - abort when either fires
+    return AbortSignal.any([signal, timeoutSignal]);
+}
+
 // ============================================================================
 // MAIN EXTRACTION FUNCTION
 // ============================================================================
@@ -98,9 +116,12 @@ export async function extractSourceMap(
         maxSize = DEFAULT_MAX_SOURCE_MAP_SIZE,
         timeout = DEFAULT_TIMEOUT,
         headers = {},
-        signal,
+        signal: userSignal,
         ...extractionOptions
     } = options ?? {};
+
+    // Create a combined signal with timeout
+    const signal = createSignalWithTimeout(timeout, userSignal);
 
     // Check for cancellation before starting
     if (signal?.aborted) {
@@ -115,7 +136,7 @@ export async function extractSourceMap(
     const discovery = await discoverSourceMap(bundleUrl, {
         timeout,
         headers,
-        signal,
+        signal: userSignal,
     });
 
     if (!discovery.found || !discovery.sourceMapUrl) {

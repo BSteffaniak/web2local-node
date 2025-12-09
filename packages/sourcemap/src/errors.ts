@@ -37,13 +37,10 @@ export enum SourceMapErrorCode {
     INVALID_NAMES = 'INVALID_NAMES',
 
     // === Content Errors ===
-    EMPTY_SOURCE_MAP = 'EMPTY_SOURCE_MAP',
     NO_EXTRACTABLE_SOURCES = 'NO_EXTRACTABLE_SOURCES',
-    ALL_SOURCES_NULL = 'ALL_SOURCES_NULL',
 
     // === Discovery Errors ===
     NO_SOURCE_MAP_FOUND = 'NO_SOURCE_MAP_FOUND',
-    INVALID_CONTENT_TYPE = 'INVALID_CONTENT_TYPE',
 
     // === Size Errors ===
     SOURCE_MAP_TOO_LARGE = 'SOURCE_MAP_TOO_LARGE',
