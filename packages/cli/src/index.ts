@@ -853,6 +853,9 @@ export async function runMain(options: CliOptions) {
         }).start();
         registry.register(captureSpinner);
 
+        // Track the last progress message for verbose logging
+        let lastProgressMessage = '';
+
         try {
             const captureResult = await captureWebsite({
                 url: options.url,
@@ -972,10 +975,17 @@ export async function runMain(options: CliOptions) {
                     }
 
                     if (message) {
-                        captureSpinner.text = message;
-                        if (options.verbose) {
-                            registry.safeLog(message, false);
+                        // In verbose mode, persist the previous unique message to log history
+                        if (
+                            options.verbose &&
+                            lastProgressMessage &&
+                            lastProgressMessage !== message
+                        ) {
+                            registry.safeLog(lastProgressMessage, true);
                         }
+
+                        captureSpinner.text = message;
+                        lastProgressMessage = message;
                     }
                 },
                 // Verbose logging that works with the spinner
@@ -989,6 +999,11 @@ export async function runMain(options: CliOptions) {
                       }
                     : undefined,
             });
+
+            // Persist the final progress message in verbose mode
+            if (options.verbose && lastProgressMessage) {
+                registry.safeLog(lastProgressMessage, true);
+            }
 
             // Generate summary
             const summary = generateCaptureSummary(

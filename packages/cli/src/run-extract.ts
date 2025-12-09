@@ -449,6 +449,9 @@ async function extractWithCrawl(
     }).start();
     registry.register(crawlSpinner);
 
+    // Track the last progress message for verbose logging
+    let lastProgressMessage = '';
+
     try {
         // Use captureWebsite with a filter for JS/CSS only and skipAssetWrite
         const result = await captureWebsite({
@@ -539,7 +542,17 @@ async function extractWithCrawl(
                 }
 
                 if (message) {
+                    // In verbose mode, persist the previous unique message to log history
+                    if (
+                        options.verbose &&
+                        lastProgressMessage &&
+                        lastProgressMessage !== message
+                    ) {
+                        registry.safeLog(lastProgressMessage, true);
+                    }
+
                     crawlSpinner.text = message;
+                    lastProgressMessage = message;
                 }
             },
             onVerbose: options.verbose
@@ -552,6 +565,11 @@ async function extractWithCrawl(
                   }
                 : undefined,
         });
+
+        // Persist the final progress message in verbose mode
+        if (options.verbose && lastProgressMessage) {
+            registry.safeLog(lastProgressMessage, true);
+        }
 
         const crawlStats = result.stats.crawlStats;
         crawlSpinner.succeed(
