@@ -5,8 +5,10 @@
 import type { Page, Request, Response } from 'playwright';
 import type {
     ApiFixture,
+    ApiCaptureEvent,
     CapturedRequest,
     CapturedResponse,
+    CaptureVerboseEvent,
     HttpMethod,
     ResourceType,
 } from './types.js';
@@ -24,10 +26,10 @@ export interface InterceptorOptions {
     maxBodySize: number;
     /** Verbose logging */
     verbose: boolean;
-    /** Progress callback */
-    onCapture?: (fixture: ApiFixture) => void;
-    /** Verbose log callback - use this instead of console.log when spinner is active */
-    onVerbose?: (message: string) => void;
+    /** Structured progress callback */
+    onCapture?: (event: ApiCaptureEvent) => void;
+    /** Structured verbose log callback */
+    onVerbose?: (event: CaptureVerboseEvent) => void;
 }
 
 const DEFAULT_OPTIONS: InterceptorOptions = {
@@ -284,19 +286,37 @@ export class ApiInterceptor {
 
                 if (fixture) {
                     this.fixtures.push(fixture);
-                    this.options.onCapture?.(fixture);
+                    this.options.onCapture?.({
+                        type: 'api-capture',
+                        method: fixture.request.method,
+                        url: fixture.request.url,
+                        pattern: fixture.request.pattern,
+                        status: fixture.response.status,
+                    });
 
                     if (this.options.verbose) {
-                        this.options.onVerbose?.(
-                            `Captured: ${fixture.request.method} ${fixture.request.pattern} (${fixture.response.status})`,
-                        );
+                        this.options.onVerbose?.({
+                            type: 'verbose',
+                            level: 'info',
+                            source: 'interceptor',
+                            message: `Captured: ${fixture.request.method} ${fixture.request.pattern} (${fixture.response.status})`,
+                            data: {
+                                method: fixture.request.method,
+                                pattern: fixture.request.pattern,
+                                status: fixture.response.status,
+                            },
+                        });
                     }
                 }
             } catch (error) {
                 if (this.options.verbose) {
-                    this.options.onVerbose?.(
-                        `Error capturing ${url}: ${error}`,
-                    );
+                    this.options.onVerbose?.({
+                        type: 'verbose',
+                        level: 'error',
+                        source: 'interceptor',
+                        message: `Error capturing ${url}: ${error}`,
+                        data: { url, error: String(error) },
+                    });
                 }
             }
         });

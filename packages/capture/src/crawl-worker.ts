@@ -10,6 +10,11 @@ import { StaticCapturer } from './static-downloader.js';
 import { ApiInterceptor } from './api-interceptor.js';
 import { extractPageLinks } from './browser.js';
 import { smartWaitForPage, sleep } from './smart-wait.js';
+import type {
+    OnCaptureProgress,
+    OnCaptureVerbose,
+    PageProgressEvent,
+} from './types.js';
 
 /**
  * Options for the crawl worker
@@ -25,6 +30,12 @@ export interface CrawlWorkerOptions {
     apiInterceptor: ApiInterceptor;
     /** Base origin for same-origin link filtering */
     baseOrigin: string;
+
+    // Worker context
+    /** Total number of workers */
+    workerCount: number;
+    /** Maximum number of pages to crawl */
+    maxPages: number;
 
     // Wait configuration
     /** Network idle wait timeout in ms */
@@ -53,10 +64,10 @@ export interface CrawlWorkerOptions {
     maxDepth: number;
 
     // Callbacks
-    /** Progress callback */
-    onProgress?: (message: string) => void;
-    /** Verbose log callback */
-    onVerbose?: (message: string) => void;
+    /** Structured progress callback */
+    onProgress?: OnCaptureProgress;
+    /** Structured verbose log callback */
+    onVerbose?: OnCaptureVerbose;
     /** Verbose mode enabled */
     verbose: boolean;
 }
@@ -109,11 +120,57 @@ export class CrawlWorker {
     ) {}
 
     /**
+     * Build a PageProgressEvent with current queue state
+     */
+    private buildProgressEvent(
+        phase: PageProgressEvent['phase'],
+        item: QueueItem,
+        extra?: Partial<PageProgressEvent>,
+    ): PageProgressEvent {
+        const { queue, workerCount, maxPages, maxDepth } = this.options;
+        const snapshot = queue.getSnapshot();
+
+        return {
+            type: 'page-progress',
+            workerId: this.workerId,
+            workerCount,
+            phase,
+            url: item.url,
+            pagesCompleted: snapshot.pagesCompleted,
+            maxPages,
+            depth: item.depth,
+            maxDepth,
+            queued: snapshot.queued,
+            inProgress: snapshot.inProgress,
+            ...extra,
+        };
+    }
+
+    /**
+     * Emit a verbose log event
+     */
+    private verbose(
+        message: string,
+        level: 'debug' | 'info' | 'warn' | 'error' = 'debug',
+        data?: Record<string, unknown>,
+    ): void {
+        if (!this.options.verbose) return;
+
+        this.options.onVerbose?.({
+            type: 'verbose',
+            level,
+            source: 'worker',
+            workerId: this.workerId,
+            message,
+            data,
+        });
+    }
+
+    /**
      * Run the worker until the queue is exhausted.
      */
     async run(): Promise<WorkerResult> {
-        const { queue, rateLimitDelay, onProgress, onVerbose, verbose } =
-            this.options;
+        const { queue, rateLimitDelay, onProgress } = this.options;
 
         while (!queue.isDone()) {
             const item = queue.take();
@@ -128,32 +185,46 @@ export class CrawlWorker {
             const isFirstPage = !this.sharedState.firstPageHandled;
 
             try {
-                if (verbose) {
-                    onVerbose?.(
-                        `[Worker ${this.workerId}] Processing: ${item.url} (depth ${item.depth}, retry ${item.retries})`,
-                    );
-                }
+                this.verbose(
+                    `Processing: ${item.url} (depth ${item.depth}, retry ${item.retries})`,
+                    'debug',
+                    { url: item.url, depth: item.depth, retries: item.retries },
+                );
 
-                onProgress?.(`[${this.workerId + 1}] Crawling: ${item.url}`);
+                onProgress?.(this.buildProgressEvent('navigating', item));
 
                 await this.processPage(item, isFirstPage);
                 queue.complete(item.url);
                 this.pagesProcessed++;
 
-                if (verbose) {
-                    onVerbose?.(
-                        `[Worker ${this.workerId}] Completed: ${item.url}`,
-                    );
-                }
-            } catch (error) {
-                const errorMsg = `[Worker ${this.workerId}] Error on ${item.url}: ${error}`;
+                onProgress?.(this.buildProgressEvent('completed', item));
 
-                if (verbose) {
-                    onVerbose?.(errorMsg);
-                }
+                this.verbose(`Completed: ${item.url}`, 'info', {
+                    url: item.url,
+                });
+            } catch (error) {
+                const errorStr = String(error);
+
+                this.verbose(`Error on ${item.url}: ${errorStr}`, 'error', {
+                    url: item.url,
+                    error: errorStr,
+                });
 
                 // Try to retry the URL
-                if (!queue.retry(item)) {
+                const willRetry = queue.retry(item);
+
+                onProgress?.(
+                    this.buildProgressEvent(
+                        willRetry ? 'retrying' : 'error',
+                        item,
+                        {
+                            error: errorStr,
+                            willRetry,
+                        },
+                    ),
+                );
+
+                if (!willRetry) {
                     // Max retries exceeded
                     this.errors.push(
                         `Failed after ${item.retries + 1} attempts: ${item.url}: ${error}`,
@@ -204,8 +275,6 @@ export class CrawlWorker {
         }
 
         // Navigate to the page
-        onProgress?.(`[${this.workerId + 1}] Navigating to ${item.url}...`);
-
         await page.goto(item.url, {
             waitUntil: 'domcontentloaded',
             timeout: pageTimeout,
@@ -220,9 +289,10 @@ export class CrawlWorker {
 
             // Handle redirects
             if (finalUrl !== item.url) {
-                onProgress?.(
-                    `[${this.workerId + 1}] Redirected to ${finalUrl}`,
-                );
+                this.verbose(`Redirected to ${finalUrl}`, 'info', {
+                    from: item.url,
+                    to: finalUrl,
+                });
 
                 // Mark the redirected URL as visited
                 queue.markVisited(finalUrl);
@@ -236,7 +306,7 @@ export class CrawlWorker {
         }
 
         // Wait for the page to settle
-        onProgress?.(`[${this.workerId + 1}] Waiting for page to settle...`);
+        onProgress?.(this.buildProgressEvent('waiting', item));
 
         await smartWaitForPage(page, {
             networkIdleTimeout,
@@ -251,12 +321,14 @@ export class CrawlWorker {
             this.sharedState.htmlCaptured = true;
             this.htmlCaptured = true;
 
-            onProgress?.(`[${this.workerId + 1}] Capturing HTML document...`);
+            onProgress?.(this.buildProgressEvent('capturing-html', item));
             await staticCapturer.captureDocument(page);
         }
 
         // Extract links for crawling
         if (crawlEnabled && item.depth < maxDepth) {
+            onProgress?.(this.buildProgressEvent('extracting-links', item));
+
             const links = await extractPageLinks(page, baseOrigin);
 
             let addedCount = 0;
@@ -266,9 +338,11 @@ export class CrawlWorker {
                 }
             }
 
-            if (this.options.verbose && addedCount > 0) {
-                this.options.onVerbose?.(
-                    `[Worker ${this.workerId}] Discovered ${addedCount} new links from ${item.url}`,
+            if (addedCount > 0) {
+                this.verbose(
+                    `Discovered ${addedCount} new links from ${item.url}`,
+                    'info',
+                    { url: item.url, linksDiscovered: addedCount },
                 );
             }
         }

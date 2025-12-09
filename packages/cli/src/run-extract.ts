@@ -480,11 +480,76 @@ async function extractWithCrawl(
                     contentType: asset.contentType,
                 });
             },
-            onProgress: (message: string) => {
-                crawlSpinner.text = message;
+            onProgress: (event) => {
+                let message = '';
+                switch (event.type) {
+                    case 'lifecycle':
+                        switch (event.phase) {
+                            case 'browser-launching':
+                                message = 'Launching browser...';
+                                break;
+                            case 'pages-created':
+                                message = `Created ${event.count} browser page(s)`;
+                                break;
+                            case 'crawl-starting':
+                                message = 'Starting crawl...';
+                                break;
+                        }
+                        break;
+
+                    case 'page-progress': {
+                        const {
+                            workerId,
+                            workerCount,
+                            phase,
+                            url,
+                            pagesCompleted,
+                            maxPages,
+                            depth,
+                            maxDepth,
+                            queued,
+                        } = event;
+                        const workerTag =
+                            workerCount > 1
+                                ? `[${workerId + 1}/${workerCount}] `
+                                : '';
+                        const shortUrl =
+                            url.length > 60 ? url.slice(0, 57) + '...' : url;
+
+                        switch (phase) {
+                            case 'navigating':
+                                message = `${workerTag}Page ${pagesCompleted + 1}/${maxPages} (d${depth}/${maxDepth}, ${queued}q): ${shortUrl}`;
+                                break;
+                            case 'waiting':
+                            case 'scrolling':
+                                message = `${workerTag}Waiting for page...`;
+                                break;
+                            case 'retrying':
+                                message = `${workerTag}Retrying: ${shortUrl}`;
+                                break;
+                            case 'completed':
+                                return;
+                        }
+                        break;
+                    }
+
+                    case 'asset-capture':
+                        message = `Asset: ${event.localPath}`;
+                        break;
+                }
+
+                if (message) {
+                    crawlSpinner.text = message;
+                }
             },
             onVerbose: options.verbose
-                ? (message: string) => registry.safeLog(message, true)
+                ? (event) => {
+                      const prefix =
+                          event.workerId !== undefined
+                              ? `[Worker ${event.workerId}] `
+                              : `[${event.source}] `;
+                      registry.safeLog(`${prefix}${event.message}`, true);
+                  }
                 : undefined,
         });
 

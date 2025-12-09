@@ -161,10 +161,10 @@ export interface CaptureOptions {
     verbose: boolean;
     /** Redirects detected during scraping phase (to be included in manifest) */
     scrapedRedirects?: CapturedRedirect[];
-    /** Progress callback */
-    onProgress?: (message: string) => void;
-    /** Verbose log callback - use this instead of console.log when spinner is active */
-    onVerbose?: (message: string) => void;
+    /** Structured progress callback */
+    onProgress?: OnCaptureProgress;
+    /** Structured verbose log callback */
+    onVerbose?: OnCaptureVerbose;
     /** Whether to crawl linked pages (default: true) */
     crawl?: boolean;
     /** Maximum depth of links to follow (default: 5) */
@@ -210,6 +210,140 @@ export interface CrawlStats {
     /** Whether crawling stopped due to max pages limit */
     maxPagesReached: boolean;
 }
+
+// ===== Structured Progress Event Types =====
+
+/**
+ * Progress event for page crawling operations
+ */
+export interface PageProgressEvent {
+    type: 'page-progress';
+    /** Current worker ID (0-indexed) */
+    workerId: number;
+    /** Total number of workers */
+    workerCount: number;
+    /** Current phase of page processing */
+    phase:
+        | 'navigating'
+        | 'waiting'
+        | 'scrolling'
+        | 'extracting-links'
+        | 'capturing-html'
+        | 'completed'
+        | 'error'
+        | 'retrying';
+    /** URL being processed */
+    url: string;
+    /** Number of pages completed so far */
+    pagesCompleted: number;
+    /** Maximum pages to crawl */
+    maxPages: number;
+    /** Current link depth */
+    depth: number;
+    /** Maximum link depth */
+    maxDepth: number;
+    /** Number of URLs still in queue */
+    queued: number;
+    /** Number of URLs currently being processed by workers */
+    inProgress: number;
+    /** Error message if phase is 'error' */
+    error?: string;
+    /** Whether the page will be retried if phase is 'error' */
+    willRetry?: boolean;
+    /** Number of links discovered from this page */
+    linksDiscovered?: number;
+}
+
+/**
+ * Progress event for API capture
+ */
+export interface ApiCaptureEvent {
+    type: 'api-capture';
+    /** HTTP method */
+    method: string;
+    /** Full URL */
+    url: string;
+    /** URL pattern (with path params normalized) */
+    pattern: string;
+    /** HTTP status code */
+    status: number;
+}
+
+/**
+ * Progress event for static asset capture
+ */
+export interface AssetCaptureEvent {
+    type: 'asset-capture';
+    /** Original URL of the asset */
+    url: string;
+    /** Local path where asset was saved */
+    localPath: string;
+    /** Content-Type header value */
+    contentType: string;
+    /** Size in bytes */
+    size: number;
+    /** Compressed size in bytes (if available) */
+    compressedSize?: number;
+}
+
+/**
+ * Progress event for capture lifecycle
+ */
+export interface CaptureLifecycleEvent {
+    type: 'lifecycle';
+    /** Current lifecycle phase */
+    phase:
+        | 'browser-launching'
+        | 'browser-launched'
+        | 'pages-creating'
+        | 'pages-created'
+        | 'crawl-starting'
+        | 'crawl-complete'
+        | 'manifest-generating'
+        | 'manifest-complete';
+    /** Number of pages/workers (for pages-created) */
+    count?: number;
+    /** Final crawl stats (for crawl-complete) */
+    stats?: CrawlStats;
+}
+
+/**
+ * All possible capture progress events
+ */
+export type CaptureProgressEvent =
+    | PageProgressEvent
+    | ApiCaptureEvent
+    | AssetCaptureEvent
+    | CaptureLifecycleEvent;
+
+/**
+ * Structured progress callback for capture operations
+ */
+export type OnCaptureProgress = (event: CaptureProgressEvent) => void;
+
+// ===== Structured Verbose Event Types =====
+
+/**
+ * Structured verbose log entry
+ */
+export interface CaptureVerboseEvent {
+    type: 'verbose';
+    /** Log level */
+    level: 'debug' | 'info' | 'warn' | 'error';
+    /** Source component */
+    source: 'worker' | 'queue' | 'interceptor' | 'static-capturer' | 'browser';
+    /** Worker ID if applicable */
+    workerId?: number;
+    /** Human-readable message */
+    message: string;
+    /** Additional context data */
+    data?: Record<string, unknown>;
+}
+
+/**
+ * Structured verbose callback
+ */
+export type OnCaptureVerbose = (event: CaptureVerboseEvent) => void;
 
 /**
  * Result of capture operation

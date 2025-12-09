@@ -141,7 +141,7 @@ export async function captureWebsite(
     const pageSettleTime = opts.pageSettleTime ?? 1000;
 
     // Initialize browser
-    opts.onProgress?.('Launching browser...');
+    opts.onProgress?.({ type: 'lifecycle', phase: 'browser-launching' });
     const browser = new BrowserManager({
         headless: opts.headless,
     });
@@ -150,10 +150,8 @@ export async function captureWebsite(
     const apiInterceptor = new ApiInterceptor({
         apiFilters: opts.apiFilter,
         verbose: opts.verbose,
-        onCapture: (fixture) => {
-            opts.onProgress?.(
-                `API: ${fixture.request.method} ${fixture.request.pattern}`,
-            );
+        onCapture: (event) => {
+            opts.onProgress?.(event);
         },
         onVerbose: opts.onVerbose,
     });
@@ -165,8 +163,8 @@ export async function captureWebsite(
         staticFilter: opts.staticFilter,
         onAssetCaptured: opts.onAssetCaptured,
         skipAssetWrite: opts.skipAssetWrite,
-        onCapture: (asset) => {
-            opts.onProgress?.(`Static: ${asset.localPath}`);
+        onCapture: (event) => {
+            opts.onProgress?.(event);
         },
         onVerbose: opts.onVerbose,
     });
@@ -193,11 +191,12 @@ export async function captureWebsite(
 
     try {
         await browser.launch();
+        opts.onProgress?.({ type: 'lifecycle', phase: 'browser-launched' });
 
         // Determine actual concurrency (limited by maxPages)
         const actualConcurrency = Math.min(concurrency, maxPages);
 
-        opts.onProgress?.(`Creating ${actualConcurrency} browser page(s)...`);
+        opts.onProgress?.({ type: 'lifecycle', phase: 'pages-creating' });
 
         // Create page pool and attach interceptors to all pages
         const pages = [];
@@ -213,9 +212,13 @@ export async function captureWebsite(
             pages.push(page);
         }
 
-        opts.onProgress?.(
-            `Starting parallel crawl with ${actualConcurrency} worker(s)...`,
-        );
+        opts.onProgress?.({
+            type: 'lifecycle',
+            phase: 'pages-created',
+            count: actualConcurrency,
+        });
+
+        opts.onProgress?.({ type: 'lifecycle', phase: 'crawl-starting' });
 
         // Create workers
         const workers = pages.map(
@@ -228,6 +231,8 @@ export async function captureWebsite(
                         staticCapturer,
                         apiInterceptor,
                         baseOrigin,
+                        workerCount: actualConcurrency,
+                        maxPages,
                         networkIdleTimeout,
                         networkIdleTime,
                         scrollDelay,
@@ -273,6 +278,26 @@ export async function captureWebsite(
         await browser.close();
     }
 
+    // Get crawl stats from queue (before emitting crawl-complete)
+    const queueStats = crawlQueue.getStats();
+
+    // Build crawl stats
+    const crawlStats: CrawlStats | undefined = crawlEnabled
+        ? {
+              pagesVisited: queueStats.pagesVisited,
+              pagesSkipped: queueStats.pagesSkipped,
+              linksDiscovered: queueStats.linksDiscovered,
+              maxDepthReached: queueStats.maxDepthReached,
+              maxPagesReached: queueStats.maxPagesReached,
+          }
+        : undefined;
+
+    opts.onProgress?.({
+        type: 'lifecycle',
+        phase: 'crawl-complete',
+        stats: crawlStats,
+    });
+
     // Get detected redirects from browser capture
     const browserRedirects = staticCapturer.getRedirects();
 
@@ -289,7 +314,7 @@ export async function captureWebsite(
 
     // Generate server manifest
     if (fixtures.length > 0 || assets.length > 0) {
-        opts.onProgress?.('Generating server manifest...');
+        opts.onProgress?.({ type: 'lifecycle', phase: 'manifest-generating' });
 
         try {
             const manifestResult = await generateServerManifest(
@@ -314,6 +339,11 @@ export async function captureWebsite(
             if (manifestResult.errors.length > 0) {
                 errors.push(...manifestResult.errors);
             }
+
+            opts.onProgress?.({
+                type: 'lifecycle',
+                phase: 'manifest-complete',
+            });
         } catch (error) {
             errors.push(`Manifest generation error: ${error}`);
         }
@@ -321,20 +351,6 @@ export async function captureWebsite(
 
     const captureTimeMs = Date.now() - startTime;
     const totalBytes = assets.reduce((sum, a) => sum + a.size, 0);
-
-    // Get crawl stats from queue
-    const queueStats = crawlQueue.getStats();
-
-    // Build crawl stats
-    const crawlStats: CrawlStats | undefined = crawlEnabled
-        ? {
-              pagesVisited: queueStats.pagesVisited,
-              pagesSkipped: queueStats.pagesSkipped,
-              linksDiscovered: queueStats.linksDiscovered,
-              maxDepthReached: queueStats.maxDepthReached,
-              maxPagesReached: queueStats.maxPagesReached,
-          }
-        : undefined;
 
     return {
         fixtures,

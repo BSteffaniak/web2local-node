@@ -226,6 +226,21 @@ export class CrawlQueue {
     }
 
     /**
+     * Get a snapshot of current queue state for progress reporting.
+     */
+    getSnapshot(): {
+        queued: number;
+        inProgress: number;
+        pagesCompleted: number;
+    } {
+        return {
+            queued: this.queue.length,
+            inProgress: this.inProgress.size,
+            pagesCompleted: this.completedCount,
+        };
+    }
+
+    /**
      * Check if a URL has been visited.
      */
     hasVisited(url: string): boolean {

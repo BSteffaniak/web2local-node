@@ -10,7 +10,9 @@ import { dirname, join, extname } from 'path';
 import { createHash } from 'crypto';
 import { minimatch } from 'minimatch';
 import type {
+    AssetCaptureEvent,
     CapturedAsset,
+    CaptureVerboseEvent,
     ResourceType,
     StaticAssetFilter,
     CapturedAssetInfo,
@@ -87,10 +89,10 @@ export interface StaticCaptureOptions {
     captureMediaSources: boolean;
     /** Verbose logging */
     verbose: boolean;
-    /** Progress callback */
-    onCapture?: (asset: CapturedAsset) => void;
-    /** Verbose log callback - handles spinner-safe logging */
-    onVerbose?: (message: string) => void;
+    /** Structured progress callback */
+    onCapture?: (event: AssetCaptureEvent) => void;
+    /** Structured verbose log callback */
+    onVerbose?: (event: CaptureVerboseEvent) => void;
 
     /**
      * Filter for selective asset capture.
@@ -455,11 +457,21 @@ export class StaticCapturer {
     /**
      * Log a verbose message - uses onVerbose callback if provided, otherwise console.log
      */
-    private log(message: string): void {
+    private log(
+        message: string,
+        level: 'debug' | 'info' | 'warn' | 'error' = 'debug',
+        data?: Record<string, unknown>,
+    ): void {
         if (!this.options.verbose) return;
 
         if (this.options.onVerbose) {
-            this.options.onVerbose(message);
+            this.options.onVerbose({
+                type: 'verbose',
+                level,
+                source: 'static-capturer',
+                message,
+                data,
+            });
         } else {
             console.log(message);
         }
@@ -838,7 +850,13 @@ export class StaticCapturer {
                     isEntrypoint,
                 };
                 this.assets.push(asset);
-                this.options.onCapture?.(asset);
+                this.options.onCapture?.({
+                    type: 'asset-capture',
+                    url,
+                    localPath,
+                    contentType,
+                    size: body.length,
+                });
                 return;
             }
 
@@ -862,7 +880,13 @@ export class StaticCapturer {
             };
 
             this.assets.push(asset);
-            this.options.onCapture?.(asset);
+            this.options.onCapture?.({
+                type: 'asset-capture',
+                url,
+                localPath,
+                contentType,
+                size: body.length,
+            });
 
             this.log(`[Static] Saved: ${localPath} (${body.length} bytes)`);
 
@@ -953,7 +977,13 @@ export class StaticCapturer {
 
         this.assets.push(asset);
         this.downloadedUrls.add(url);
-        this.options.onCapture?.(asset);
+        this.options.onCapture?.({
+            type: 'asset-capture',
+            url,
+            localPath,
+            contentType: 'text/html',
+            size: body.length,
+        });
 
         this.log(
             `[Static] Saved document: ${localPath} (${body.length} bytes)`,
@@ -1273,13 +1303,19 @@ export class StaticCapturer {
             };
 
             this.assets.push(asset);
-            this.options.onCapture?.(asset);
+            this.options.onCapture?.({
+                type: 'asset-capture',
+                url,
+                localPath,
+                contentType,
+                size: body.length,
+            });
 
             this.log(
                 `[Static] Fetched responsive asset: ${localPath} (${body.length} bytes)`,
             );
         } catch (error) {
-            this.log(`[Static] Error fetching ${url}: ${error}`);
+            this.log(`[Static] Error fetching ${url}: ${error}`, 'error');
         }
     }
 }

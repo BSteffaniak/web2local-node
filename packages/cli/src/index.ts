@@ -882,17 +882,111 @@ export async function runMain(options: CliOptions) {
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]
                     : undefined,
-                onProgress: options.verbose
-                    ? (message) => {
-                          captureSpinner.text = message;
-                          registry.safeLog(message, false);
-                      }
-                    : (message) => {
-                          captureSpinner.text = message;
-                      },
+                onProgress: (event) => {
+                    let message = '';
+                    switch (event.type) {
+                        case 'lifecycle':
+                            switch (event.phase) {
+                                case 'browser-launching':
+                                    message = 'Launching browser...';
+                                    break;
+                                case 'browser-launched':
+                                    message = 'Browser launched';
+                                    break;
+                                case 'pages-creating':
+                                    message = 'Creating browser pages...';
+                                    break;
+                                case 'pages-created':
+                                    message = `Created ${event.count} browser page(s)`;
+                                    break;
+                                case 'crawl-starting':
+                                    message = 'Starting crawl...';
+                                    break;
+                                case 'crawl-complete':
+                                    message = 'Crawl complete';
+                                    break;
+                                case 'manifest-generating':
+                                    message = 'Generating server manifest...';
+                                    break;
+                                case 'manifest-complete':
+                                    message = 'Manifest generated';
+                                    break;
+                            }
+                            break;
+
+                        case 'page-progress': {
+                            const {
+                                workerId,
+                                workerCount,
+                                phase,
+                                url,
+                                pagesCompleted,
+                                maxPages,
+                                depth,
+                                maxDepth,
+                                queued,
+                            } = event;
+                            const workerTag =
+                                workerCount > 1
+                                    ? `[${workerId + 1}/${workerCount}] `
+                                    : '';
+                            const shortUrl =
+                                url.length > 60
+                                    ? url.slice(0, 57) + '...'
+                                    : url;
+
+                            switch (phase) {
+                                case 'navigating':
+                                    message = `${workerTag}Page ${pagesCompleted + 1}/${maxPages} (d${depth}/${maxDepth}, ${queued}q): ${shortUrl}`;
+                                    break;
+                                case 'waiting':
+                                case 'scrolling':
+                                    message = `${workerTag}Waiting for page to settle...`;
+                                    break;
+                                case 'extracting-links':
+                                    message = `${workerTag}Extracting links...`;
+                                    break;
+                                case 'capturing-html':
+                                    message = `${workerTag}Capturing HTML document...`;
+                                    break;
+                                case 'retrying':
+                                    message = `${workerTag}Retrying: ${shortUrl}`;
+                                    break;
+                                case 'error':
+                                    message = `${workerTag}Error: ${shortUrl}`;
+                                    break;
+                                case 'completed':
+                                    // Don't update spinner for every completion
+                                    return;
+                            }
+                            break;
+                        }
+
+                        case 'api-capture':
+                            message = `API: ${event.method} ${event.pattern}`;
+                            break;
+
+                        case 'asset-capture':
+                            message = `Static: ${event.localPath}`;
+                            break;
+                    }
+
+                    if (message) {
+                        captureSpinner.text = message;
+                        if (options.verbose) {
+                            registry.safeLog(message, false);
+                        }
+                    }
+                },
                 // Verbose logging that works with the spinner
                 onVerbose: options.verbose
-                    ? (message) => registry.safeLog(message, true)
+                    ? (event) => {
+                          const prefix =
+                              event.workerId !== undefined
+                                  ? `[Worker ${event.workerId}] `
+                                  : `[${event.source}] `;
+                          registry.safeLog(`${prefix}${event.message}`, true);
+                      }
                     : undefined,
             });
 
