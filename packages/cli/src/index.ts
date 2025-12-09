@@ -1013,9 +1013,14 @@ export async function runMain(options: CliOptions) {
                             break;
                         }
 
-                        case 'lifecycle':
-                            // Lifecycle events don't need special handling with the new display
+                        case 'lifecycle': {
+                            if (event.phase === 'flushing-assets') {
+                                progress.setFlushing(event.pendingCount ?? 0);
+                            } else if (event.phase === 'flushing-complete') {
+                                progress.setFlushing(0);
+                            }
                             break;
+                        }
                     }
                 },
                 // Verbose logging

@@ -1220,6 +1220,13 @@ export class StaticCapturer {
     }
 
     /**
+     * Get the number of pending asset captures.
+     */
+    getPendingCount(): number {
+        return this.pendingCaptures.size + this.pendingResponsiveUrls.size;
+    }
+
+    /**
      * Wait for all pending captures to complete, then fetch any
      * responsive URLs discovered in CSS files.
      */

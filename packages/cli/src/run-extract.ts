@@ -594,7 +594,15 @@ async function extractWithCrawl(
                         break;
                     }
 
-                    case 'lifecycle':
+                    case 'lifecycle': {
+                        if (event.phase === 'flushing-assets') {
+                            progress.setFlushing(event.pendingCount ?? 0);
+                        } else if (event.phase === 'flushing-complete') {
+                            progress.setFlushing(0);
+                        }
+                        break;
+                    }
+
                     case 'api-capture':
                         // Not relevant for extract
                         break;

@@ -328,12 +328,16 @@ export interface CaptureLifecycleEvent {
         | 'pages-created'
         | 'crawl-starting'
         | 'crawl-complete'
+        | 'flushing-assets'
+        | 'flushing-complete'
         | 'manifest-generating'
         | 'manifest-complete';
     /** Number of pages/workers (for pages-created) */
     count?: number;
     /** Final crawl stats (for crawl-complete) */
     stats?: CrawlStats;
+    /** Number of pending items (for flushing-assets) */
+    pendingCount?: number;
 }
 
 /**

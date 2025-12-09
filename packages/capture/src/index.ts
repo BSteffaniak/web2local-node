@@ -269,7 +269,21 @@ export async function captureWebsite(
 
         // Wait for all pending asset captures to complete
         if (opts.captureStatic) {
+            const pendingCount = staticCapturer.getPendingCount();
+            if (pendingCount > 0) {
+                opts.onProgress?.({
+                    type: 'lifecycle',
+                    phase: 'flushing-assets',
+                    pendingCount,
+                });
+            }
             await staticCapturer.flush();
+            if (pendingCount > 0) {
+                opts.onProgress?.({
+                    type: 'lifecycle',
+                    phase: 'flushing-complete',
+                });
+            }
         }
 
         // Get captured data

@@ -102,6 +102,8 @@ export class ProgressDisplay {
     private cleanupHandlers: (() => void)[] = [];
     private renderInterval: NodeJS.Timeout | null = null;
     private readonly RENDER_INTERVAL_MS = 100;
+    private flushingCount: number = 0;
+    private flushingStartTime: number | null = null;
 
     constructor(options: ProgressDisplayOptions) {
         this.options = options;
@@ -267,6 +269,19 @@ export class ProgressDisplay {
     }
 
     /**
+     * Set the flushing state - shows a flushing indicator instead of worker status
+     * @param count Number of pending assets being flushed (0 to clear)
+     */
+    setFlushing(count: number): void {
+        this.flushingCount = count;
+        if (count > 0 && !this.flushingStartTime) {
+            this.flushingStartTime = Date.now();
+        } else if (count === 0) {
+            this.flushingStartTime = null;
+        }
+    }
+
+    /**
      * Log a message below the progress box
      */
     log(message: string): void {
@@ -298,12 +313,20 @@ export class ProgressDisplay {
         const width = this.options.maxWidth ?? terminal.getWidth();
         const innerWidth = width - 4; // Account for box borders
 
+        // When flushing, show a single flushing line instead of worker lines
+        let workerLines: string[];
+        if (this.flushingCount > 0) {
+            workerLines = this.buildFlushingLines(innerWidth);
+        } else {
+            workerLines = this.workers.flatMap((w, i) =>
+                this.buildWorkerLines(i, w, innerWidth),
+            );
+        }
+
         const content = {
             title: 'Capture Progress',
             statsLine: this.buildStatsLine(),
-            workerLines: this.workers.flatMap((w, i) =>
-                this.buildWorkerLines(i, w, innerWidth),
-            ),
+            workerLines,
         };
 
         const boxLines = renderBox(content, width);
@@ -363,6 +386,24 @@ export class ProgressDisplay {
         ];
 
         return parts.join(chalk.gray(' │ '));
+    }
+
+    /**
+     * Build lines for the flushing state
+     */
+    private buildFlushingLines(innerWidth: number): string[] {
+        const indicator = chalk.yellow('◐');
+        const elapsed = this.formatElapsed(this.flushingStartTime ?? undefined);
+        const message = `Flushing ${chalk.bold(this.flushingCount)} pending asset downloads...`;
+        const messageLen = visibleLength(message);
+        const padding = ' '.repeat(
+            Math.max(0, innerWidth - messageLen - elapsed.length - 4),
+        );
+
+        return [
+            `    ${indicator} ${message}${padding}${chalk.gray(elapsed)}`,
+            '', // Empty second line to maintain visual consistency
+        ];
     }
 
     /**
