@@ -11,6 +11,11 @@ import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import type { ExtractOptions } from './cli.js';
 import { SpinnerRegistry } from './spinner-registry.js';
+import {
+    ProgressDisplay,
+    formatUrlForLog,
+    type WorkerStatus,
+} from './progress/index.js';
 
 import {
     extractBundleUrls,
@@ -443,14 +448,15 @@ async function extractWithCrawl(
         { content: string; contentType: string }
     > = new Map();
 
-    const crawlSpinner = ora({
-        text: `Crawling ${options.url}...`,
-        color: 'cyan',
-    }).start();
-    registry.register(crawlSpinner);
+    // Create multi-line progress display
+    const progress = new ProgressDisplay({
+        workerCount: 5, // Default concurrency for extract
+        maxPages: options.crawlMaxPages ?? 100,
+        maxDepth: options.crawlMaxDepth ?? 5,
+        baseOrigin: options.url,
+    });
 
-    // Track the last progress message for verbose logging
-    let lastProgressMessage = '';
+    progress.start();
 
     try {
         // Use captureWebsite with a filter for JS/CSS only and skipAssetWrite
@@ -484,96 +490,99 @@ async function extractWithCrawl(
                 });
             },
             onProgress: (event) => {
-                let message = '';
                 switch (event.type) {
-                    case 'lifecycle':
-                        switch (event.phase) {
-                            case 'browser-launching':
-                                message = 'Launching browser...';
-                                break;
-                            case 'pages-created':
-                                message = `Created ${event.count} browser page(s)`;
-                                break;
-                            case 'crawl-starting':
-                                message = 'Starting crawl...';
-                                break;
-                        }
-                        break;
-
                     case 'page-progress': {
                         const {
                             workerId,
-                            workerCount,
                             phase,
                             url,
                             pagesCompleted,
-                            maxPages,
-                            depth,
-                            maxDepth,
                             queued,
+                            depth,
+                            linksDiscovered,
+                            error,
                         } = event;
-                        const workerTag =
-                            workerCount > 1
-                                ? `[${workerId + 1}/${workerCount}] `
-                                : '';
-                        const shortUrl =
-                            url.length > 60 ? url.slice(0, 57) + '...' : url;
 
-                        switch (phase) {
-                            case 'navigating':
-                                message = `${workerTag}Page ${pagesCompleted + 1}/${maxPages} (d${depth}/${maxDepth}, ${queued}q): ${shortUrl}`;
-                                break;
-                            case 'waiting':
-                            case 'scrolling':
-                                message = `${workerTag}Waiting for page...`;
-                                break;
-                            case 'retrying':
-                                message = `${workerTag}Retrying: ${shortUrl}`;
-                                break;
-                            case 'completed':
-                                return;
+                        // Map phase to worker status
+                        const statusMap: Record<string, WorkerStatus> = {
+                            navigating: 'navigating',
+                            waiting: 'waiting',
+                            scrolling: 'waiting',
+                            'extracting-links': 'extracting',
+                            'capturing-html': 'waiting',
+                            completed: 'idle',
+                            error: 'error',
+                            retrying: 'retrying',
+                        };
+
+                        // Update worker state
+                        progress.updateWorker(workerId, {
+                            status: statusMap[phase] || 'idle',
+                            url: phase === 'navigating' ? url : undefined,
+                        });
+
+                        // Update aggregate stats
+                        progress.updateStats({
+                            pagesCompleted,
+                            queued,
+                            currentDepth: depth,
+                        });
+
+                        // Log significant events
+                        const shortUrl = formatUrlForLog(url, options.url, 60);
+                        if (phase === 'completed') {
+                            const linkInfo =
+                                linksDiscovered !== undefined
+                                    ? ` (${linksDiscovered} links)`
+                                    : '';
+                            progress.log(
+                                `${chalk.green('✓')} Completed: ${shortUrl}${linkInfo}`,
+                            );
+                        } else if (phase === 'error') {
+                            progress.log(
+                                `${chalk.red('✗')} Error: ${shortUrl}${error ? ` - ${error}` : ''}`,
+                            );
+                        } else if (phase === 'retrying') {
+                            progress.log(
+                                `${chalk.yellow('↻')} Retrying: ${shortUrl}`,
+                            );
                         }
                         break;
                     }
 
-                    case 'asset-capture':
-                        message = `Asset: ${event.localPath}`;
+                    case 'asset-capture': {
+                        const stats = progress.getStats();
+                        progress.updateStats({
+                            assetsCaptured: stats.assetsCaptured + 1,
+                        });
+                        // Don't log individual assets - too noisy
                         break;
-                }
-
-                if (message) {
-                    // In verbose mode, persist the previous unique message to log history
-                    if (
-                        options.verbose &&
-                        lastProgressMessage &&
-                        lastProgressMessage !== message
-                    ) {
-                        registry.safeLog(lastProgressMessage, true);
                     }
 
-                    crawlSpinner.text = message;
-                    lastProgressMessage = message;
+                    case 'lifecycle':
+                    case 'api-capture':
+                        // Not relevant for extract
+                        break;
                 }
             },
             onVerbose: options.verbose
                 ? (event) => {
                       const prefix =
                           event.workerId !== undefined
-                              ? `[Worker ${event.workerId}] `
-                              : `[${event.source}] `;
-                      registry.safeLog(`${prefix}${event.message}`, true);
+                              ? `[Worker ${event.workerId}]`
+                              : `[${event.source}]`;
+                      progress.log(chalk.gray(`${prefix} ${event.message}`));
                   }
                 : undefined,
         });
 
-        // Persist the final progress message in verbose mode
-        if (options.verbose && lastProgressMessage) {
-            registry.safeLog(lastProgressMessage, true);
-        }
+        progress.stop();
 
         const crawlStats = result.stats.crawlStats;
-        crawlSpinner.succeed(
-            `Crawled ${chalk.bold(crawlStats?.pagesVisited || 1)} pages, found ${chalk.bold(capturedBundles.size)} bundles`,
+        console.log(
+            chalk.green(
+                `✓ Crawled ${chalk.bold(crawlStats?.pagesVisited || 1)} pages, found ${chalk.bold(capturedBundles.size)} bundles`,
+            ),
         );
 
         if (options.verbose) {
@@ -761,8 +770,11 @@ async function extractWithCrawl(
         }
         console.log();
     } catch (error) {
-        crawlSpinner.fail(
-            `Crawl failed: ${error instanceof Error ? error.message : error}`,
+        progress.stop();
+        console.log(
+            chalk.red(
+                `✗ Crawl failed: ${error instanceof Error ? error.message : error}`,
+            ),
         );
         process.exit(1);
     }
