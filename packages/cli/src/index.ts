@@ -987,11 +987,14 @@ export async function runMain(options: CliOptions) {
                                 currentUrl,
                                 currentSize,
                             } = event;
+                            const urlObj = currentUrl
+                                ? new URL(currentUrl)
+                                : null;
                             progress.updateWorker(workerId, {
                                 activeRequests,
-                                currentAsset: currentUrl
+                                currentAsset: urlObj
                                     ? {
-                                          path: new URL(currentUrl).pathname,
+                                          path: urlObj.pathname + urlObj.search,
                                           size: currentSize,
                                       }
                                     : undefined,
