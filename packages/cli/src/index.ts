@@ -4,9 +4,8 @@ import { parseArgs } from './cli.js';
 import { SpinnerRegistry } from './spinner-registry.js';
 import {
     ProgressDisplay,
-    formatUrlForLog,
-    type WorkerStatus,
-    type WorkerPhase,
+    createCaptureProgressHandler,
+    createVerboseHandler,
 } from './progress/index.js';
 
 /**
@@ -892,176 +891,15 @@ export async function runMain(options: CliOptions) {
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]
                     : undefined,
-                onProgress: (event) => {
-                    switch (event.type) {
-                        case 'page-progress': {
-                            const {
-                                workerId,
-                                phase,
-                                url,
-                                pagesCompleted,
-                                queued,
-                                depth,
-                                linksDiscovered,
-                                error,
-                            } = event;
-
-                            // Map phase to worker status (simplified display status)
-                            const statusMap: Record<string, WorkerStatus> = {
-                                navigating: 'navigating',
-                                'network-idle': 'waiting',
-                                scrolling: 'waiting',
-                                settling: 'waiting',
-                                'extracting-links': 'extracting',
-                                'capturing-html': 'waiting',
-                                completed: 'idle',
-                                error: 'error',
-                                retrying: 'retrying',
-                            };
-
-                            // Update worker state with both status and phase
-                            progress.updateWorker(workerId, {
-                                status: statusMap[phase] || 'idle',
-                                phase: phase as WorkerPhase,
-                                url,
-                            });
-
-                            // Update aggregate stats
-                            progress.updateStats({
-                                pagesCompleted,
-                                queued,
-                                currentDepth: depth,
-                            });
-
-                            // Log significant events
-                            const shortUrl = formatUrlForLog(
-                                url,
-                                options.url,
-                                60,
-                            );
-                            if (phase === 'completed') {
-                                const linkInfo =
-                                    linksDiscovered !== undefined
-                                        ? ` (${linksDiscovered} links)`
-                                        : '';
-                                progress.log(
-                                    `${chalk.green('✓')} Completed: ${shortUrl}${linkInfo}`,
-                                );
-                            } else if (phase === 'error') {
-                                progress.log(
-                                    `${chalk.red('✗')} Error: ${shortUrl}${error ? ` - ${error}` : ''}`,
-                                );
-                            } else if (phase === 'retrying') {
-                                progress.log(
-                                    `${chalk.yellow('↻')} Retrying: ${shortUrl}`,
-                                );
-                            }
-                            break;
-                        }
-
-                        case 'api-capture': {
-                            const stats = progress.getStats();
-                            progress.updateStats({
-                                apisCaptured: stats.apisCaptured + 1,
-                            });
-                            progress.log(
-                                `API: ${event.method} ${event.pattern} (${event.status})`,
-                            );
-                            break;
-                        }
-
-                        case 'asset-capture': {
-                            const stats = progress.getStats();
-                            progress.updateStats({
-                                assetsCaptured: stats.assetsCaptured + 1,
-                            });
-                            // Don't log individual assets - too noisy
-                            break;
-                        }
-
-                        case 'request-activity': {
-                            // Update worker with current request activity
-                            const {
-                                workerId,
-                                activeRequests,
-                                duplicateRequests,
-                                currentUrl,
-                                currentSize,
-                            } = event;
-                            const urlObj = currentUrl
-                                ? new URL(currentUrl)
-                                : null;
-
-                            // Determine if we need to transition status
-                            const currentState =
-                                progress.getWorkerState(workerId);
-                            let statusUpdate:
-                                | { status: WorkerStatus }
-                                | object = {};
-
-                            if (currentState) {
-                                // Transition idle -> downloading when requests start
-                                if (
-                                    currentState.status === 'idle' &&
-                                    activeRequests > 0
-                                ) {
-                                    statusUpdate = { status: 'downloading' };
-                                }
-                                // Transition downloading -> idle when requests finish
-                                else if (
-                                    currentState.status === 'downloading' &&
-                                    activeRequests === 0
-                                ) {
-                                    statusUpdate = { status: 'idle' };
-                                }
-                            }
-
-                            progress.updateWorker(workerId, {
-                                ...statusUpdate,
-                                activeRequests,
-                                duplicateRequests,
-                                currentAsset: urlObj
-                                    ? {
-                                          path: urlObj.pathname + urlObj.search,
-                                          size: currentSize,
-                                      }
-                                    : undefined,
-                            });
-                            break;
-                        }
-
-                        case 'duplicate-skipped': {
-                            // Track duplicate requests that were skipped
-                            const stats = progress.getStats();
-                            progress.updateStats({
-                                duplicatesSkipped:
-                                    (stats.duplicatesSkipped ?? 0) + 1,
-                            });
-                            // Don't log individual skips - too noisy
-                            break;
-                        }
-
-                        case 'lifecycle': {
-                            if (event.phase === 'flushing-assets') {
-                                progress.setFlushing(event.pendingCount ?? 0);
-                            } else if (event.phase === 'flushing-complete') {
-                                progress.setFlushing(0);
-                            }
-                            break;
-                        }
-                    }
-                },
-                // Verbose logging
+                // Use shared event handlers
+                onProgress: createCaptureProgressHandler({
+                    progress,
+                    baseUrl: options.url,
+                    logApiCaptures: true,
+                    trackApiCaptures: true,
+                }),
                 onVerbose: options.verbose
-                    ? (event) => {
-                          const prefix =
-                              event.workerId !== undefined
-                                  ? `[Worker ${event.workerId}]`
-                                  : `[${event.source}]`;
-                          progress.log(
-                              chalk.gray(`${prefix} ${event.message}`),
-                          );
-                      }
+                    ? createVerboseHandler(progress)
                     : undefined,
             });
 

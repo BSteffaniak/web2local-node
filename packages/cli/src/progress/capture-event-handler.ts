@@ -1,0 +1,231 @@
+/**
+ * Shared event handler factory for capture progress events.
+ *
+ * This module provides a unified way to handle CaptureProgressEvents
+ * across different CLI commands (capture, extract, etc.) to avoid
+ * code duplication and ensure consistent behavior.
+ */
+
+import chalk from 'chalk';
+import type { CaptureProgressEvent } from '@web2local/capture';
+import {
+    ProgressDisplay,
+    formatUrlForLog,
+    type WorkerStatus,
+    type WorkerPhase,
+} from './index.js';
+
+/**
+ * Options for creating a capture event handler
+ */
+export interface CaptureEventHandlerOptions {
+    /** The progress display instance */
+    progress: ProgressDisplay;
+    /** Base URL for formatting same-origin URLs */
+    baseUrl: string;
+    /** Whether to log API captures (default: true) */
+    logApiCaptures?: boolean;
+    /** Whether to count API captures in stats (default: true) */
+    trackApiCaptures?: boolean;
+}
+
+/**
+ * Phase to worker status mapping
+ */
+export const PHASE_STATUS_MAP: Record<string, WorkerStatus> = {
+    navigating: 'navigating',
+    'network-idle': 'waiting',
+    scrolling: 'waiting',
+    settling: 'waiting',
+    'extracting-links': 'extracting',
+    'capturing-html': 'waiting',
+    completed: 'idle',
+    error: 'error',
+    retrying: 'retrying',
+};
+
+/**
+ * Handle page-progress events
+ */
+function handlePageProgress(
+    progress: ProgressDisplay,
+    event: CaptureProgressEvent & { type: 'page-progress' },
+    baseUrl: string,
+): void {
+    const {
+        workerId,
+        phase,
+        url,
+        pagesCompleted,
+        queued,
+        depth,
+        linksDiscovered,
+        error,
+    } = event;
+
+    // Update worker state
+    progress.updateWorker(workerId, {
+        status: PHASE_STATUS_MAP[phase] || 'idle',
+        phase: phase as WorkerPhase,
+        url,
+    });
+
+    // Update aggregate stats
+    progress.updateStats({
+        pagesCompleted,
+        queued,
+        currentDepth: depth,
+    });
+
+    // Log significant events
+    const shortUrl = formatUrlForLog(url, baseUrl, 60);
+    if (phase === 'completed') {
+        const linkInfo =
+            linksDiscovered !== undefined ? ` (${linksDiscovered} links)` : '';
+        progress.log(`${chalk.green('✓')} Completed: ${shortUrl}${linkInfo}`);
+    } else if (phase === 'error') {
+        progress.log(
+            `${chalk.red('✗')} Error: ${shortUrl}${error ? ` - ${error}` : ''}`,
+        );
+    } else if (phase === 'retrying') {
+        progress.log(`${chalk.yellow('↻')} Retrying: ${shortUrl}`);
+    }
+}
+
+/**
+ * Handle request-activity events
+ */
+function handleRequestActivity(
+    progress: ProgressDisplay,
+    event: CaptureProgressEvent & { type: 'request-activity' },
+): void {
+    const {
+        workerId,
+        activeRequests,
+        duplicateRequests,
+        currentUrl,
+        currentSize,
+    } = event;
+    const urlObj = currentUrl ? new URL(currentUrl) : null;
+
+    // Determine if we need to transition status
+    const currentState = progress.getWorkerState(workerId);
+    let statusUpdate: { status: WorkerStatus } | object = {};
+
+    if (currentState) {
+        // Transition idle -> downloading when requests start
+        if (currentState.status === 'idle' && activeRequests > 0) {
+            statusUpdate = { status: 'downloading' };
+        }
+        // Transition downloading -> idle when requests finish
+        else if (
+            currentState.status === 'downloading' &&
+            activeRequests === 0
+        ) {
+            statusUpdate = { status: 'idle' };
+        }
+    }
+
+    progress.updateWorker(workerId, {
+        ...statusUpdate,
+        activeRequests,
+        duplicateRequests,
+        currentAsset: urlObj
+            ? { path: urlObj.pathname + urlObj.search, size: currentSize }
+            : undefined,
+    });
+}
+
+/**
+ * Create an onProgress handler for captureWebsite()
+ *
+ * This factory function creates a standardized event handler that can be used
+ * by both the main capture flow and the extract command.
+ *
+ * @param options - Configuration options for the handler
+ * @returns A function that handles CaptureProgressEvents
+ */
+export function createCaptureProgressHandler(
+    options: CaptureEventHandlerOptions,
+): (event: CaptureProgressEvent) => void {
+    const {
+        progress,
+        baseUrl,
+        logApiCaptures = true,
+        trackApiCaptures = true,
+    } = options;
+
+    return (event: CaptureProgressEvent) => {
+        switch (event.type) {
+            case 'page-progress': {
+                handlePageProgress(progress, event, baseUrl);
+                break;
+            }
+
+            case 'api-capture': {
+                if (trackApiCaptures) {
+                    const stats = progress.getStats();
+                    progress.updateStats({
+                        apisCaptured: stats.apisCaptured + 1,
+                    });
+                }
+                if (logApiCaptures) {
+                    progress.log(
+                        `API: ${event.method} ${event.pattern} (${event.status})`,
+                    );
+                }
+                break;
+            }
+
+            case 'asset-capture': {
+                const stats = progress.getStats();
+                progress.updateStats({
+                    assetsCaptured: stats.assetsCaptured + 1,
+                });
+                // Don't log individual assets - too noisy
+                break;
+            }
+
+            case 'request-activity': {
+                handleRequestActivity(progress, event);
+                break;
+            }
+
+            case 'duplicate-skipped': {
+                const stats = progress.getStats();
+                progress.updateStats({
+                    duplicatesSkipped: (stats.duplicatesSkipped ?? 0) + 1,
+                });
+                // Don't log individual skips - too noisy
+                break;
+            }
+
+            case 'lifecycle': {
+                if (event.phase === 'flushing-assets') {
+                    progress.setFlushing(event.pendingCount ?? 0);
+                } else if (event.phase === 'flushing-complete') {
+                    progress.setFlushing(0);
+                }
+                break;
+            }
+        }
+    };
+}
+
+/**
+ * Create an onVerbose handler for captureWebsite()
+ *
+ * @param progress - The progress display instance
+ * @returns A function that handles verbose log events
+ */
+export function createVerboseHandler(
+    progress: ProgressDisplay,
+): (event: { workerId?: number; source: string; message: string }) => void {
+    return (event) => {
+        const prefix =
+            event.workerId !== undefined
+                ? `[Worker ${event.workerId}]`
+                : `[${event.source}]`;
+        progress.log(`${prefix} ${event.message}`);
+    };
+}

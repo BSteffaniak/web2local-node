@@ -22,3 +22,10 @@ export {
     padRight,
     type BoxContent,
 } from './box-renderer.js';
+
+export {
+    createCaptureProgressHandler,
+    createVerboseHandler,
+    PHASE_STATUS_MAP,
+    type CaptureEventHandlerOptions,
+} from './capture-event-handler.js';
