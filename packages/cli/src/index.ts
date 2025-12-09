@@ -552,6 +552,10 @@ export async function runMain(options: CliOptions) {
                         maxVersionsToCheck: options.maxVersions,
                         fetchFromNpm: !options.noFetchVersions,
                         includePrereleases: options.includePrereleases,
+                        // Fingerprinting concurrency options
+                        fingerprintConcurrency: options.fingerprintConcurrency,
+                        versionConcurrency: options.versionConcurrency,
+                        pathConcurrency: options.pathConcurrency,
                         onNpmProgress: (completed, total, pkg) => {
                             depSpinner.text = `Fetching from npm... (${completed}/${total}) ${pkg}`;
                         },

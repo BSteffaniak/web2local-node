@@ -11,6 +11,7 @@ import {
 import {
     findMatchingVersions,
     fingerprintVendorBundles,
+    fetchPackageMetadataWithExistence,
     type VendorBundleInput,
 } from './source-fingerprint.js';
 import { inferPeerDependencyVersions } from './peer-dependencies.js';
@@ -874,41 +875,31 @@ export async function fetchNpmVersions(
 /**
  * Checks if a package exists on npm registry (cached)
  * Returns true if public (exists on npm), false if internal/private (not on npm)
+ *
+ * This function uses the unified metadata fetch which also pre-warms the
+ * metadata cache for later fingerprinting operations.
  */
 export async function isPublicNpmPackage(
     packageName: string,
 ): Promise<boolean> {
     const cache = getCache();
 
-    // Check cache first
-    const cached = await cache.getNpmPackageExistence(packageName);
-    if (cached) {
-        return cached.exists;
-    }
-
-    // Fetch from npm registry using HEAD request for efficiency
-    try {
-        const response = await robustFetch(
-            `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
-            {
-                method: 'HEAD',
-            },
-        );
-        const exists = response.ok;
-
-        // Cache the result
-        await cache.setNpmPackageExistence({
-            packageName,
-            exists,
-            fetchedAt: Date.now(),
-        });
-
-        return exists;
-    } catch {
-        // Network error - don't cache, assume public to be safe
-        // (we don't want to accidentally extract all of node_modules due to network issues)
+    // Check metadata cache first - if we have metadata, package exists
+    const cachedMetadata = await cache.getMetadata(packageName);
+    if (cachedMetadata) {
         return true;
     }
+
+    // Check existence cache
+    const cachedExistence = await cache.getNpmPackageExistence(packageName);
+    if (cachedExistence) {
+        return cachedExistence.exists;
+    }
+
+    // Use unified fetch which caches both metadata and existence
+    // This pre-warms the metadata cache for later fingerprinting
+    const result = await fetchPackageMetadataWithExistence(packageName, cache);
+    return result.exists;
 }
 
 /**
@@ -2537,6 +2528,12 @@ export async function generateDependencyManifest(
         extractedSourceFiles?: SourceFile[];
         /** Include pre-release versions when fingerprinting */
         includePrereleases?: boolean;
+        /** Number of packages to fingerprint concurrently (default: 5) */
+        fingerprintConcurrency?: number;
+        /** Number of versions to check concurrently per package (default: 10) */
+        versionConcurrency?: number;
+        /** Number of entry paths to try concurrently when fetching from CDN (default: 5) */
+        pathConcurrency?: number;
         /** Progress callback for peer dependency inference */
         onPeerDepProgress?: (
             completed: number,
@@ -2580,6 +2577,9 @@ export async function generateDependencyManifest(
         onFingerprintProgress,
         extractedSourceFiles,
         includePrereleases = false,
+        fingerprintConcurrency,
+        versionConcurrency,
+        pathConcurrency,
         onPeerDepProgress,
         pageUrl,
         vendorBundles = [],
@@ -2855,7 +2855,9 @@ export async function generateDependencyManifest(
                     {
                         maxVersionsToCheck, // 0 = all versions (new default)
                         minSimilarity: 0.7,
-                        concurrency: 3,
+                        concurrency: fingerprintConcurrency,
+                        versionConcurrency,
+                        pathConcurrency,
                         includePrereleases,
                         onProgress: (packageName, result) => {
                             fingerprintCompleted++;

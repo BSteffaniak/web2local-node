@@ -213,13 +213,52 @@ function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Parses the Retry-After header value.
+ * Can be either a number of seconds or an HTTP date.
+ *
+ * @param retryAfter - The Retry-After header value
+ * @returns Delay in milliseconds, or null if parsing fails
+ */
+function parseRetryAfter(retryAfter: string | null): number | null {
+    if (!retryAfter) return null;
+
+    // Try parsing as seconds (e.g., "120")
+    const seconds = parseInt(retryAfter, 10);
+    if (!isNaN(seconds)) {
+        return seconds * 1000;
+    }
+
+    // Try parsing as HTTP date (e.g., "Wed, 21 Oct 2015 07:28:00 GMT")
+    const date = Date.parse(retryAfter);
+    if (!isNaN(date)) {
+        const delay = date - Date.now();
+        return delay > 0 ? delay : null;
+    }
+
+    return null;
+}
+
+/**
+ * Adds jitter to a delay to prevent thundering herd
+ *
+ * @param delay - Base delay in milliseconds
+ * @param jitterFactor - Maximum jitter as a fraction of delay (default: 0.25)
+ * @returns Delay with random jitter added
+ */
+function addJitter(delay: number, jitterFactor: number = 0.25): number {
+    const jitter = delay * jitterFactor * Math.random();
+    return Math.floor(delay + jitter);
+}
+
 export interface RobustFetchOptions extends RequestInit {
     /** Number of retry attempts for transient errors (default: 2) */
     retries?: number;
 }
 
 /**
- * Wrapper around fetch that retries on transient errors and provides improved error messages.
+ * Wrapper around fetch that retries on transient errors (including 429 rate limits)
+ * and provides improved error messages.
  *
  * @param url - The URL to fetch
  * @param options - Fetch options plus optional retry count
@@ -233,10 +272,36 @@ export async function robustFetch(
     const { retries = DEFAULT_RETRY_ATTEMPTS, ...fetchOptions } = options;
 
     let lastError: unknown;
+    let lastResponse: Response | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             const response = await fetch(url, fetchOptions);
+
+            // Handle rate limiting (429 Too Many Requests)
+            if (response.status === 429 && attempt < retries) {
+                lastResponse = response;
+
+                // Use Retry-After header if present, otherwise exponential backoff
+                const retryAfterDelay = parseRetryAfter(
+                    response.headers.get('Retry-After'),
+                );
+                const backoffDelay = RETRY_DELAY_MS * Math.pow(2, attempt);
+                const delay = retryAfterDelay ?? backoffDelay;
+
+                // Add jitter to prevent thundering herd
+                await sleep(addJitter(delay));
+                continue;
+            }
+
+            // Handle server errors (5xx) with retry
+            if (response.status >= 500 && attempt < retries) {
+                lastResponse = response;
+                const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+                await sleep(addJitter(delay));
+                continue;
+            }
+
             return response;
         } catch (error) {
             lastError = error;
@@ -245,13 +310,19 @@ export async function robustFetch(
             if (attempt < retries && isTransientError(error)) {
                 // Exponential backoff: 1s, 2s, 4s, etc.
                 const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
-                await sleep(delay);
+                await sleep(addJitter(delay));
                 continue;
             }
 
             // Non-transient error or last attempt - throw with details
             throw new FetchError(url, error);
         }
+    }
+
+    // If we exhausted retries due to 429/5xx, return the last response
+    // (caller can decide what to do with it)
+    if (lastResponse) {
+        return lastResponse;
     }
 
     // Should not reach here, but just in case

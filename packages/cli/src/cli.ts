@@ -16,6 +16,10 @@ export interface CliOptions {
     cacheDir: string;
     noCache: boolean;
     includePrereleases: boolean;
+    // Fingerprinting concurrency options
+    fingerprintConcurrency: number;
+    versionConcurrency: number;
+    pathConcurrency: number;
     forceRefresh: boolean;
     // API capture options (default: enabled)
     noCapture: boolean;
@@ -136,6 +140,21 @@ export function parseArgs(): CliOptions {
             false,
         )
         .option(
+            '--fingerprint-concurrency <number>',
+            'Number of packages to fingerprint concurrently (default: 5)',
+            '5',
+        )
+        .option(
+            '--version-concurrency <number>',
+            'Number of versions to check concurrently per package (default: 10)',
+            '10',
+        )
+        .option(
+            '--path-concurrency <number>',
+            'Number of entry paths to try concurrently when fetching from CDN (default: 5)',
+            '5',
+        )
+        .option(
             '--force-refresh',
             'Bypass all caches and fetch fresh data',
             false,
@@ -225,6 +244,13 @@ export function parseArgs(): CliOptions {
                 cacheDir: options.cacheDir || '',
                 noCache: options.cache === false,
                 includePrereleases: options.includePrereleases || false,
+                // Fingerprinting concurrency options
+                fingerprintConcurrency: parseInt(
+                    options.fingerprintConcurrency,
+                    10,
+                ),
+                versionConcurrency: parseInt(options.versionConcurrency, 10),
+                pathConcurrency: parseInt(options.pathConcurrency, 10),
                 forceRefresh: options.forceRefresh || false,
                 // API capture options
                 noCapture: options.capture === false,
@@ -305,6 +331,10 @@ export function parseArgs(): CliOptions {
         cacheDir: options.cacheDir || '',
         noCache: options.cache === false,
         includePrereleases: options.includePrereleases || false,
+        // Fingerprinting concurrency options
+        fingerprintConcurrency: parseInt(options.fingerprintConcurrency, 10),
+        versionConcurrency: parseInt(options.versionConcurrency, 10),
+        pathConcurrency: parseInt(options.pathConcurrency, 10),
         forceRefresh: options.forceRefresh || false,
         // API capture options
         noCapture: options.capture === false,

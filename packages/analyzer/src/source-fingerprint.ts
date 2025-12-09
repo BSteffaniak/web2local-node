@@ -26,8 +26,14 @@ import { robustFetch } from '@web2local/http';
 // Re-export for external use
 export { computeNormalizedHash, extractCodeSignature };
 
+/** Default number of packages to process concurrently */
+const DEFAULT_PACKAGE_CONCURRENCY = 5;
+
 /** Default number of versions to check concurrently within a single package */
-const DEFAULT_VERSION_CHECK_CONCURRENCY = 6;
+const DEFAULT_VERSION_CHECK_CONCURRENCY = 10;
+
+/** Default number of entry paths to try concurrently when fetching from CDN */
+const DEFAULT_PATH_CONCURRENCY = 5;
 
 export interface FingerprintResult extends VersionResult {
     similarity: number;
@@ -40,10 +46,12 @@ export interface FingerprintOptions {
     maxVersionsToCheck?: number;
     /** Minimum similarity threshold (0-1) */
     minSimilarity?: number;
-    /** Number of packages to process concurrently */
+    /** Number of packages to process concurrently (default: 5) */
     concurrency?: number;
-    /** Number of versions to check concurrently within each package (default: 6) */
+    /** Number of versions to check concurrently within each package (default: 10) */
     versionConcurrency?: number;
+    /** Number of entry paths to try concurrently when fetching from CDN (default: 5) */
+    pathConcurrency?: number;
     /** Include pre-release versions (alpha, beta, rc, nightly, etc.) */
     includePrereleases?: boolean;
     /** Progress callback for overall progress */
@@ -58,6 +66,156 @@ export interface FingerprintOptions {
         versionIndex: number,
         versionTotal: number,
     ) => void;
+}
+
+/**
+ * Result of fetching package metadata with existence check
+ */
+export interface PackageMetadataResult {
+    /** Whether the package exists on npm */
+    exists: boolean;
+    /** Package metadata (only present if exists is true) */
+    metadata?: PackageMetadataCache;
+}
+
+/**
+ * Fetches package metadata from npm registry, also determining if the package exists.
+ * This consolidates the existence check and metadata fetch into a single HTTP request.
+ * Results are cached for both existence and metadata.
+ *
+ * @param packageName - The npm package name
+ * @param cache - The fingerprint cache instance
+ * @returns Object with exists boolean and optional metadata
+ */
+export async function fetchPackageMetadataWithExistence(
+    packageName: string,
+    cache: FingerprintCache,
+): Promise<PackageMetadataResult> {
+    // Check metadata cache first - if we have metadata, package exists
+    const cachedMetadata = await cache.getMetadata(packageName);
+    if (cachedMetadata) {
+        return { exists: true, metadata: cachedMetadata };
+    }
+
+    // Check existence cache - if we know it doesn't exist, return early
+    const cachedExistence = await cache.getNpmPackageExistence(packageName);
+    if (cachedExistence && !cachedExistence.exists) {
+        return { exists: false };
+    }
+
+    try {
+        const response = await robustFetch(
+            `https://registry.npmjs.org/${encodeURIComponent(packageName)}`,
+            {
+                headers: { Accept: 'application/json' },
+            },
+        );
+
+        if (response.status === 404) {
+            // Package doesn't exist - cache this fact
+            await cache.setNpmPackageExistence({
+                packageName,
+                exists: false,
+                fetchedAt: Date.now(),
+            });
+            return { exists: false };
+        }
+
+        if (!response.ok) {
+            // Other error (e.g., 500) - don't cache, return as if it might exist
+            return { exists: true };
+        }
+
+        const data: NpmPackageMetadata = await response.json();
+
+        // Extract and cache the metadata we need
+        const versions = Object.keys(data.versions || {});
+        const versionDetails: PackageMetadataCache['versionDetails'] = {};
+
+        for (const [version, info] of Object.entries(data.versions || {})) {
+            versionDetails[version] = {
+                main: info.main,
+                module: info.module,
+                exports: info.exports,
+                types: info.types,
+                peerDependencies: info.peerDependencies,
+                dependencies: info.dependencies,
+            };
+        }
+
+        // Extract version publish times for smart ordering
+        const versionTimes: Record<string, number> = {};
+        if (data.time) {
+            for (const [version, timeStr] of Object.entries(data.time)) {
+                // Skip 'created' and 'modified' meta-keys
+                if (version !== 'created' && version !== 'modified') {
+                    versionTimes[version] = new Date(timeStr).getTime();
+                }
+            }
+        }
+
+        const metadata: PackageMetadataCache = {
+            name: packageName,
+            versions,
+            versionDetails,
+            distTags: data['dist-tags'] || {},
+            versionTimes,
+            fetchedAt: Date.now(),
+        };
+
+        // Cache both metadata and existence
+        await cache.setMetadata(metadata);
+        await cache.setNpmPackageExistence({
+            packageName,
+            exists: true,
+            fetchedAt: Date.now(),
+        });
+
+        return { exists: true, metadata };
+    } catch {
+        // Network error - assume package might exist, don't cache
+        return { exists: true };
+    }
+}
+
+/**
+ * Tries multiple fetcher functions in parallel and returns the first successful result.
+ * Useful for trying multiple entry paths concurrently.
+ *
+ * @param fetchers - Array of functions that return a promise of T or null
+ * @param concurrency - Maximum number of fetchers to run in parallel (default: 5)
+ * @returns The first non-null result, or null if all fetchers return null/fail
+ */
+async function fetchFirstSuccessful<T>(
+    fetchers: Array<() => Promise<T | null>>,
+    concurrency: number = DEFAULT_PATH_CONCURRENCY,
+): Promise<T | null> {
+    if (fetchers.length === 0) return null;
+
+    // Process in batches to respect concurrency limit
+    for (let i = 0; i < fetchers.length; i += concurrency) {
+        const batch = fetchers.slice(i, i + concurrency);
+
+        // Launch all fetchers in this batch in parallel
+        const results = await Promise.all(
+            batch.map(async (fetcher) => {
+                try {
+                    return await fetcher();
+                } catch {
+                    return null;
+                }
+            }),
+        );
+
+        // Return the first non-null result
+        for (const result of results) {
+            if (result !== null) {
+                return result;
+            }
+        }
+    }
+
+    return null;
 }
 
 interface NpmPackageMetadata {
@@ -954,12 +1112,13 @@ async function fetchFileFromUnpkg(
 
 /**
  * Fetches a minified/production file from unpkg CDN with caching
- * Tries multiple minified entry paths derived from package name
+ * Tries multiple minified entry paths derived from package name (in parallel)
  */
 async function fetchMinifiedFromUnpkg(
     packageName: string,
     version: string,
     cache: FingerprintCache,
+    pathConcurrency: number = DEFAULT_PATH_CONCURRENCY,
 ): Promise<{ fingerprint: ContentFingerprintCache; content: string } | null> {
     // Check cache first
     const cached = await cache.getMinifiedFingerprint(packageName, version);
@@ -970,50 +1129,59 @@ async function fetchMinifiedFromUnpkg(
 
     const minifiedPaths = getMinifiedEntryPaths(packageName);
 
-    for (const entryPath of minifiedPaths) {
-        try {
-            const url = `https://unpkg.com/${packageName}@${version}/${entryPath}`;
-            const response = await robustFetch(url, {
-                headers: {
-                    Accept: 'text/plain,application/javascript,*/*',
-                },
-            });
+    // Create fetchers for each path that will be tried in parallel
+    const fetchers = minifiedPaths.map(
+        (entryPath) =>
+            async (): Promise<{
+                fingerprint: ContentFingerprintCache;
+                content: string;
+            } | null> => {
+                try {
+                    const url = `https://unpkg.com/${packageName}@${version}/${entryPath}`;
+                    const response = await robustFetch(url, {
+                        headers: {
+                            Accept: 'text/plain,application/javascript,*/*',
+                        },
+                    });
 
-            if (!response.ok) {
-                continue;
-            }
+                    if (!response.ok) {
+                        return null;
+                    }
 
-            const content = await response.text();
+                    const content = await response.text();
 
-            // Verify this looks like actual JS content (not error page)
-            if (
-                content.length < 100 ||
-                content.includes('<!DOCTYPE') ||
-                content.includes('<html')
-            ) {
-                continue;
-            }
+                    // Verify this looks like actual JS content (not error page)
+                    if (
+                        content.length < 100 ||
+                        content.includes('<!DOCTYPE') ||
+                        content.includes('<html')
+                    ) {
+                        return null;
+                    }
 
-            const fingerprint: ContentFingerprintCache = {
-                packageName,
-                version,
-                entryPath,
-                contentHash: createHash('md5').update(content).digest('hex'),
-                normalizedHash: computeNormalizedHash(content),
-                signature: extractCodeSignature(content),
-                contentLength: content.length,
-                isMinified: detectIfMinified(content),
-                fetchedAt: Date.now(),
-            };
+                    const fingerprint: ContentFingerprintCache = {
+                        packageName,
+                        version,
+                        entryPath,
+                        contentHash: createHash('md5')
+                            .update(content)
+                            .digest('hex'),
+                        normalizedHash: computeNormalizedHash(content),
+                        signature: extractCodeSignature(content),
+                        contentLength: content.length,
+                        isMinified: detectIfMinified(content),
+                        fetchedAt: Date.now(),
+                    };
 
-            await cache.setMinifiedFingerprint(fingerprint);
-            return { fingerprint, content };
-        } catch {
-            continue;
-        }
-    }
+                    await cache.setMinifiedFingerprint(fingerprint);
+                    return { fingerprint, content };
+                } catch {
+                    return null;
+                }
+            },
+    );
 
-    return null;
+    return fetchFirstSuccessful(fetchers, pathConcurrency);
 }
 
 /**
@@ -1229,6 +1397,7 @@ async function checkVersionSimilarity(
     packageFeatures: ReturnType<typeof collectPackageFeatures> | null,
     metadata: PackageMetadataCache,
     cache: FingerprintCache,
+    pathConcurrency: number = DEFAULT_PATH_CONCURRENCY,
 ): Promise<VersionCheckResult | null> {
     const versionDetails = metadata.versionDetails[version];
     const entryPaths = resolveEntryPoints(packageName, versionDetails);
@@ -1236,20 +1405,14 @@ async function checkVersionSimilarity(
     let bestSimilarityForVersion = 0;
     let matchSource: 'fingerprint' | 'fingerprint-minified' = 'fingerprint';
 
-    // Strategy 1: Try clean source fingerprint
-    let npmFingerprint: ContentFingerprintCache | null = null;
-
-    for (const entryPath of entryPaths) {
-        npmFingerprint = await fetchFileFromUnpkg(
-            packageName,
-            version,
-            entryPath,
-            cache,
-        );
-        if (npmFingerprint) {
-            break;
-        }
-    }
+    // Strategy 1: Try clean source fingerprint (parallel path fetching)
+    const npmFingerprint = await fetchFirstSuccessful(
+        entryPaths.map(
+            (entryPath) => () =>
+                fetchFileFromUnpkg(packageName, version, entryPath, cache),
+        ),
+        pathConcurrency,
+    );
 
     if (npmFingerprint) {
         const similarity = computeSimilarity(
@@ -1325,8 +1488,10 @@ export async function findMatchingVersion(
         maxVersionsToCheck?: number;
         minSimilarity?: number;
         includePrereleases?: boolean;
-        /** Number of versions to check concurrently (default: 6) */
+        /** Number of versions to check concurrently (default: 10) */
         versionConcurrency?: number;
+        /** Number of entry paths to try concurrently when fetching from CDN (default: 5) */
+        pathConcurrency?: number;
         /** Optional version hint for smarter search ordering */
         versionHint?: string | null;
         cache?: FingerprintCache;
@@ -1342,6 +1507,7 @@ export async function findMatchingVersion(
         minSimilarity = 0.7,
         includePrereleases = false,
         versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
+        pathConcurrency = DEFAULT_PATH_CONCURRENCY,
         versionHint = null,
         cache = getCache(),
         onVersionCheck,
@@ -1443,6 +1609,7 @@ export async function findMatchingVersion(
                     packageFeatures,
                     metadata,
                     cache,
+                    pathConcurrency,
                 ),
             ),
         );
@@ -1560,8 +1727,9 @@ export async function findMatchingVersions(
     const {
         maxVersionsToCheck = 0,
         minSimilarity = 0.7,
-        concurrency = 3,
+        concurrency = DEFAULT_PACKAGE_CONCURRENCY,
         versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
+        pathConcurrency = DEFAULT_PATH_CONCURRENCY,
         includePrereleases = false,
         onProgress,
         onDetailedProgress,
@@ -1587,6 +1755,7 @@ export async function findMatchingVersions(
                     minSimilarity,
                     includePrereleases,
                     versionConcurrency,
+                    pathConcurrency,
                     cache,
                     onVersionCheck: (version, index, total) => {
                         onDetailedProgress?.(
