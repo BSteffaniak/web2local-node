@@ -5,9 +5,10 @@
         "noEmit": true
     },
     "include": [
-        "src/**/*",
-        "test/**/*",
+        "packages/**/*.ts",
         "vitest.config.ts",
-        "eslint.config.mjs"
-    ]
+        "eslint.config.mjs",
+        "setup.ts"
+    ],
+    "exclude": ["node_modules", "**/dist/**"]
 }

@@ -20,11 +20,14 @@ const jsFiles = ['**/*.js', '**/*.jsx', '**/*.cjs', '**/*.mjs'];
 export default [
     {
         ignores: [
-            'dist/',
-            'node_modules/',
-            'output/',
-            'debug-output/',
-            'test-output/',
+            '**/dist/**',
+            '**/node_modules/**',
+            'output/**',
+            'debug-output/**',
+            'test-output/**',
+            'fixtures/**',
+            'helpers/**',
+            'vendor/**',
         ],
     },
     ...compat.extends(
