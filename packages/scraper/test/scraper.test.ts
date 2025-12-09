@@ -7,7 +7,7 @@
  * - Content-Type validation works correctly
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import {
     findSourceMapUrl,
@@ -649,18 +649,26 @@ describe('findSourceMapUrl - bundle content fallback', () => {
         });
 
         it('should not return bundleContent when fetch fails with 500', async () => {
+            vi.useFakeTimers();
+
             server.use(
                 http.get('https://fallback-test.example.com/error.js', () => {
                     return new HttpResponse(null, { status: 500 });
                 }),
             );
 
-            const result = await findSourceMapUrl(
+            const resultPromise = findSourceMapUrl(
                 'https://fallback-test.example.com/error.js',
             );
 
+            // Advance timers to skip the retry delays
+            await vi.runAllTimersAsync();
+
+            const result = await resultPromise;
             expect(result.sourceMapUrl).toBeNull();
             expect(result.bundleContent).toBeUndefined();
+
+            vi.useRealTimers();
         });
 
         it('should return bundleContent on cached negative result', async () => {
