@@ -582,6 +582,17 @@ async function extractWithCrawl(
                         break;
                     }
 
+                    case 'duplicate-skipped': {
+                        // Track duplicate requests that were skipped
+                        const stats = progress.getStats();
+                        progress.updateStats({
+                            duplicatesSkipped:
+                                (stats.duplicatesSkipped ?? 0) + 1,
+                        });
+                        // Don't log individual skips - too noisy
+                        break;
+                    }
+
                     case 'lifecycle':
                     case 'api-capture':
                         // Not relevant for extract

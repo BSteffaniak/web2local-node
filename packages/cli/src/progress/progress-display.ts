@@ -69,6 +69,7 @@ export interface AggregateStats {
     maxDepth: number;
     apisCaptured: number;
     assetsCaptured: number;
+    duplicatesSkipped: number;
 }
 
 /**
@@ -120,6 +121,7 @@ export class ProgressDisplay {
             maxDepth: options.maxDepth,
             apisCaptured: 0,
             assetsCaptured: 0,
+            duplicatesSkipped: 0,
         };
 
         // Parse base origin for URL comparison

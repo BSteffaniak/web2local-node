@@ -169,6 +169,9 @@ export async function captureWebsite(
         onRequestActivity: (event) => {
             opts.onProgress?.(event);
         },
+        onDuplicateSkipped: (event) => {
+            opts.onProgress?.(event);
+        },
         onVerbose: opts.onVerbose,
     });
 

@@ -305,6 +305,17 @@ export interface RequestActivityEvent {
 }
 
 /**
+ * Progress event for when a duplicate asset request is skipped
+ */
+export interface DuplicateSkippedEvent {
+    type: 'duplicate-skipped';
+    /** Worker ID that attempted the duplicate request (0-indexed) */
+    workerId?: number;
+    /** URL that was skipped */
+    url: string;
+}
+
+/**
  * Progress event for capture lifecycle
  */
 export interface CaptureLifecycleEvent {
@@ -333,6 +344,7 @@ export type CaptureProgressEvent =
     | ApiCaptureEvent
     | AssetCaptureEvent
     | RequestActivityEvent
+    | DuplicateSkippedEvent
     | CaptureLifecycleEvent;
 
 /**

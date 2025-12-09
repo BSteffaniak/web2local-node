@@ -12,6 +12,7 @@ import { minimatch } from 'minimatch';
 import type {
     AssetCaptureEvent,
     RequestActivityEvent,
+    DuplicateSkippedEvent,
     CapturedAsset,
     CaptureVerboseEvent,
     ResourceType,
@@ -94,6 +95,8 @@ export interface StaticCaptureOptions {
     onCapture?: (event: AssetCaptureEvent) => void;
     /** Structured progress callback for request activity (in-flight requests) */
     onRequestActivity?: (event: RequestActivityEvent) => void;
+    /** Structured progress callback for when a duplicate request is skipped */
+    onDuplicateSkipped?: (event: DuplicateSkippedEvent) => void;
     /** Structured verbose log callback */
     onVerbose?: (event: CaptureVerboseEvent) => void;
 
@@ -379,6 +382,8 @@ function getContentType(response: Response, url: string): string {
 export class StaticCapturer {
     private assets: CapturedAsset[] = [];
     private downloadedUrls: Set<string> = new Set();
+    private inFlightUrls: Set<string> = new Set();
+    private duplicatesSkipped: number = 0;
     private pendingCaptures: Map<string, Promise<void>> = new Map();
     private options: StaticCaptureOptions;
     private entrypointUrl: string | null = null;
@@ -596,46 +601,67 @@ export class StaticCapturer {
             `[StaticCapturer] Options: staticFilter=${this.options.staticFilter ? 'set' : 'none'}, skipAssetWrite=${this.options.skipAssetWrite}`,
         );
 
-        // Set up route interception to abort filtered requests BEFORE they're sent.
-        // This prevents actual network traffic for assets that would be filtered out.
-        // Only active when staticFilter is set - otherwise all assets are captured.
-        if (this.options.staticFilter) {
-            this.log(
-                `[StaticCapturer] Setting up route interception for filtering`,
-            );
-            await page.route('**/*', (route, request) => {
-                const resourceType = request.resourceType() as ResourceType;
-                const url = request.url();
+        // Set up route interception to:
+        // 1. Deduplicate requests - abort if already downloaded or in-flight
+        // 2. Filter requests - abort if they don't pass staticFilter
+        this.log(
+            `[StaticCapturer] Setting up route interception for deduplication and filtering`,
+        );
+        await page.route('**/*', (route, request) => {
+            const resourceType = request.resourceType() as ResourceType;
+            const url = request.url();
 
-                // Always allow navigation requests (needed for crawling)
-                if (request.isNavigationRequest()) {
-                    route.continue();
-                    return;
-                }
-
-                // Skip data URLs
-                if (url.startsWith('data:')) {
-                    route.continue();
-                    return;
-                }
-
-                // Only filter static resource types
-                if (!STATIC_RESOURCE_TYPES.has(resourceType)) {
-                    route.continue();
-                    return;
-                }
-
-                // Apply early URL-based filter
-                if (!passesFilterEarly(url, this.options.staticFilter)) {
-                    this.log(`[Static] Aborting ${url} (does not pass filter)`);
-                    route.abort();
-                    return;
-                }
-
-                // Let the request proceed
+            // Always allow navigation requests (needed for crawling)
+            if (request.isNavigationRequest()) {
                 route.continue();
-            });
-        }
+                return;
+            }
+
+            // Skip data URLs
+            if (url.startsWith('data:')) {
+                route.continue();
+                return;
+            }
+
+            // Only handle static resource types for deduplication/filtering
+            if (!STATIC_RESOURCE_TYPES.has(resourceType)) {
+                route.continue();
+                return;
+            }
+
+            // DEDUPLICATION: If already downloaded or in-flight from another worker, abort
+            if (this.downloadedUrls.has(url) || this.inFlightUrls.has(url)) {
+                this.duplicatesSkipped++;
+                this.log(
+                    `[Static] Skipping duplicate request: ${url.length > 60 ? url.substring(0, 60) + '...' : url}`,
+                );
+                // Emit duplicate skipped event
+                this.options.onDuplicateSkipped?.({
+                    type: 'duplicate-skipped',
+                    workerId,
+                    url,
+                });
+                route.abort();
+                return;
+            }
+
+            // Mark as in-flight before continuing
+            this.inFlightUrls.add(url);
+
+            // Apply early URL-based filter (if staticFilter is set)
+            if (
+                this.options.staticFilter &&
+                !passesFilterEarly(url, this.options.staticFilter)
+            ) {
+                this.log(`[Static] Aborting ${url} (does not pass filter)`);
+                this.inFlightUrls.delete(url);
+                route.abort();
+                return;
+            }
+
+            // Let the request proceed
+            route.continue();
+        });
 
         // Listen for main frame navigation to detect redirects early
         // This updates the base origin as soon as the browser follows a redirect
@@ -653,6 +679,9 @@ export class StaticCapturer {
         });
 
         // Track request starts for activity display
+        // Note: We only track requests that will actually proceed (not duplicates/filtered)
+        // The route handler above marks URLs as in-flight before allowing them through,
+        // so we can use that as the signal that a request is actually happening.
         page.on('request', (request) => {
             const wid = this.pageToWorkerId.get(page);
             if (wid === undefined) return;
@@ -663,6 +692,9 @@ export class StaticCapturer {
             // Only track static resource types
             if (!STATIC_RESOURCE_TYPES.has(resourceType)) return;
             if (url.startsWith('data:')) return;
+
+            // Skip tracking if this URL isn't in-flight (was aborted as duplicate/filtered)
+            if (!this.inFlightUrls.has(url)) return;
 
             // Get content-length from response headers when available
             // (request headers don't have this, but we track start anyway)
@@ -784,6 +816,7 @@ export class StaticCapturer {
 
             // Skip if already downloaded
             if (this.downloadedUrls.has(url)) {
+                this.inFlightUrls.delete(url);
                 return;
             }
 
@@ -795,6 +828,7 @@ export class StaticCapturer {
                 !passesFilterEarly(url, this.options.staticFilter)
             ) {
                 this.log(`[Static] Skipping ${url} (does not pass URL filter)`);
+                this.inFlightUrls.delete(url);
                 return;
             }
 
@@ -803,6 +837,7 @@ export class StaticCapturer {
                 this.log(
                     `[Static] Skipping non-ok response: ${response.status()} ${url}`,
                 );
+                this.inFlightUrls.delete(url);
                 return;
             }
 
@@ -826,6 +861,8 @@ export class StaticCapturer {
             this.pendingCaptures.set(url, capturePromise);
             capturePromise.finally(() => {
                 this.pendingCaptures.delete(url);
+                // Clean up in-flight tracking
+                this.inFlightUrls.delete(url);
                 // Track request completion
                 if (wid !== undefined) {
                     this.trackRequestEnd(url, wid);
@@ -1229,6 +1266,7 @@ export class StaticCapturer {
         byType: Record<string, { count: number; bytes: number }>;
         truncatedFiles: number;
         recoveredFiles: number;
+        duplicatesSkipped: number;
     } {
         const byType: Record<string, { count: number; bytes: number }> = {};
 
@@ -1247,6 +1285,7 @@ export class StaticCapturer {
             byType,
             truncatedFiles: this.truncatedFiles.length,
             recoveredFiles: this.recoveredFiles.length,
+            duplicatesSkipped: this.duplicatesSkipped,
         };
     }
 
@@ -1274,6 +1313,8 @@ export class StaticCapturer {
     clear(): void {
         this.assets = [];
         this.downloadedUrls.clear();
+        this.inFlightUrls.clear();
+        this.duplicatesSkipped = 0;
         this.pendingCaptures.clear();
         this.pendingResponsiveUrls.clear();
         this.entrypointUrl = null;
