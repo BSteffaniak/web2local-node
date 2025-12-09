@@ -984,14 +984,42 @@ export async function runMain(options: CliOptions) {
                             const {
                                 workerId,
                                 activeRequests,
+                                duplicateRequests,
                                 currentUrl,
                                 currentSize,
                             } = event;
                             const urlObj = currentUrl
                                 ? new URL(currentUrl)
                                 : null;
+
+                            // Determine if we need to transition status
+                            const currentState =
+                                progress.getWorkerState(workerId);
+                            let statusUpdate:
+                                | { status: WorkerStatus }
+                                | object = {};
+
+                            if (currentState) {
+                                // Transition idle -> downloading when requests start
+                                if (
+                                    currentState.status === 'idle' &&
+                                    activeRequests > 0
+                                ) {
+                                    statusUpdate = { status: 'downloading' };
+                                }
+                                // Transition downloading -> idle when requests finish
+                                else if (
+                                    currentState.status === 'downloading' &&
+                                    activeRequests === 0
+                                ) {
+                                    statusUpdate = { status: 'idle' };
+                                }
+                            }
+
                             progress.updateWorker(workerId, {
+                                ...statusUpdate,
                                 activeRequests,
+                                duplicateRequests,
                                 currentAsset: urlObj
                                     ? {
                                           path: urlObj.pathname + urlObj.search,

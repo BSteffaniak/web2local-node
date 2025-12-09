@@ -282,9 +282,10 @@ export class CrawlWorker {
             onProgress,
         } = this.options;
 
-        // Set current page URL for asset tracking
+        // Set current page URL for asset tracking and reset per-page counters
         if (captureStatic) {
             staticCapturer.setCurrentPageUrl(item.url);
+            staticCapturer.resetWorkerTracking(this.workerId);
         }
 
         // Navigate to the page

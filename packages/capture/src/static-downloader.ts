@@ -419,6 +419,8 @@ export class StaticCapturer {
         number,
         { url: string; size?: number }
     > = new Map();
+    /** Duplicate requests count per worker (reset on each new page) */
+    private duplicateRequestsByWorker: Map<number, number> = new Map();
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -439,6 +441,18 @@ export class StaticCapturer {
      */
     getCurrentPageUrl(): string | null {
         return this.currentPageUrl;
+    }
+
+    /**
+     * Reset per-worker tracking when starting a new page.
+     * This clears the duplicate count and active requests so each page starts fresh.
+     */
+    resetWorkerTracking(workerId: number): void {
+        this.duplicateRequestsByWorker.set(workerId, 0);
+        this.activeRequestsByWorker.set(workerId, new Set());
+        this.currentRequestByWorker.delete(workerId);
+        // Emit an activity event to update the TUI
+        this.emitRequestActivity(workerId);
     }
 
     /**
@@ -504,12 +518,15 @@ export class StaticCapturer {
 
         const activeSet = this.activeRequestsByWorker.get(workerId);
         const activeRequests = activeSet?.size ?? 0;
+        const duplicateRequests =
+            this.duplicateRequestsByWorker.get(workerId) ?? 0;
         const current = this.currentRequestByWorker.get(workerId);
 
         this.options.onRequestActivity({
             type: 'request-activity',
             workerId,
             activeRequests,
+            duplicateRequests,
             currentUrl: current?.url,
             currentSize: current?.size,
         });
@@ -591,6 +608,9 @@ export class StaticCapturer {
             if (!this.activeRequestsByWorker.has(workerId)) {
                 this.activeRequestsByWorker.set(workerId, new Set());
             }
+            if (!this.duplicateRequestsByWorker.has(workerId)) {
+                this.duplicateRequestsByWorker.set(workerId, 0);
+            }
         }
 
         this.log(
@@ -635,6 +655,15 @@ export class StaticCapturer {
                 this.log(
                     `[Static] Skipping duplicate request: ${url.length > 60 ? url.substring(0, 60) + '...' : url}`,
                 );
+
+                // Track duplicate count for this worker and emit activity event
+                if (workerId !== undefined) {
+                    const current =
+                        this.duplicateRequestsByWorker.get(workerId) ?? 0;
+                    this.duplicateRequestsByWorker.set(workerId, current + 1);
+                    this.emitRequestActivity(workerId);
+                }
+
                 // Emit duplicate skipped event
                 this.options.onDuplicateSkipped?.({
                     type: 'duplicate-skipped',
@@ -659,6 +688,12 @@ export class StaticCapturer {
                 return;
             }
 
+            // Track request start immediately when allowing it through
+            // This ensures the TUI shows activity as soon as requests begin
+            if (workerId !== undefined) {
+                this.trackRequestStart(url, workerId, undefined);
+            }
+
             // Let the request proceed
             route.continue();
         });
@@ -678,28 +713,10 @@ export class StaticCapturer {
             }
         });
 
-        // Track request starts for activity display
-        // Note: We only track requests that will actually proceed (not duplicates/filtered)
-        // The route handler above marks URLs as in-flight before allowing them through,
-        // so we can use that as the signal that a request is actually happening.
-        page.on('request', (request) => {
-            const wid = this.pageToWorkerId.get(page);
-            if (wid === undefined) return;
-
-            const resourceType = request.resourceType() as ResourceType;
-            const url = request.url();
-
-            // Only track static resource types
-            if (!STATIC_RESOURCE_TYPES.has(resourceType)) return;
-            if (url.startsWith('data:')) return;
-
-            // Skip tracking if this URL isn't in-flight (was aborted as duplicate/filtered)
-            if (!this.inFlightUrls.has(url)) return;
-
-            // Get content-length from response headers when available
-            // (request headers don't have this, but we track start anyway)
-            this.trackRequestStart(url, wid, undefined);
-        });
+        // Note: Request tracking is now done in the route handler above
+        // (trackRequestStart is called when we allow a request through)
+        // This ensures activity is shown immediately when requests begin,
+        // rather than waiting for the 'request' event which may fire later.
 
         page.on('response', async (response) => {
             const request = response.request();

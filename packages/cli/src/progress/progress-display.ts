@@ -53,7 +53,8 @@ export type WorkerStatus =
     | 'extracting'
     | 'completed'
     | 'error'
-    | 'retrying';
+    | 'retrying'
+    | 'downloading';
 
 /**
  * State of a single worker
@@ -65,6 +66,8 @@ export interface WorkerState {
     phaseStartTime?: number;
     /** Number of in-flight requests */
     activeRequests?: number;
+    /** Number of duplicate requests skipped (since page load started) */
+    duplicateRequests?: number;
     /** Current asset being processed */
     currentAsset?: {
         /** Full path of the asset */
@@ -604,6 +607,17 @@ export class ProgressDisplay {
                 ),
             );
             mainLine = basePrefix + idleText + padding + chalk.gray(elapsed);
+        } else if (state.status === 'downloading') {
+            const elapsed = this.formatElapsed(state.phaseStartTime);
+            const downloadingText = chalk.cyan('Downloading');
+            const padding = ' '.repeat(
+                Math.max(
+                    0,
+                    available - visibleLength(downloadingText) - elapsed.length,
+                ),
+            );
+            mainLine =
+                basePrefix + downloadingText + padding + chalk.gray(elapsed);
         } else {
             // Active worker - build components
             const url = state.url ? this.formatUrl(state.url) : '';
@@ -639,51 +653,67 @@ export class ProgressDisplay {
         const prefixLen = indent.length + 2; // arrow is 2 visible chars
         const available = innerWidth - prefixLen;
 
-        // If idle or no activity info, show empty/idle
+        const reqCount = state.activeRequests ?? 0;
+        const dupCount = state.duplicateRequests ?? 0;
+
+        // If idle or no activity info and no duplicates, show empty line
+        // (but not for 'downloading' status - we want to show asset activity)
         if (
             state.status === 'idle' ||
-            (state.activeRequests === undefined && !state.currentAsset)
+            (state.status !== 'downloading' &&
+                reqCount === 0 &&
+                dupCount === 0 &&
+                !state.currentAsset)
         ) {
             return indent + arrow + chalk.gray('');
         }
 
-        // Build the activity text
-        const reqCount = state.activeRequests ?? 0;
-        const reqText =
-            reqCount > 0
-                ? chalk.yellow(`${reqCount} req${reqCount !== 1 ? 's' : ''}`)
-                : chalk.gray('idle');
+        // Build parts array for joining with separators
+        const parts: string[] = [];
 
-        if (!state.currentAsset) {
-            return indent + arrow + reqText;
+        // Active requests
+        if (reqCount > 0) {
+            parts.push(
+                chalk.yellow(`${reqCount} req${reqCount !== 1 ? 's' : ''}`),
+            );
         }
 
-        // Format the asset path (truncate from left if needed)
-        const { path, size } = state.currentAsset;
-        const sizeStr = size ? ` (${this.formatBytes(size)})` : '';
-        const separator = reqCount > 0 ? chalk.gray(' | ') : '';
-
-        // Calculate how much space we have for the path
-        const fixedLen =
-            visibleLength(reqText) +
-            visibleLength(separator) +
-            visibleLength(sizeStr);
-        const pathSpace = available - fixedLen - 1;
-
-        let displayPath = path;
-        if (pathSpace > 0 && path.length > pathSpace) {
-            // Truncate from the left with ellipsis
-            displayPath = '...' + path.slice(-(pathSpace - 3));
+        // Duplicates
+        if (dupCount > 0) {
+            parts.push(
+                chalk.gray(`${dupCount} duplicate${dupCount !== 1 ? 's' : ''}`),
+            );
         }
 
-        return (
-            indent +
-            arrow +
-            reqText +
-            separator +
-            chalk.cyan(displayPath) +
-            chalk.gray(sizeStr)
-        );
+        // If no parts yet and no current asset, show idle
+        if (parts.length === 0 && !state.currentAsset) {
+            return indent + arrow + chalk.gray('idle');
+        }
+
+        // Current asset path
+        if (state.currentAsset) {
+            const { path, size } = state.currentAsset;
+            const sizeStr = size ? ` (${this.formatBytes(size)})` : '';
+
+            // Calculate available space for path
+            const separatorLen = parts.length > 0 ? 3 : 0; // ' | ' between parts
+            const partsLen = parts.reduce(
+                (acc, p) => acc + visibleLength(p) + 3,
+                0,
+            ); // each part + ' | '
+            const pathSpace =
+                available - partsLen - visibleLength(sizeStr) - separatorLen;
+
+            let displayPath = path;
+            if (pathSpace > 0 && path.length > pathSpace) {
+                // Truncate from the left with ellipsis
+                displayPath = '...' + path.slice(-(pathSpace - 3));
+            }
+
+            parts.push(chalk.cyan(displayPath) + chalk.gray(sizeStr));
+        }
+
+        return indent + arrow + parts.join(chalk.gray(' | '));
     }
 
     /**
@@ -784,6 +814,8 @@ export class ProgressDisplay {
                 return chalk.yellow('◐');
             case 'idle':
                 return chalk.gray('◌');
+            case 'downloading':
+                return chalk.cyan('↓');
             case 'completed':
                 return chalk.green('✓');
             case 'error':

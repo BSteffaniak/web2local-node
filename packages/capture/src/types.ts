@@ -298,6 +298,8 @@ export interface RequestActivityEvent {
     workerId: number;
     /** Number of currently in-flight requests */
     activeRequests: number;
+    /** Number of duplicate requests skipped for this worker (since page load started) */
+    duplicateRequests?: number;
     /** URL of the current/most recent request (if any) */
     currentUrl?: string;
     /** Size of current request in bytes (from Content-Length, if known) */
