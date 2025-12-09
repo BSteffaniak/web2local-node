@@ -445,3 +445,330 @@ describe('isValidSourceMapContentType', () => {
         expect(isValidSourceMapContentType('TEXT/HTML')).toBe(false);
     });
 });
+
+// ============================================================================
+// DISCOVER SOURCE MAP & PROBE SOURCE MAP URL TESTS
+//
+// These tests use MSW for HTTP mocking. They test the full discovery flow
+// and probing functionality.
+// ============================================================================
+
+import { http, HttpResponse } from 'msw';
+import { discoverSourceMap, probeSourceMapUrl } from '../src/discovery.js';
+import { server } from '../../../helpers/msw-handlers.js';
+
+describe('probeSourceMapUrl', () => {
+    it('returns map URL when probe succeeds with valid content type', async () => {
+        server.use(
+            http.head('https://example.com/bundle.js.map', () => {
+                return new HttpResponse(null, {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                });
+            }),
+        );
+
+        const result = await probeSourceMapUrl('https://example.com/bundle.js');
+        expect(result).toBe('https://example.com/bundle.js.map');
+    });
+
+    it('returns null when probe returns 404', async () => {
+        server.use(
+            http.head('https://example.com/bundle.js.map', () => {
+                return new HttpResponse(null, { status: 404 });
+            }),
+        );
+
+        const result = await probeSourceMapUrl('https://example.com/bundle.js');
+        expect(result).toBe(null);
+    });
+
+    it('returns null when probe returns text/html (SPA fallback)', async () => {
+        server.use(
+            http.head('https://example.com/bundle.js.map', () => {
+                return new HttpResponse(null, {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/html' },
+                });
+            }),
+        );
+
+        const result = await probeSourceMapUrl('https://example.com/bundle.js');
+        expect(result).toBe(null);
+    });
+
+    it('returns map URL when content type is missing', async () => {
+        server.use(
+            http.head('https://example.com/bundle.js.map', () => {
+                return new HttpResponse(null, { status: 200 });
+            }),
+        );
+
+        const result = await probeSourceMapUrl('https://example.com/bundle.js');
+        expect(result).toBe('https://example.com/bundle.js.map');
+    });
+
+    it('returns null when network fails', async () => {
+        server.use(
+            http.head('https://example.com/bundle.js.map', () => {
+                return HttpResponse.error();
+            }),
+        );
+
+        const result = await probeSourceMapUrl('https://example.com/bundle.js');
+        expect(result).toBe(null);
+    });
+});
+
+describe('discoverSourceMap', () => {
+    const SOURCE_MAP_URL = 'source' + 'MappingURL';
+
+    describe('HTTP header discovery', () => {
+        it('discovers source map from SourceMap header', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse('var x = 1;', {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/javascript',
+                            SourceMap: 'bundle.js.map',
+                        },
+                    });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/bundle.js.map',
+            );
+            expect(result.locationType).toBe('http-header');
+        });
+
+        it('discovers source map from X-SourceMap header', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse('var x = 1;', {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/javascript',
+                            'X-SourceMap': 'bundle.js.map',
+                        },
+                    });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/bundle.js.map',
+            );
+            expect(result.locationType).toBe('http-header');
+        });
+    });
+
+    describe('JS comment discovery', () => {
+        it('discovers source map from JS comment', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse(
+                        `var x = 1;\n//# ${SOURCE_MAP_URL}=bundle.js.map`,
+                        {
+                            status: 200,
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                            },
+                        },
+                    );
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/bundle.js.map',
+            );
+            expect(result.locationType).toBe('js-comment');
+            expect(result.bundleContent).toContain('var x = 1;');
+        });
+    });
+
+    describe('CSS comment discovery', () => {
+        it('discovers source map from CSS comment', async () => {
+            server.use(
+                http.get('https://example.com/styles.css', () => {
+                    return new HttpResponse(
+                        `.foo { color: red; }\n/*# ${SOURCE_MAP_URL}=styles.css.map */`,
+                        {
+                            status: 200,
+                            headers: { 'Content-Type': 'text/css' },
+                        },
+                    );
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/styles.css',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/styles.css.map',
+            );
+            expect(result.locationType).toBe('css-comment');
+        });
+    });
+
+    describe('inline data URI discovery', () => {
+        it('discovers inline source map from data URI', async () => {
+            const dataUri = 'data:application/json;base64,eyJ2ZXJzaW9uIjozfQ==';
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse(
+                        `var x = 1;\n//# ${SOURCE_MAP_URL}=${dataUri}`,
+                        {
+                            status: 200,
+                            headers: {
+                                'Content-Type': 'application/javascript',
+                            },
+                        },
+                    );
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(dataUri);
+            expect(result.locationType).toBe('inline-data-uri');
+        });
+    });
+
+    describe('URL probe fallback', () => {
+        it('falls back to probing when no header or comment', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse('var x = 1;', {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/javascript' },
+                    });
+                }),
+                http.head('https://example.com/bundle.js.map', () => {
+                    return new HttpResponse(null, {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/bundle.js.map',
+            );
+            expect(result.locationType).toBe('url-probe');
+        });
+    });
+
+    describe('not found cases', () => {
+        it('returns not found when bundle returns 404', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse(null, { status: 404 });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(false);
+            expect(result.sourceMapUrl).toBe(null);
+            expect(result.locationType).toBe(null);
+        });
+
+        it('returns not found when no source map exists', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse('var x = 1;', {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/javascript' },
+                    });
+                }),
+                http.head('https://example.com/bundle.js.map', () => {
+                    return new HttpResponse(null, { status: 404 });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(false);
+            expect(result.sourceMapUrl).toBe(null);
+            expect(result.bundleContent).toBe('var x = 1;');
+        });
+
+        it('returns not found when network fails', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return HttpResponse.error();
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(false);
+            expect(result.sourceMapUrl).toBe(null);
+        });
+    });
+
+    describe('URL resolution', () => {
+        it('resolves relative URLs in headers', async () => {
+            server.use(
+                http.get('https://example.com/js/bundle.js', () => {
+                    return new HttpResponse('var x = 1;', {
+                        status: 200,
+                        headers: {
+                            SourceMap: '../maps/bundle.js.map',
+                        },
+                    });
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/js/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/maps/bundle.js.map',
+            );
+        });
+
+        it('handles absolute URLs in comments', async () => {
+            server.use(
+                http.get('https://example.com/bundle.js', () => {
+                    return new HttpResponse(
+                        `var x = 1;\n//# ${SOURCE_MAP_URL}=https://cdn.example.com/bundle.js.map`,
+                        { status: 200 },
+                    );
+                }),
+            );
+
+            const result = await discoverSourceMap(
+                'https://example.com/bundle.js',
+            );
+            expect(result.found).toBe(true);
+            expect(result.sourceMapUrl).toBe(
+                'https://cdn.example.com/bundle.js.map',
+            );
+        });
+    });
+});

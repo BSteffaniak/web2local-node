@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest';
-import type { SourceMapValidationError } from '@web2local/types';
 import {
     parseSourceMap,
     parseInlineSourceMap,
@@ -8,26 +7,7 @@ import {
     isSourceMapV3,
 } from '../src/parser.js';
 import { SourceMapError, SourceMapErrorCode } from '../src/errors.js';
-
-/**
- * Helper to check if an error with a specific message exists in the errors array.
- */
-function hasErrorMessage(
-    errors: readonly SourceMapValidationError[],
-    substring: string,
-): boolean {
-    return errors.some((e) => e.message.includes(substring));
-}
-
-/**
- * Helper to check if an error with a specific code exists in the errors array.
- */
-function hasErrorCode(
-    errors: readonly SourceMapValidationError[],
-    code: string,
-): boolean {
-    return errors.some((e) => e.code === code);
-}
+import { hasErrorCode, hasErrorMessage } from './helpers/test-utils.js';
 
 describe('validateSourceMap', () => {
     it('validates a correct source map', () => {

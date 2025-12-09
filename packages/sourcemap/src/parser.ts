@@ -7,8 +7,6 @@
 
 import type {
     SourceMapV3,
-    IndexMapV3,
-    SourceMap,
     SourceMapValidationResult,
     SourceMapValidationError,
 } from '@web2local/types';
@@ -17,6 +15,7 @@ import {
     createParseError,
     createValidationError,
     createDataUriError,
+    createValidationErrorResult,
 } from './errors.js';
 import {
     SUPPORTED_SOURCE_MAP_VERSION,
@@ -58,16 +57,8 @@ interface RawIndexMapOffset {
 // VALIDATION HELPERS
 // ============================================================================
 
-/**
- * Creates a structured validation error.
- */
-function validationError(
-    code: SourceMapErrorCode,
-    message: string,
-    field?: string,
-): SourceMapValidationError {
-    return { code, message, field };
-}
+// Alias for convenience within this module
+const validationError = createValidationErrorResult;
 
 /**
  * Checks if a raw source map object is an index map (has sections field).
@@ -78,23 +69,16 @@ function isIndexMap(obj: RawSourceMap): boolean {
 }
 
 // ============================================================================
-// REGULAR SOURCE MAP VALIDATION
+// REGULAR SOURCE MAP VALIDATION - FIELD VALIDATORS
 // ============================================================================
 
 /**
- * Validates a regular source map (not index map) against the ECMA-426 spec.
- * This is an internal function - use validateSourceMap() for public API.
- *
- * @param obj - The raw source map object (already verified to be an object)
- * @returns Validation result with structured errors
+ * Validates the version field (required, must be 3).
  */
-function validateRegularSourceMap(
+function validateVersion(
     obj: RawSourceMap,
-): SourceMapValidationResult {
-    const errors: SourceMapValidationError[] = [];
-    const warnings: string[] = [];
-
-    // Version check
+    errors: SourceMapValidationError[],
+): void {
     if (obj.version === undefined) {
         errors.push(
             validationError(
@@ -112,8 +96,15 @@ function validateRegularSourceMap(
             ),
         );
     }
+}
 
-    // Sources check
+/**
+ * Validates the sources field (required, must be array of strings or null).
+ */
+function validateSources(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+): void {
     if (obj.sources === undefined) {
         errors.push(
             validationError(
@@ -139,8 +130,15 @@ function validateRegularSourceMap(
             ),
         );
     }
+}
 
-    // Mappings check
+/**
+ * Validates the mappings field (required, must be string).
+ */
+function validateMappingsField(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+): void {
     if (obj.mappings === undefined) {
         errors.push(
             validationError(
@@ -158,144 +156,216 @@ function validateRegularSourceMap(
             ),
         );
     }
+}
 
-    // sourcesContent check (optional but validated if present)
-    if (obj.sourcesContent !== undefined) {
-        if (!Array.isArray(obj.sourcesContent)) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_SOURCES_CONTENT,
-                    'Field "sourcesContent" must be an array',
-                    'sourcesContent',
-                ),
-            );
-        } else {
-            // Check that all entries are strings or null
-            if (
-                !obj.sourcesContent.every(
-                    (c) => typeof c === 'string' || c === null,
-                )
-            ) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_SOURCES_CONTENT,
-                        'All entries in "sourcesContent" must be strings or null',
-                        'sourcesContent',
-                    ),
-                );
-            }
-            // Length mismatch is a warning, not an error
-            if (
-                Array.isArray(obj.sources) &&
-                obj.sourcesContent.length !== obj.sources.length
-            ) {
-                warnings.push(
-                    `sourcesContent length (${obj.sourcesContent.length}) does not match sources length (${obj.sources.length})`,
-                );
-            }
-        }
-    }
+/**
+ * Validates the sourcesContent field (optional, must be array of strings or null).
+ */
+function validateSourcesContent(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+    warnings: string[],
+): void {
+    if (obj.sourcesContent === undefined) return;
 
-    // sourceRoot check (optional)
-    if (obj.sourceRoot !== undefined && typeof obj.sourceRoot !== 'string') {
+    if (!Array.isArray(obj.sourcesContent)) {
         errors.push(
             validationError(
-                SourceMapErrorCode.INVALID_SOURCE_ROOT,
-                'Field "sourceRoot" must be a string',
-                'sourceRoot',
+                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+                'Field "sourcesContent" must be an array',
+                'sourcesContent',
+            ),
+        );
+        return;
+    }
+
+    // Check that all entries are strings or null
+    if (!obj.sourcesContent.every((c) => typeof c === 'string' || c === null)) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+                'All entries in "sourcesContent" must be strings or null',
+                'sourcesContent',
             ),
         );
     }
 
-    // names check (optional)
-    if (obj.names !== undefined) {
-        if (!Array.isArray(obj.names)) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_NAMES,
-                    'Field "names" must be an array',
-                    'names',
-                ),
-            );
-        } else if (!obj.names.every((n) => typeof n === 'string')) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_NAMES,
-                    'All entries in "names" must be strings',
-                    'names',
-                ),
-            );
-        }
+    // Length mismatch is a warning, not an error
+    if (
+        Array.isArray(obj.sources) &&
+        obj.sourcesContent.length !== obj.sources.length
+    ) {
+        warnings.push(
+            `sourcesContent length (${obj.sourcesContent.length}) does not match sources length (${obj.sources.length})`,
+        );
     }
+}
 
-    // file check (optional) - must be string if present
-    if (obj.file !== undefined && typeof obj.file !== 'string') {
+/**
+ * Validates the names field (optional, must be array of strings).
+ */
+function validateNames(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+): void {
+    if (obj.names === undefined) return;
+
+    if (!Array.isArray(obj.names)) {
         errors.push(
             validationError(
-                SourceMapErrorCode.INVALID_FILE,
-                'Field "file" must be a string',
-                'file',
+                SourceMapErrorCode.INVALID_NAMES,
+                'Field "names" must be an array',
+                'names',
+            ),
+        );
+    } else if (!obj.names.every((n) => typeof n === 'string')) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_NAMES,
+                'All entries in "names" must be strings',
+                'names',
             ),
         );
     }
+}
 
-    // ignoreList check (optional) - must be array of non-negative integers within bounds
-    if (obj.ignoreList !== undefined) {
-        if (!Array.isArray(obj.ignoreList)) {
+/**
+ * Validates an optional string field (sourceRoot, file).
+ */
+function validateOptionalStringField(
+    obj: RawSourceMap,
+    field: 'sourceRoot' | 'file',
+    errorCode: SourceMapErrorCode,
+    errors: SourceMapValidationError[],
+): void {
+    if (obj[field] !== undefined && typeof obj[field] !== 'string') {
+        errors.push(
+            validationError(
+                errorCode,
+                `Field "${field}" must be a string`,
+                field,
+            ),
+        );
+    }
+}
+
+/**
+ * Validates the ignoreList field (optional, must be array of valid indices).
+ */
+function validateIgnoreList(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+): void {
+    if (obj.ignoreList === undefined) return;
+
+    if (!Array.isArray(obj.ignoreList)) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_IGNORE_LIST,
+                'Field "ignoreList" must be an array',
+                'ignoreList',
+            ),
+        );
+        return;
+    }
+
+    // Check that all entries are non-negative integers
+    const hasInvalidType = obj.ignoreList.some(
+        (idx) => typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0,
+    );
+
+    if (hasInvalidType) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_IGNORE_LIST,
+                'All entries in "ignoreList" must be non-negative integers',
+                'ignoreList',
+            ),
+        );
+        return;
+    }
+
+    // Check bounds (only if sources is valid)
+    if (Array.isArray(obj.sources)) {
+        const sourcesLength = obj.sources.length;
+        const hasOutOfBounds = obj.ignoreList.some(
+            (idx) => (idx as number) >= sourcesLength,
+        );
+        if (hasOutOfBounds) {
             errors.push(
                 validationError(
                     SourceMapErrorCode.INVALID_IGNORE_LIST,
-                    'Field "ignoreList" must be an array',
+                    'ignoreList contains index out of bounds of sources array',
                     'ignoreList',
                 ),
             );
-        } else {
-            // Check that all entries are non-negative integers
-            const hasInvalidType = obj.ignoreList.some(
-                (idx) =>
-                    typeof idx !== 'number' ||
-                    !Number.isInteger(idx) ||
-                    idx < 0,
-            );
-            if (hasInvalidType) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_IGNORE_LIST,
-                        'All entries in "ignoreList" must be non-negative integers',
-                        'ignoreList',
-                    ),
-                );
-            } else if (Array.isArray(obj.sources)) {
-                // Check bounds
-                const sourcesArray = obj.sources as unknown[];
-                const hasOutOfBounds = obj.ignoreList.some(
-                    (idx) => (idx as number) >= sourcesArray.length,
-                );
-                if (hasOutOfBounds) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.INVALID_IGNORE_LIST,
-                            'ignoreList contains index out of bounds of sources array',
-                            'ignoreList',
-                        ),
-                    );
-                }
-            }
         }
     }
+}
 
-    // VLQ mappings validation - only if we have valid structural prerequisites
-    // (mappings is a string, sources is an array)
-    if (typeof obj.mappings === 'string' && Array.isArray(obj.sources)) {
-        const sourcesLength = obj.sources.length;
-        const namesLength = Array.isArray(obj.names) ? obj.names.length : 0;
-        const mappingsResult = validateMappings(
-            obj.mappings,
-            sourcesLength,
-            namesLength,
-        );
-        errors.push(...mappingsResult.errors);
+/**
+ * Validates VLQ mappings content (only if structural prerequisites are met).
+ */
+function validateVlqMappings(
+    obj: RawSourceMap,
+    errors: SourceMapValidationError[],
+): void {
+    // Only validate if we have valid structural prerequisites
+    if (typeof obj.mappings !== 'string' || !Array.isArray(obj.sources)) {
+        return;
     }
+
+    const sourcesLength = obj.sources.length;
+    const namesLength = Array.isArray(obj.names) ? obj.names.length : 0;
+    const mappingsResult = validateMappings(
+        obj.mappings,
+        sourcesLength,
+        namesLength,
+    );
+    errors.push(...mappingsResult.errors);
+}
+
+// ============================================================================
+// REGULAR SOURCE MAP VALIDATION - MAIN FUNCTION
+// ============================================================================
+
+/**
+ * Validates a regular source map (not index map) against the ECMA-426 spec.
+ * This is an internal function - use validateSourceMap() for public API.
+ *
+ * @param obj - The raw source map object (already verified to be an object)
+ * @returns Validation result with structured errors
+ */
+function validateRegularSourceMap(
+    obj: RawSourceMap,
+): SourceMapValidationResult {
+    const errors: SourceMapValidationError[] = [];
+    const warnings: string[] = [];
+
+    // Required fields
+    validateVersion(obj, errors);
+    validateSources(obj, errors);
+    validateMappingsField(obj, errors);
+
+    // Optional fields
+    validateSourcesContent(obj, errors, warnings);
+    validateOptionalStringField(
+        obj,
+        'sourceRoot',
+        SourceMapErrorCode.INVALID_SOURCE_ROOT,
+        errors,
+    );
+    validateNames(obj, errors);
+    validateOptionalStringField(
+        obj,
+        'file',
+        SourceMapErrorCode.INVALID_FILE,
+        errors,
+    );
+    validateIgnoreList(obj, errors);
+
+    // VLQ content validation
+    validateVlqMappings(obj, errors);
 
     return {
         valid: errors.length === 0,

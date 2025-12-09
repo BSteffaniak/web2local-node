@@ -6,27 +6,26 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { validateMappings } from '../src/mappings.js';
+import {
+    validateMappings,
+    type MappingsValidationResult,
+} from '../src/mappings.js';
 import { SourceMapErrorCode } from '../src/errors.js';
+import {
+    hasErrorCode as baseHasErrorCode,
+    hasErrorMessage as baseHasErrorMessage,
+} from './helpers/test-utils.js';
 
-/**
- * Helper to check if an error with a specific code exists in the result.
- */
-function hasErrorCode(
-    result: { errors: readonly { code: string }[] },
-    code: string,
-): boolean {
-    return result.errors.some((e) => e.code === code);
+// Wrapper to accept MappingsValidationResult (which has errors array)
+function hasErrorCode(result: MappingsValidationResult, code: string): boolean {
+    return baseHasErrorCode(result.errors, code);
 }
 
-/**
- * Helper to check if an error message contains a substring.
- */
 function hasErrorMessage(
-    result: { errors: readonly { message: string }[] },
+    result: MappingsValidationResult,
     substring: string,
 ): boolean {
-    return result.errors.some((e) => e.message.includes(substring));
+    return baseHasErrorMessage(result.errors, substring);
 }
 
 // ============================================================================

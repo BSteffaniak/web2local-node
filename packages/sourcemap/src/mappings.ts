@@ -8,7 +8,7 @@
  */
 
 import type { SourceMapValidationError } from '@web2local/types';
-import { SourceMapErrorCode } from './errors.js';
+import { SourceMapErrorCode, createValidationErrorResult } from './errors.js';
 
 // ============================================================================
 // CONSTANTS
@@ -37,16 +37,8 @@ const MIN_INT32 = -2147483648;
 // VALIDATION HELPERS
 // ============================================================================
 
-/**
- * Creates a structured validation error.
- */
-function validationError(
-    code: SourceMapErrorCode,
-    message: string,
-    field?: string,
-): SourceMapValidationError {
-    return { code, message, field };
-}
+// Alias for convenience within this module
+const validationError = createValidationErrorResult;
 
 /**
  * Check if a character is a valid base64 character for VLQ
@@ -405,21 +397,20 @@ export function validateMappings(
 }
 
 /**
+ * Human-readable field names for VLQ mapping segments
+ * Index 0-4 correspond to the 5 possible fields in a mapping segment
+ */
+const MAPPING_FIELD_NAMES = [
+    'column',
+    'source index',
+    'original line',
+    'original column',
+    'name index',
+] as const;
+
+/**
  * Get human-readable field name for error messages
  */
 function getFieldName(index: number): string {
-    switch (index) {
-        case 0:
-            return 'column';
-        case 1:
-            return 'source index';
-        case 2:
-            return 'original line';
-        case 3:
-            return 'original column';
-        case 4:
-            return 'name index';
-        default:
-            return `field ${index}`;
-    }
+    return MAPPING_FIELD_NAMES[index] ?? `field ${index}`;
 }

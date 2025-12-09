@@ -5,6 +5,10 @@
  * detailed debugging of source map extraction issues.
  */
 
+import type { SourceMapValidationError } from '@web2local/types';
+
+// ============================================================================
+// ERROR CODES - Granular for debugging
 // ============================================================================
 // ERROR CODES - Granular for debugging
 // ============================================================================
@@ -242,4 +246,23 @@ export function createDataUriError(
     url?: string,
 ): SourceMapError {
     return new SourceMapError(code, message, url);
+}
+
+// ============================================================================
+// VALIDATION RESULT HELPERS
+// ============================================================================
+
+/**
+ * Creates a structured validation error object for inclusion in validation results.
+ *
+ * Note: This is different from createValidationError() which creates a
+ * SourceMapError for throwing. This creates a SourceMapValidationError
+ * for inclusion in validation result arrays.
+ */
+export function createValidationErrorResult(
+    code: SourceMapErrorCode,
+    message: string,
+    field?: string,
+): SourceMapValidationError {
+    return { code, message, field };
 }
