@@ -29,6 +29,8 @@ jobs:
             matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
         steps:
             - uses: actions/checkout@v4
+              with:
+                  submodules: recursive
 
             - uses: pnpm/action-setup@v3
               with:
