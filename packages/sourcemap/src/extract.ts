@@ -7,6 +7,7 @@
 
 import type {
     SourceMapExtractionResult,
+    SourceMapMetadata,
     ExtractSourceMapOptions,
 } from '@web2local/types';
 import { robustFetch, BROWSER_HEADERS } from '@web2local/http';
@@ -22,6 +23,46 @@ import { isDataUri } from './utils/url.js';
 import { parseSourceMapAuto } from './parser.js';
 import { discoverSourceMap } from './discovery.js';
 import { extractSources } from './extractor.js';
+
+// ============================================================================
+// INTERNAL HELPERS
+// ============================================================================
+
+/**
+ * Creates empty metadata for error results.
+ */
+function createEmptyMetadata(): SourceMapMetadata {
+    return {
+        version: 3,
+        sourceRoot: null,
+        totalSources: 0,
+        extractedCount: 0,
+        skippedCount: 0,
+        nullContentCount: 0,
+    };
+}
+
+/**
+ * Creates an error result when extraction cannot proceed.
+ * Consolidates the repeated error result pattern used throughout this module.
+ */
+function createErrorResult(
+    bundleUrl: string,
+    sourceMapUrl: string,
+    error: Error,
+): SourceMapExtractionResult {
+    return {
+        bundleUrl,
+        sourceMapUrl,
+        sources: [],
+        errors: [error],
+        metadata: createEmptyMetadata(),
+    };
+}
+
+// ============================================================================
+// MAIN EXTRACTION FUNCTION
+// ============================================================================
 
 /**
  * Extract source files from a bundle URL.
@@ -63,20 +104,11 @@ export async function extractSourceMap(
 
     // Check for cancellation before starting
     if (signal?.aborted) {
-        return {
+        return createErrorResult(
             bundleUrl,
-            sourceMapUrl: '',
-            sources: [],
-            errors: [new Error('Operation was aborted')],
-            metadata: {
-                version: 3,
-                sourceRoot: null,
-                totalSources: 0,
-                extractedCount: 0,
-                skippedCount: 0,
-                nullContentCount: 0,
-            },
-        };
+            '',
+            new Error('Operation was aborted'),
+        );
     }
 
     // Step 1: Discover the source map
@@ -87,25 +119,11 @@ export async function extractSourceMap(
     });
 
     if (!discovery.found || !discovery.sourceMapUrl) {
-        return {
+        return createErrorResult(
             bundleUrl,
-            sourceMapUrl: '',
-            sources: [],
-            errors: [
-                createDiscoveryError(
-                    'No source map found for bundle',
-                    bundleUrl,
-                ),
-            ],
-            metadata: {
-                version: 3,
-                sourceRoot: null,
-                totalSources: 0,
-                extractedCount: 0,
-                skippedCount: 0,
-                nullContentCount: 0,
-            },
-        };
+            '',
+            createDiscoveryError('No source map found for bundle', bundleUrl),
+        );
     }
 
     const sourceMapUrl = discovery.sourceMapUrl;
@@ -120,20 +138,11 @@ export async function extractSourceMap(
         try {
             // Check for cancellation before fetching
             if (signal?.aborted) {
-                return {
+                return createErrorResult(
                     bundleUrl,
                     sourceMapUrl,
-                    sources: [],
-                    errors: [new Error('Operation was aborted')],
-                    metadata: {
-                        version: 3,
-                        sourceRoot: null,
-                        totalSources: 0,
-                        extractedCount: 0,
-                        skippedCount: 0,
-                        nullContentCount: 0,
-                    },
-                };
+                    new Error('Operation was aborted'),
+                );
             }
 
             const response = await robustFetch(sourceMapUrl, {
@@ -142,78 +151,43 @@ export async function extractSourceMap(
             });
 
             if (!response.ok) {
-                return {
+                return createErrorResult(
                     bundleUrl,
                     sourceMapUrl,
-                    sources: [],
-                    errors: [
-                        createHttpError(
-                            response.status,
-                            response.statusText,
-                            sourceMapUrl,
-                        ),
-                    ],
-                    metadata: {
-                        version: 3,
-                        sourceRoot: null,
-                        totalSources: 0,
-                        extractedCount: 0,
-                        skippedCount: 0,
-                        nullContentCount: 0,
-                    },
-                };
+                    createHttpError(
+                        response.status,
+                        response.statusText,
+                        sourceMapUrl,
+                    ),
+                );
             }
 
             // Check content length if available
             const contentLength = response.headers.get('Content-Length');
             if (contentLength && parseInt(contentLength, 10) > maxSize) {
-                return {
+                return createErrorResult(
                     bundleUrl,
                     sourceMapUrl,
-                    sources: [],
-                    errors: [
-                        createSizeError(
-                            parseInt(contentLength, 10),
-                            maxSize,
-                            sourceMapUrl,
-                        ),
-                    ],
-                    metadata: {
-                        version: 3,
-                        sourceRoot: null,
-                        totalSources: 0,
-                        extractedCount: 0,
-                        skippedCount: 0,
-                        nullContentCount: 0,
-                    },
-                };
+                    createSizeError(
+                        parseInt(contentLength, 10),
+                        maxSize,
+                        sourceMapUrl,
+                    ),
+                );
             }
 
             sourceMapContent = await response.text();
         } catch (error) {
-            return {
-                bundleUrl,
-                sourceMapUrl,
-                sources: [],
-                errors: [
-                    error instanceof SourceMapError
-                        ? error
-                        : createNetworkError(
-                              error instanceof Error
-                                  ? error
-                                  : new Error(String(error)),
-                              sourceMapUrl,
-                          ),
-                ],
-                metadata: {
-                    version: 3,
-                    sourceRoot: null,
-                    totalSources: 0,
-                    extractedCount: 0,
-                    skippedCount: 0,
-                    nullContentCount: 0,
-                },
-            };
+            const normalizedError =
+                error instanceof SourceMapError
+                    ? error
+                    : createNetworkError(
+                          error instanceof Error
+                              ? error
+                              : new Error(String(error)),
+                          sourceMapUrl,
+                      );
+            return createErrorResult(bundleUrl, sourceMapUrl, normalizedError);
         }
     }
 
@@ -222,20 +196,11 @@ export async function extractSourceMap(
     try {
         parsed = parseSourceMapAuto(sourceMapContent, sourceMapUrl);
     } catch (error) {
-        return {
+        return createErrorResult(
             bundleUrl,
             sourceMapUrl,
-            sources: [],
-            errors: [error instanceof Error ? error : new Error(String(error))],
-            metadata: {
-                version: 3,
-                sourceRoot: null,
-                totalSources: 0,
-                extractedCount: 0,
-                skippedCount: 0,
-                nullContentCount: 0,
-            },
-        };
+            error instanceof Error ? error : new Error(String(error)),
+        );
     }
 
     // Step 4: Extract sources

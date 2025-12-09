@@ -7,7 +7,10 @@
 import { DATA_URI_PATTERN } from '../constants.js';
 
 /**
- * Check if a URL is a data URI (inline source map)
+ * Checks if a URL is a data URI (inline source map).
+ *
+ * @param url - The URL to check
+ * @returns true if the URL starts with "data:"
  */
 export function isDataUri(url: string): boolean {
     return url.startsWith('data:');
@@ -61,11 +64,16 @@ export function resolveSourceMapUrl(
     return new URL(sourceMapUrl, base).href;
 }
 
+/** Regex pattern for validating base64 content */
+const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+
 /**
  * Extracts and decodes the JSON content from a base64 data URI.
  *
+ * Expects format: data:application/json;base64,<content>
+ *
  * @param dataUri - The full data URI string
- * @returns The decoded JSON string, or null if invalid
+ * @returns The decoded JSON string, or null if invalid format or decoding fails
  */
 export function decodeDataUri(dataUri: string): string | null {
     const match = dataUri.match(DATA_URI_PATTERN);
@@ -75,9 +83,8 @@ export function decodeDataUri(dataUri: string): string | null {
 
     const base64Content = match[1];
 
-    // Validate base64 format - must only contain valid base64 characters
-    // Valid base64: A-Z, a-z, 0-9, +, /, and = for padding
-    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64Content)) {
+    // Validate base64 format before attempting decode
+    if (!BASE64_PATTERN.test(base64Content)) {
         return null;
     }
 

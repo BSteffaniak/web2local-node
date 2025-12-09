@@ -9,16 +9,12 @@
  */
 
 import type { SourceMapV3 } from '@web2local/types';
-import {
-    createSizeError,
-    createParseError,
-    createValidationError,
-} from './errors.js';
+import { createSizeError } from './errors.js';
 import {
     DEFAULT_MAX_SOURCE_MAP_SIZE,
     STREAMING_THRESHOLD,
 } from './constants.js';
-import { validateSourceMap, getValidationErrorCode } from './parser.js';
+import { parseSourceMap } from './parser.js';
 
 // ============================================================================
 // TYPES
@@ -101,9 +97,9 @@ export async function parseSourceMapStreaming(
             chunks.push(remaining);
         }
 
-        // Combine and parse
+        // Combine and parse using the canonical parser
         const content = chunks.join('');
-        const sourceMap = parseAndValidate(content);
+        const sourceMap = parseSourceMap(content);
 
         const parseTimeMs = performance.now() - startTime;
 
@@ -162,7 +158,7 @@ export async function parseSourceMapFromResponse(
 
     // Standard parsing for smaller files
     const content = await response.text();
-    const sourceMap = parseAndValidate(content);
+    const sourceMap = parseSourceMap(content);
     const parseTimeMs = performance.now() - startTime;
 
     return {
@@ -185,40 +181,4 @@ export function shouldUseStreaming(
     threshold: number = STREAMING_THRESHOLD,
 ): boolean {
     return sizeBytes > threshold;
-}
-
-// ============================================================================
-// INTERNAL HELPERS
-// ============================================================================
-
-/**
- * Parse JSON and validate as SourceMapV3.
- * Uses the same validation logic as parseSourceMap from parser.ts.
- */
-function parseAndValidate(content: string): SourceMapV3 {
-    let parsed: unknown;
-
-    try {
-        parsed = JSON.parse(content);
-    } catch (e) {
-        throw createParseError(
-            `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
-            'unknown',
-            content.slice(0, 500),
-        );
-    }
-
-    // Use the canonical validation function from parser.ts
-    const validation = validateSourceMap(parsed);
-    if (!validation.valid) {
-        const errorCode = getValidationErrorCode(validation.errors);
-        throw createValidationError(
-            errorCode,
-            `Invalid source map: ${validation.errors.join('; ')}`,
-            undefined,
-            { errors: validation.errors, warnings: validation.warnings },
-        );
-    }
-
-    return parsed as SourceMapV3;
 }

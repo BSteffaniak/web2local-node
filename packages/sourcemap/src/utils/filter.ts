@@ -7,14 +7,30 @@
 import { VITE_VIRTUAL_PREFIX, EXCLUDE_PATH_PATTERNS } from '../constants.js';
 
 /**
- * Options for filtering source paths.
+ * Options for filtering source paths during extraction.
  */
 export interface FilterOptions {
-    /** Include node_modules sources (default: false) */
+    /**
+     * Whether to include sources from node_modules.
+     * @default false
+     */
     includeNodeModules?: boolean;
-    /** Package names that are "internal" and should always be included */
+
+    /**
+     * Package names that are considered "internal" and should always be included,
+     * even when includeNodeModules is false.
+     *
+     * @example
+     * ```typescript
+     * internalPackages: new Set(['@mycompany/shared', '@mycompany/utils'])
+     * ```
+     */
     internalPackages?: ReadonlySet<string>;
-    /** Additional patterns to exclude */
+
+    /**
+     * Additional regex patterns to exclude from extraction.
+     * Paths matching any pattern will be skipped.
+     */
     excludePatterns?: readonly RegExp[];
 }
 

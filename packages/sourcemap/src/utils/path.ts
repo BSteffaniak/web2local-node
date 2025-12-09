@@ -67,10 +67,17 @@ export function normalizeSourcePath(
 }
 
 /**
- * Gets a clean filename for a source path, handling edge cases.
+ * Gets a clean filename from a source path.
+ *
+ * Handles:
+ * - Query string removal (file.js?v=123 → file.js)
+ * - Path extraction (src/components/Button.tsx → Button.tsx)
+ *
+ * Note: If the filename has no extension, it is returned as-is.
+ * The caller should handle extension inference if needed.
  *
  * @param path - The source file path
- * @returns Clean filename with extension
+ * @returns The filename portion of the path
  */
 export function getCleanFilename(path: string): string {
     // Remove query strings
@@ -79,11 +86,6 @@ export function getCleanFilename(path: string): string {
     // Get the filename
     const parts = withoutQuery.split('/');
     const filename = parts[parts.length - 1];
-
-    // If no extension, try to infer one
-    if (!filename.includes('.')) {
-        return filename + '.js';
-    }
 
     return filename;
 }

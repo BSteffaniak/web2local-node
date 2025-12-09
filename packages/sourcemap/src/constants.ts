@@ -30,11 +30,16 @@ export const VALID_SOURCE_MAP_CONTENT_TYPES = [
     'application/json',
     'application/octet-stream',
     'text/plain',
-    '', // Some servers don't set content-type
 ] as const;
 
 /** Content types that indicate an invalid response (e.g., SPA fallback) */
 export const INVALID_SOURCE_MAP_CONTENT_TYPES = ['text/html'] as const;
+
+/**
+ * Whether to accept responses with missing or unknown Content-Type headers.
+ * Some servers don't set Content-Type for .map files, so we accept them by default.
+ */
+export const ALLOW_MISSING_CONTENT_TYPE = true;
 
 // ============================================================================
 // COMMENT PATTERNS
@@ -89,3 +94,10 @@ export const DEFAULT_TIMEOUT = 30000;
 
 /** The only supported source map version */
 export const SUPPORTED_SOURCE_MAP_VERSION = 3;
+
+// ============================================================================
+// ERROR DISPLAY
+// ============================================================================
+
+/** Maximum length for content preview in error messages */
+export const PREVIEW_LENGTH = 500;

@@ -1,11 +1,33 @@
 import { describe, it, expect } from 'vitest';
+import type { SourceMapValidationError } from '@web2local/types';
 import {
     parseSourceMap,
     parseInlineSourceMap,
     parseSourceMapAuto,
     validateSourceMap,
+    isSourceMapV3,
 } from '../src/parser.js';
 import { SourceMapError, SourceMapErrorCode } from '../src/errors.js';
+
+/**
+ * Helper to check if an error with a specific message exists in the errors array.
+ */
+function hasErrorMessage(
+    errors: readonly SourceMapValidationError[],
+    substring: string,
+): boolean {
+    return errors.some((e) => e.message.includes(substring));
+}
+
+/**
+ * Helper to check if an error with a specific code exists in the errors array.
+ */
+function hasErrorCode(
+    errors: readonly SourceMapValidationError[],
+    code: string,
+): boolean {
+    return errors.some((e) => e.code === code);
+}
 
 describe('validateSourceMap', () => {
     it('validates a correct source map', () => {
@@ -22,13 +44,20 @@ describe('validateSourceMap', () => {
     it('fails on non-object', () => {
         const result = validateSourceMap('not an object');
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Source map must be an object');
+        expect(
+            hasErrorMessage(result.errors, 'Source map must be an object'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_JSON),
+        ).toBe(true);
     });
 
     it('fails on null', () => {
         const result = validateSourceMap(null);
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Source map must be an object');
+        expect(
+            hasErrorMessage(result.errors, 'Source map must be an object'),
+        ).toBe(true);
     });
 
     it('fails on missing version', () => {
@@ -37,7 +66,12 @@ describe('validateSourceMap', () => {
             mappings: 'AAAA',
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Missing required field: version');
+        expect(
+            hasErrorMessage(result.errors, 'Missing required field: version'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.MISSING_VERSION),
+        ).toBe(true);
     });
 
     it('fails on wrong version', () => {
@@ -47,7 +81,10 @@ describe('validateSourceMap', () => {
             mappings: 'AAAA',
         });
         expect(result.valid).toBe(false);
-        expect(result.errors[0]).toContain('Invalid version');
+        expect(hasErrorMessage(result.errors, 'Invalid version')).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_VERSION),
+        ).toBe(true);
     });
 
     it('fails on missing sources', () => {
@@ -56,7 +93,12 @@ describe('validateSourceMap', () => {
             mappings: 'AAAA',
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Missing required field: sources');
+        expect(
+            hasErrorMessage(result.errors, 'Missing required field: sources'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.MISSING_SOURCES),
+        ).toBe(true);
     });
 
     it('fails on non-array sources', () => {
@@ -66,7 +108,12 @@ describe('validateSourceMap', () => {
             mappings: 'AAAA',
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Field "sources" must be an array');
+        expect(
+            hasErrorMessage(result.errors, 'Field "sources" must be an array'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.SOURCES_NOT_ARRAY),
+        ).toBe(true);
     });
 
     it('fails on missing mappings', () => {
@@ -75,7 +122,12 @@ describe('validateSourceMap', () => {
             sources: ['index.ts'],
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Missing required field: mappings');
+        expect(
+            hasErrorMessage(result.errors, 'Missing required field: mappings'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.MISSING_MAPPINGS),
+        ).toBe(true);
     });
 
     it('fails on non-string mappings', () => {
@@ -85,7 +137,9 @@ describe('validateSourceMap', () => {
             mappings: 123,
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Field "mappings" must be a string');
+        expect(
+            hasErrorMessage(result.errors, 'Field "mappings" must be a string'),
+        ).toBe(true);
     });
 
     it('warns on sourcesContent length mismatch', () => {
@@ -108,7 +162,9 @@ describe('validateSourceMap', () => {
             names: 'not an array',
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Field "names" must be an array');
+        expect(
+            hasErrorMessage(result.errors, 'Field "names" must be an array'),
+        ).toBe(true);
     });
 
     it('validates sourceRoot is a string', () => {
@@ -119,7 +175,41 @@ describe('validateSourceMap', () => {
             sourceRoot: 123,
         });
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('Field "sourceRoot" must be a string');
+        expect(
+            hasErrorMessage(
+                result.errors,
+                'Field "sourceRoot" must be a string',
+            ),
+        ).toBe(true);
+    });
+
+    it('includes field information in validation errors', () => {
+        const result = validateSourceMap({
+            version: 3,
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        const sourcesError = result.errors.find((e) => e.field === 'sources');
+        expect(sourcesError).toBeDefined();
+        expect(sourcesError?.code).toBe(SourceMapErrorCode.MISSING_SOURCES);
+    });
+});
+
+describe('isSourceMapV3', () => {
+    it('returns true for valid source maps', () => {
+        expect(
+            isSourceMapV3({
+                version: 3,
+                sources: ['index.ts'],
+                mappings: 'AAAA',
+            }),
+        ).toBe(true);
+    });
+
+    it('returns false for invalid source maps', () => {
+        expect(isSourceMapV3({ version: 2 })).toBe(false);
+        expect(isSourceMapV3(null)).toBe(false);
+        expect(isSourceMapV3('string')).toBe(false);
     });
 });
 

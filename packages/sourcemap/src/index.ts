@@ -45,6 +45,7 @@ export type {
     ExtractSourceMapOptions,
     DiscoverSourceMapOptions,
     SourceMapValidationResult,
+    SourceMapValidationError,
 } from '@web2local/types';
 
 // ============================================================================
@@ -74,6 +75,7 @@ export {
     SOURCE_MAP_HEADERS,
     VALID_SOURCE_MAP_CONTENT_TYPES,
     INVALID_SOURCE_MAP_CONTENT_TYPES,
+    ALLOW_MISSING_CONTENT_TYPE,
     JS_SOURCE_MAP_COMMENT_PATTERN,
     CSS_SOURCE_MAP_COMMENT_PATTERN,
     DATA_URI_PATTERN,
@@ -82,6 +84,7 @@ export {
     STREAMING_THRESHOLD,
     DEFAULT_TIMEOUT,
     SUPPORTED_SOURCE_MAP_VERSION,
+    PREVIEW_LENGTH,
 } from './constants.js';
 
 // ============================================================================
@@ -101,6 +104,7 @@ export {
     parseInlineSourceMap,
     parseSourceMapAuto,
     validateSourceMap,
+    isSourceMapV3,
 } from './parser.js';
 
 // ============================================================================

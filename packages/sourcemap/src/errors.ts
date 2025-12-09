@@ -146,18 +146,24 @@ export function createHttpError(
 
 /**
  * Create an error for JSON parse failures
+ *
+ * @param message - The error message
+ * @param url - The URL of the source map
+ * @param preview - Optional preview of the content (will be truncated to PREVIEW_LENGTH)
+ * @returns A SourceMapError for JSON parse failures
  */
 export function createParseError(
     message: string,
     url: string,
     preview?: string,
 ): SourceMapError {
+    // Preview is already truncated by caller using PREVIEW_LENGTH constant
     return new SourceMapError(
         SourceMapErrorCode.INVALID_JSON,
         message,
         url,
         undefined,
-        preview ? { preview: preview.slice(0, 500) } : undefined,
+        preview ? { preview } : undefined,
     );
 }
 

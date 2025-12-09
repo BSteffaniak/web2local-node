@@ -5,14 +5,19 @@
  * Handles both external source maps and inline base64 data URIs.
  */
 
-import type { SourceMapV3, SourceMapValidationResult } from '@web2local/types';
+import type {
+    SourceMapV3,
+    SourceMapValidationResult,
+    SourceMapValidationError,
+} from '@web2local/types';
 import {
     SourceMapErrorCode,
+    SourceMapError,
     createParseError,
     createValidationError,
     createDataUriError,
 } from './errors.js';
-import { SUPPORTED_SOURCE_MAP_VERSION } from './constants.js';
+import { SUPPORTED_SOURCE_MAP_VERSION, PREVIEW_LENGTH } from './constants.js';
 import { decodeDataUri, isDataUri } from './utils/url.js';
 
 // ============================================================================
@@ -31,42 +36,23 @@ interface RawSourceMap {
 }
 
 // ============================================================================
-// VALIDATION
+// VALIDATION HELPERS
 // ============================================================================
 
 /**
- * Determines the most appropriate error code based on validation errors.
- * Returns the first matching error code in priority order.
- *
- * @internal Exported for use by streaming.ts
+ * Creates a structured validation error.
  */
-export function getValidationErrorCode(
-    errors: readonly string[],
-): SourceMapErrorCode {
-    const errorText = errors.join(' ').toLowerCase();
-
-    if (errorText.includes('missing') && errorText.includes('version')) {
-        return SourceMapErrorCode.MISSING_VERSION;
-    }
-    if (errorText.includes('invalid version')) {
-        return SourceMapErrorCode.INVALID_VERSION;
-    }
-    if (errorText.includes('missing') && errorText.includes('sources')) {
-        return SourceMapErrorCode.MISSING_SOURCES;
-    }
-    if (
-        errorText.includes('sources') &&
-        (errorText.includes('array') || errorText.includes('must be'))
-    ) {
-        return SourceMapErrorCode.SOURCES_NOT_ARRAY;
-    }
-    if (errorText.includes('missing') && errorText.includes('mappings')) {
-        return SourceMapErrorCode.MISSING_MAPPINGS;
-    }
-
-    // Default to INVALID_VERSION for general validation failures
-    return SourceMapErrorCode.INVALID_VERSION;
+function validationError(
+    code: SourceMapErrorCode,
+    message: string,
+    field?: string,
+): SourceMapValidationError {
+    return { code, message, field };
 }
+
+// ============================================================================
+// VALIDATION
+// ============================================================================
 
 /**
  * Validates a raw parsed object against the Source Map V3 specification.
@@ -78,16 +64,21 @@ export function getValidationErrorCode(
  * - sourcesContent (if present) aligns with sources length
  *
  * @param raw - The parsed JSON object
- * @returns Validation result with errors and warnings
+ * @returns Validation result with structured errors (including error codes)
  */
 export function validateSourceMap(raw: unknown): SourceMapValidationResult {
-    const errors: string[] = [];
+    const errors: SourceMapValidationError[] = [];
     const warnings: string[] = [];
 
     if (typeof raw !== 'object' || raw === null) {
         return {
             valid: false,
-            errors: ['Source map must be an object'],
+            errors: [
+                validationError(
+                    SourceMapErrorCode.INVALID_JSON,
+                    'Source map must be an object',
+                ),
+            ],
             warnings: [],
         };
     }
@@ -96,33 +87,79 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
 
     // Version check
     if (obj.version === undefined) {
-        errors.push('Missing required field: version');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.MISSING_VERSION,
+                'Missing required field: version',
+                'version',
+            ),
+        );
     } else if (obj.version !== SUPPORTED_SOURCE_MAP_VERSION) {
         errors.push(
-            `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
+            validationError(
+                SourceMapErrorCode.INVALID_VERSION,
+                `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
+                'version',
+            ),
         );
     }
 
     // Sources check
     if (obj.sources === undefined) {
-        errors.push('Missing required field: sources');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.MISSING_SOURCES,
+                'Missing required field: sources',
+                'sources',
+            ),
+        );
     } else if (!Array.isArray(obj.sources)) {
-        errors.push('Field "sources" must be an array');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.SOURCES_NOT_ARRAY,
+                'Field "sources" must be an array',
+                'sources',
+            ),
+        );
     } else if (!obj.sources.every((s) => typeof s === 'string')) {
-        errors.push('All entries in "sources" must be strings');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.SOURCES_NOT_ARRAY,
+                'All entries in "sources" must be strings',
+                'sources',
+            ),
+        );
     }
 
     // Mappings check
     if (obj.mappings === undefined) {
-        errors.push('Missing required field: mappings');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.MISSING_MAPPINGS,
+                'Missing required field: mappings',
+                'mappings',
+            ),
+        );
     } else if (typeof obj.mappings !== 'string') {
-        errors.push('Field "mappings" must be a string');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.MISSING_MAPPINGS,
+                'Field "mappings" must be a string',
+                'mappings',
+            ),
+        );
     }
 
     // sourcesContent check (optional but validated if present)
     if (obj.sourcesContent !== undefined) {
         if (!Array.isArray(obj.sourcesContent)) {
-            errors.push('Field "sourcesContent" must be an array');
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.SOURCES_CONTENT_LENGTH_MISMATCH,
+                    'Field "sourcesContent" must be an array',
+                    'sourcesContent',
+                ),
+            );
         } else if (
             Array.isArray(obj.sources) &&
             obj.sourcesContent.length !== obj.sources.length
@@ -135,15 +172,33 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
 
     // sourceRoot check (optional)
     if (obj.sourceRoot !== undefined && typeof obj.sourceRoot !== 'string') {
-        errors.push('Field "sourceRoot" must be a string');
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_VERSION,
+                'Field "sourceRoot" must be a string',
+                'sourceRoot',
+            ),
+        );
     }
 
     // names check (optional)
     if (obj.names !== undefined) {
         if (!Array.isArray(obj.names)) {
-            errors.push('Field "names" must be an array');
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_VERSION,
+                    'Field "names" must be an array',
+                    'names',
+                ),
+            );
         } else if (!obj.names.every((n) => typeof n === 'string')) {
-            errors.push('All entries in "names" must be strings');
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_VERSION,
+                    'All entries in "names" must be strings',
+                    'names',
+                ),
+            );
         }
     }
 
@@ -152,6 +207,17 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         errors,
         warnings,
     };
+}
+
+/**
+ * Type guard that checks if a value is a valid SourceMapV3.
+ * Uses validateSourceMap internally for validation.
+ *
+ * @param value - The value to check
+ * @returns true if the value is a valid SourceMapV3
+ */
+export function isSourceMapV3(value: unknown): value is SourceMapV3 {
+    return validateSourceMap(value).valid;
 }
 
 // ============================================================================
@@ -172,7 +238,7 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
     try {
         parsed = JSON.parse(content);
     } catch (e) {
-        const preview = content.slice(0, 500).replace(/\n/g, ' ');
+        const preview = content.slice(0, PREVIEW_LENGTH).replace(/\n/g, ' ');
         throw createParseError(
             `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
             url ?? 'unknown',
@@ -180,20 +246,26 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
         );
     }
 
-    // Validate structure
-    const validation = validateSourceMap(parsed);
-    if (!validation.valid) {
-        const errorCode = getValidationErrorCode(validation.errors);
-        throw createValidationError(
-            errorCode,
-            `Invalid source map: ${validation.errors.join('; ')}`,
-            url,
-            { errors: validation.errors, warnings: validation.warnings },
-        );
+    // Validate structure using the type guard
+    if (isSourceMapV3(parsed)) {
+        return parsed;
     }
 
-    // Cast to SourceMapV3 (validation ensures this is safe)
-    return parsed as SourceMapV3;
+    // Get validation errors for detailed error message
+    const validation = validateSourceMap(parsed);
+    const firstError = validation.errors[0];
+    const errorCode = firstError?.code as SourceMapErrorCode;
+    const errorMessages = validation.errors.map((e) => e.message).join('; ');
+
+    throw createValidationError(
+        errorCode ?? SourceMapErrorCode.INVALID_VERSION,
+        `Invalid source map: ${errorMessages}`,
+        url,
+        {
+            errors: validation.errors,
+            warnings: validation.warnings,
+        },
+    );
 }
 
 /**

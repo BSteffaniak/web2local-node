@@ -3,8 +3,8 @@
  *
  * Finds source maps from bundles using multiple strategies:
  * 1. HTTP headers (SourceMap, X-SourceMap)
- * 2. JS comments (//# source + MappingURL=...)
- * 3. CSS comments (/*# source + MappingURL=... *\/)
+ * 2. JS comments (//# sourceMappingURL=...)
+ * 3. CSS comments (multi-line comment with # sourceMappingURL=...)
  * 4. URL probing ({bundleUrl}.map)
  */
 
@@ -19,6 +19,7 @@ import {
     CSS_SOURCE_MAP_COMMENT_PATTERN,
     VALID_SOURCE_MAP_CONTENT_TYPES,
     INVALID_SOURCE_MAP_CONTENT_TYPES,
+    ALLOW_MISSING_CONTENT_TYPE,
 } from './constants.js';
 import { resolveSourceMapUrl, isDataUri } from './utils/url.js';
 
@@ -107,6 +108,7 @@ export function findSourceMapInComment(
  * Validates if a content type indicates a valid source map response.
  *
  * Rejects text/html (common SPA fallback for 404s).
+ * Accepts missing/empty content types if ALLOW_MISSING_CONTENT_TYPE is true.
  *
  * @param contentType - The Content-Type header value
  * @returns true if the content type is valid for source maps
@@ -114,21 +116,27 @@ export function findSourceMapInComment(
 export function isValidSourceMapContentType(contentType: string): boolean {
     const normalized = contentType.toLowerCase().split(';')[0].trim();
 
-    // Check against invalid types first
+    // Handle missing or empty content type
+    if (!normalized) {
+        return ALLOW_MISSING_CONTENT_TYPE;
+    }
+
+    // Check against invalid types first (these are always rejected)
     for (const invalid of INVALID_SOURCE_MAP_CONTENT_TYPES) {
         if (normalized.includes(invalid)) {
             return false;
         }
     }
 
-    // Check against valid types
+    // Check against known valid types
     for (const valid of VALID_SOURCE_MAP_CONTENT_TYPES) {
-        if (valid === '' || normalized.includes(valid)) {
+        if (normalized.includes(valid)) {
             return true;
         }
     }
 
-    return false;
+    // Unknown content type - accept if we allow missing types (lenient mode)
+    return ALLOW_MISSING_CONTENT_TYPE;
 }
 
 /**

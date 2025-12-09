@@ -5,22 +5,13 @@
  * The core extraction logic lives in @web2local/sourcemap.
  */
 
+import type { SourceFile, SourceMapResult } from '@web2local/types';
 import { getCache } from '@web2local/cache';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 import { parseSourceMap, normalizeSourcePath } from '@web2local/sourcemap';
 
-// Re-export types for backwards compatibility
-export interface SourceFile {
-    path: string;
-    content: string;
-}
-
-export interface SourceMapResult {
-    bundleUrl: string;
-    sourceMapUrl: string;
-    files: SourceFile[];
-    errors: string[];
-}
+// Re-export types from @web2local/types for backwards compatibility
+export type { SourceFile, SourceMapResult } from '@web2local/types';
 
 // Re-export utilities from @web2local/sourcemap
 export {

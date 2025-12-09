@@ -302,8 +302,8 @@ describe('getCleanFilename', () => {
         expect(getCleanFilename('src/index.ts?v=123')).toBe('index.ts');
     });
 
-    it('adds .js extension for extensionless files', () => {
-        expect(getCleanFilename('src/index')).toBe('index.js');
+    it('preserves extensionless filenames without modification', () => {
+        expect(getCleanFilename('src/index')).toBe('index');
     });
 
     it('keeps existing extensions', () => {

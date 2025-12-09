@@ -119,11 +119,24 @@ export interface DiscoverSourceMapOptions {
 }
 
 /**
+ * A structured validation error with code and field information.
+ */
+export interface SourceMapValidationError {
+    /** Error code for programmatic handling */
+    readonly code: string;
+    /** Human-readable error message */
+    readonly message: string;
+    /** The field that caused the error (if applicable) */
+    readonly field?: string;
+}
+
+/**
  * Result of source map validation
  */
 export interface SourceMapValidationResult {
     readonly valid: boolean;
-    readonly errors: readonly string[];
+    /** Structured validation errors with codes */
+    readonly errors: readonly SourceMapValidationError[];
     readonly warnings: readonly string[];
 }
 
