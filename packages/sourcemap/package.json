@@ -1,7 +1,7 @@
 {
     "name": "@web2local/sourcemap",
     "version": "0.0.1",
-    "description": "Professional source map parsing, discovery, and extraction for web2local",
+    "description": "Source map parsing, discovery, and extraction for web2local",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
