@@ -3,8 +3,8 @@
  *
  * Finds source maps from bundles using multiple strategies:
  * 1. HTTP headers (SourceMap, X-SourceMap)
- * 2. JS comments (//# sourceMappingURL=...)
- * 3. CSS comments (multi-line comment with # sourceMappingURL=...)
+ * 2. JS comments (//# source + MappingURL=...)
+ * 3. CSS comments (multi-line comment with # source + MappingURL=...)
  * 4. URL probing ({bundleUrl}.map)
  */
 
