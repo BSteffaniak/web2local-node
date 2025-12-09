@@ -138,14 +138,7 @@ export async function captureWebsite(
     const staticCapturer = new StaticCapturer({
         outputDir: staticOutputDir,
         verbose: opts.verbose,
-        captureHtml: opts.captureStatic,
-        captureCss: opts.captureStatic,
-        captureJs: opts.captureStatic,
-        captureImages: opts.captureStatic,
-        captureFonts: opts.captureStatic,
-        captureMedia: opts.captureStatic,
         captureRenderedHtml: opts.captureRenderedHtml ?? false,
-        // Pass through the new filter-based options
         staticFilter: opts.staticFilter,
         onAssetCaptured: opts.onAssetCaptured,
         skipAssetWrite: opts.skipAssetWrite,
@@ -166,7 +159,7 @@ export async function captureWebsite(
         // Attach interceptors - they stay attached throughout the crawl
         apiInterceptor.attach(page);
         if (opts.captureStatic) {
-            staticCapturer.attach(page, opts.url);
+            await staticCapturer.attach(page, opts.url);
         }
 
         opts.onProgress?.('Starting crawl...');

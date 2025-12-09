@@ -72,18 +72,6 @@ export interface StaticCaptureOptions {
     outputDir: string;
     /** Maximum file size to download (bytes) */
     maxFileSize: number;
-    /** Whether to capture HTML documents */
-    captureHtml: boolean;
-    /** Whether to capture CSS */
-    captureCss: boolean;
-    /** Whether to capture JavaScript */
-    captureJs: boolean;
-    /** Whether to capture images */
-    captureImages: boolean;
-    /** Whether to capture fonts */
-    captureFonts: boolean;
-    /** Whether to capture other media (video, audio) */
-    captureMedia: boolean;
     /**
      * Whether to capture the rendered HTML (after JS execution) instead of original.
      * Set to true for SPAs where the initial HTML is mostly empty and JS renders content.
@@ -107,7 +95,10 @@ export interface StaticCaptureOptions {
     /**
      * Filter for selective asset capture.
      * When provided, only assets matching the filter criteria are captured.
-     * This allows fine-grained control over which assets to capture.
+     * When not provided, all static assets are captured (default behavior).
+     *
+     * Use this to limit which assets are downloaded. When set, requests for
+     * non-matching assets are aborted before network transfer occurs.
      */
     staticFilter?: StaticAssetFilter;
 
@@ -128,12 +119,6 @@ export interface StaticCaptureOptions {
 const DEFAULT_OPTIONS: StaticCaptureOptions = {
     outputDir: './static',
     maxFileSize: 50 * 1024 * 1024, // 50MB
-    captureHtml: true,
-    captureCss: true,
-    captureJs: true,
-    captureImages: true,
-    captureFonts: true,
-    captureMedia: true,
     captureRenderedHtml: false,
     captureMediaSources: false,
     verbose: false,
@@ -151,53 +136,6 @@ const STATIC_RESOURCE_TYPES: Set<ResourceType> = new Set([
     'font',
     'media',
 ]);
-
-/**
- * Map resource type to option
- */
-function shouldCaptureResourceType(
-    type: ResourceType,
-    options: StaticCaptureOptions,
-): boolean {
-    switch (type) {
-        case 'document':
-            return options.captureHtml;
-        case 'stylesheet':
-            return options.captureCss;
-        case 'script':
-            return options.captureJs;
-        case 'image':
-            return options.captureImages;
-        case 'font':
-            return options.captureFonts;
-        case 'media':
-            return options.captureMedia;
-        default:
-            return false;
-    }
-}
-
-/**
- * Map resource type to MIME type prefix for filter matching
- */
-function resourceTypeToMimePrefix(type: ResourceType): string {
-    switch (type) {
-        case 'document':
-            return 'text/html';
-        case 'stylesheet':
-            return 'text/css';
-        case 'script':
-            return 'application/javascript';
-        case 'image':
-            return 'image/';
-        case 'font':
-            return 'font/';
-        case 'media':
-            return 'video/'; // also matches audio/ but we check both
-        default:
-            return '';
-    }
-}
 
 /**
  * Check if an asset passes the static filter criteria.
@@ -528,9 +466,10 @@ export class StaticCapturer {
     }
 
     /**
-     * Attach capturer to a page using response events
+     * Attach capturer to a page using response events.
+     * Must be called before navigation to enable route interception.
      */
-    attach(page: Page, entrypointUrl: string): void {
+    async attach(page: Page, entrypointUrl: string): Promise<void> {
         this.entrypointUrl = entrypointUrl;
         this.baseOrigin = new URL(entrypointUrl).origin;
 
@@ -539,8 +478,49 @@ export class StaticCapturer {
         );
         this.log(`[StaticCapturer] Initial base origin: ${this.baseOrigin}`);
         this.log(
-            `[StaticCapturer] Options: captureHtml=${this.options.captureHtml}, captureCss=${this.options.captureCss}, captureJs=${this.options.captureJs}, captureImages=${this.options.captureImages}`,
+            `[StaticCapturer] Options: staticFilter=${this.options.staticFilter ? 'set' : 'none'}, skipAssetWrite=${this.options.skipAssetWrite}`,
         );
+
+        // Set up route interception to abort filtered requests BEFORE they're sent.
+        // This prevents actual network traffic for assets that would be filtered out.
+        // Only active when staticFilter is set - otherwise all assets are captured.
+        if (this.options.staticFilter) {
+            this.log(
+                `[StaticCapturer] Setting up route interception for filtering`,
+            );
+            await page.route('**/*', (route, request) => {
+                const resourceType = request.resourceType() as ResourceType;
+                const url = request.url();
+
+                // Always allow navigation requests (needed for crawling)
+                if (request.isNavigationRequest()) {
+                    route.continue();
+                    return;
+                }
+
+                // Skip data URLs
+                if (url.startsWith('data:')) {
+                    route.continue();
+                    return;
+                }
+
+                // Only filter static resource types
+                if (!STATIC_RESOURCE_TYPES.has(resourceType)) {
+                    route.continue();
+                    return;
+                }
+
+                // Apply early URL-based filter
+                if (!passesFilterEarly(url, this.options.staticFilter)) {
+                    this.log(`[Static] Aborting ${url} (does not pass filter)`);
+                    route.abort();
+                    return;
+                }
+
+                // Let the request proceed
+                route.continue();
+            });
+        }
 
         // Listen for main frame navigation to detect redirects early
         // This updates the base origin as soon as the browser follows a redirect
@@ -570,10 +550,6 @@ export class StaticCapturer {
 
             // Check if this is a static resource type we want
             if (!STATIC_RESOURCE_TYPES.has(resourceType)) {
-                return;
-            }
-
-            if (!shouldCaptureResourceType(resourceType, this.options)) {
                 return;
             }
 
