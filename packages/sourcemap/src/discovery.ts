@@ -369,7 +369,8 @@ export async function probeSourceMapUrl(
         }
 
         return mapUrl;
-    } catch {
+    } catch (_error) {
+        // Network errors are expected when probing - fail gracefully
         return null;
     }
 }
@@ -473,7 +474,8 @@ export async function discoverSourceMap(
             locationType: null,
             bundleContent: content,
         };
-    } catch {
+    } catch (_error) {
+        // Network errors, aborts, and timeouts are expected - fail gracefully
         return {
             found: false,
             sourceMapUrl: null,

@@ -158,9 +158,7 @@ export function hasExtractableContent(sourceMap: SourceMapV3): boolean {
         return false;
     }
 
-    return sourceMap.sourcesContent.some(
-        (content: string | null) => content !== null && content !== undefined,
-    );
+    return sourceMap.sourcesContent.some((content) => content !== null);
 }
 
 /**

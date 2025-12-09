@@ -4,7 +4,12 @@
  * Functions for normalizing and manipulating source map paths.
  */
 
-import { WEBPACK_PROTOCOL, VITE_VIRTUAL_PREFIX } from '../constants.js';
+import {
+    WEBPACK_PROTOCOL,
+    VITE_VIRTUAL_PREFIX,
+    WEBPACK_PROTOCOL_PATTERN,
+    RELATIVE_PREFIX_PATTERN,
+} from '../constants.js';
 
 /**
  * Normalizes source paths from various bundler formats.
@@ -29,7 +34,7 @@ export function normalizeSourcePath(
     // Handle webpack:// protocol
     // webpack://myapp/./src/components/Button.tsx → src/components/Button.tsx
     if (path.startsWith(WEBPACK_PROTOCOL)) {
-        path = path.replace(/^webpack:\/\/[^/]*\//, '');
+        path = path.replace(WEBPACK_PROTOCOL_PATTERN, '');
     }
 
     // Handle vite/rollup virtual modules (prefixed with \0)
@@ -43,7 +48,7 @@ export function normalizeSourcePath(
     }
 
     // Remove leading ./
-    path = path.replace(/^\.\//, '');
+    path = path.replace(RELATIVE_PREFIX_PATTERN, '');
 
     // Resolve .. segments safely (prevent path traversal)
     const segments = path.split('/');

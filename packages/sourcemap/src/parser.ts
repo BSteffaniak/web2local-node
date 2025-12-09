@@ -391,24 +391,14 @@ function validateIndexMapInternal(
     const errors: SourceMapValidationError[] = [];
     const warnings: string[] = [];
 
-    // Version check
-    if (obj.version === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.MISSING_VERSION,
-                'Missing required field: version',
-                'version',
-            ),
-        );
-    } else if (obj.version !== SUPPORTED_SOURCE_MAP_VERSION) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_VERSION,
-                `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
-                'version',
-            ),
-        );
-    }
+    // Reuse existing validators for common fields
+    validateVersion(obj, errors);
+    validateOptionalStringField(
+        obj,
+        'file',
+        SourceMapErrorCode.INVALID_FILE,
+        errors,
+    );
 
     // Index maps cannot have mappings field (they use sections instead)
     if (obj.mappings !== undefined) {
@@ -417,17 +407,6 @@ function validateIndexMapInternal(
                 SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
                 'Index map cannot have both "sections" and "mappings" fields',
                 'mappings',
-            ),
-        );
-    }
-
-    // file check (optional) - must be string if present
-    if (obj.file !== undefined && typeof obj.file !== 'string') {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_FILE,
-                'Field "file" must be a string',
-                'file',
             ),
         );
     }

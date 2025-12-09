@@ -49,6 +49,20 @@ export const ALLOW_MISSING_CONTENT_TYPE = true;
 export const DATA_URI_PATTERN = /^data:application\/json;base64,(.+)$/;
 
 // ============================================================================
+// PATH PATTERNS
+// ============================================================================
+
+/** Extracts package name from node_modules path (e.g., "lodash" or "@types/node") */
+export const NODE_MODULES_PACKAGE_PATTERN =
+    /node_modules\/(@[^/]+\/[^/]+|[^/]+)/;
+
+/** Matches webpack:// protocol with optional package name */
+export const WEBPACK_PROTOCOL_PATTERN = /^webpack:\/\/[^/]*\//;
+
+/** Matches relative path prefix (./) */
+export const RELATIVE_PREFIX_PATTERN = /^\.\//;
+
+// ============================================================================
 // PATH EXCLUSION PATTERNS
 // ============================================================================
 

@@ -4,7 +4,11 @@
  * Functions for filtering source paths based on various criteria.
  */
 
-import { VITE_VIRTUAL_PREFIX, EXCLUDE_PATH_PATTERNS } from '../constants.js';
+import {
+    VITE_VIRTUAL_PREFIX,
+    EXCLUDE_PATH_PATTERNS,
+    NODE_MODULES_PACKAGE_PATTERN,
+} from '../constants.js';
 
 /**
  * Options for filtering source paths during extraction.
@@ -70,8 +74,7 @@ export function shouldIncludeSource(
 
         // Check if this is an internal package that should always be included
         if (internalPackages && internalPackages.size > 0) {
-            // Extract package name: node_modules/@scope/pkg/... or node_modules/pkg/...
-            const match = path.match(/node_modules\/(@[^/]+\/[^/]+|[^/]+)/);
+            const match = path.match(NODE_MODULES_PACKAGE_PATTERN);
             if (match && internalPackages.has(match[1])) {
                 return true;
             }
@@ -80,19 +83,14 @@ export function shouldIncludeSource(
         return false;
     }
 
-    // Check built-in exclusion patterns
-    for (const pattern of EXCLUDE_PATH_PATTERNS) {
+    // Check all exclusion patterns (built-in + custom)
+    const allPatterns = excludePatterns
+        ? [...EXCLUDE_PATH_PATTERNS, ...excludePatterns]
+        : EXCLUDE_PATH_PATTERNS;
+
+    for (const pattern of allPatterns) {
         if (pattern.test(path)) {
             return false;
-        }
-    }
-
-    // Check custom exclusion patterns
-    if (excludePatterns) {
-        for (const pattern of excludePatterns) {
-            if (pattern.test(path)) {
-                return false;
-            }
         }
     }
 

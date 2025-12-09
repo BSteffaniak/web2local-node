@@ -5,6 +5,76 @@
  */
 
 // ============================================================================
+// SOURCE MAP ERROR CODES
+// ============================================================================
+
+/**
+ * Granular error codes for source map operations.
+ * Use these for programmatic error handling.
+ */
+export const SourceMapErrorCode = {
+    // Network Errors
+    FETCH_FAILED: 'FETCH_FAILED',
+    FETCH_TIMEOUT: 'FETCH_TIMEOUT',
+    FETCH_DNS_ERROR: 'FETCH_DNS_ERROR',
+    FETCH_CONNECTION_REFUSED: 'FETCH_CONNECTION_REFUSED',
+    FETCH_CONNECTION_RESET: 'FETCH_CONNECTION_RESET',
+    FETCH_SSL_ERROR: 'FETCH_SSL_ERROR',
+
+    // HTTP Errors
+    HTTP_ERROR: 'HTTP_ERROR',
+
+    // Parse Errors
+    INVALID_JSON: 'INVALID_JSON',
+    INVALID_BASE64: 'INVALID_BASE64',
+    INVALID_DATA_URI: 'INVALID_DATA_URI',
+
+    // Validation Errors
+    INVALID_VERSION: 'INVALID_VERSION',
+    MISSING_VERSION: 'MISSING_VERSION',
+    MISSING_SOURCES: 'MISSING_SOURCES',
+    MISSING_MAPPINGS: 'MISSING_MAPPINGS',
+    SOURCES_NOT_ARRAY: 'SOURCES_NOT_ARRAY',
+    INVALID_SOURCE_ROOT: 'INVALID_SOURCE_ROOT',
+    INVALID_NAMES: 'INVALID_NAMES',
+    INVALID_FILE: 'INVALID_FILE',
+    INVALID_SOURCES_CONTENT: 'INVALID_SOURCES_CONTENT',
+    INVALID_IGNORE_LIST: 'INVALID_IGNORE_LIST',
+
+    // Index Map Errors
+    INVALID_INDEX_MAP_SECTIONS: 'INVALID_INDEX_MAP_SECTIONS',
+    INVALID_INDEX_MAP_OFFSET: 'INVALID_INDEX_MAP_OFFSET',
+    INVALID_INDEX_MAP_SECTION_MAP: 'INVALID_INDEX_MAP_SECTION_MAP',
+    INDEX_MAP_OVERLAP: 'INDEX_MAP_OVERLAP',
+    INDEX_MAP_INVALID_ORDER: 'INDEX_MAP_INVALID_ORDER',
+    INDEX_MAP_NESTED: 'INDEX_MAP_NESTED',
+    INDEX_MAP_WITH_MAPPINGS: 'INDEX_MAP_WITH_MAPPINGS',
+
+    // VLQ/Mapping Errors
+    INVALID_VLQ: 'INVALID_VLQ',
+    INVALID_MAPPING_SEGMENT: 'INVALID_MAPPING_SEGMENT',
+    MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS: 'MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS',
+    MAPPING_NAME_INDEX_OUT_OF_BOUNDS: 'MAPPING_NAME_INDEX_OUT_OF_BOUNDS',
+    MAPPING_NEGATIVE_VALUE: 'MAPPING_NEGATIVE_VALUE',
+    MAPPING_VALUE_EXCEEDS_32_BITS: 'MAPPING_VALUE_EXCEEDS_32_BITS',
+
+    // Content Errors
+    NO_EXTRACTABLE_SOURCES: 'NO_EXTRACTABLE_SOURCES',
+
+    // Discovery Errors
+    NO_SOURCE_MAP_FOUND: 'NO_SOURCE_MAP_FOUND',
+
+    // Size Errors
+    SOURCE_MAP_TOO_LARGE: 'SOURCE_MAP_TOO_LARGE',
+} as const;
+
+/**
+ * Union type of all source map error codes
+ */
+export type SourceMapErrorCode =
+    (typeof SourceMapErrorCode)[keyof typeof SourceMapErrorCode];
+
+// ============================================================================
 // SOURCE MAP TYPES
 // ============================================================================
 
@@ -60,6 +130,45 @@ export interface IndexMapV3 {
  * @see https://tc39.es/ecma426/
  */
 export type SourceMap = SourceMapV3 | IndexMapV3;
+
+// ============================================================================
+// RESULT TYPE - Functional error handling
+// ============================================================================
+
+/**
+ * A discriminated union for operations that can fail.
+ * Use instead of throwing exceptions or returning Error objects as values.
+ *
+ * @example
+ * function divide(a: number, b: number): Result<number, string> {
+ *     if (b === 0) return Err('Division by zero');
+ *     return Ok(a / b);
+ * }
+ *
+ * const result = divide(10, 2);
+ * if (result.ok) {
+ *     console.log(result.value); // 5
+ * } else {
+ *     console.error(result.error);
+ * }
+ */
+export type Result<T, E = string> =
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E };
+
+/**
+ * Create a successful result
+ */
+export function Ok<T>(value: T): Result<T, never> {
+    return { ok: true, value };
+}
+
+/**
+ * Create a failed result
+ */
+export function Err<E>(error: E): Result<never, E> {
+    return { ok: false, error };
+}
 
 /**
  * A source file extracted from a source map
@@ -156,7 +265,7 @@ export interface DiscoverSourceMapOptions {
  */
 export interface SourceMapValidationError {
     /** Error code for programmatic handling */
-    readonly code: string;
+    readonly code: SourceMapErrorCode;
     /** Human-readable error message */
     readonly message: string;
     /** The field that caused the error (if applicable) */

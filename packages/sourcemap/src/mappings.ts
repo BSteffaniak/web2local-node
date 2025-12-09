@@ -2,12 +2,17 @@
  * Source Map Mappings Validation
  *
  * Validates VLQ-encoded mappings strings per ECMA-426 specification.
- * Uses a custom VLQ decoder for strict spec compliance.
+ * Uses a single-pass streaming parser for optimal performance.
  *
  * @see https://tc39.es/ecma426/
  */
 
-import type { SourceMapValidationError } from '@web2local/types';
+import {
+    type SourceMapValidationError,
+    Err,
+    Ok,
+    type Result,
+} from '@web2local/types';
 import { SourceMapErrorCode, createValidationErrorResult } from './errors.js';
 
 // ============================================================================
@@ -15,23 +20,105 @@ import { SourceMapErrorCode, createValidationErrorResult } from './errors.js';
 // ============================================================================
 
 /**
- * Valid base64 characters for VLQ encoding
- * @see https://tc39.es/ecma426/#sec-mappings
- */
-const BASE64_CHARS = new Set(
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
-);
-
-/**
  * Maximum value for 32-bit signed integer (2^31 - 1)
  * Per ECMA-426, all VLQ values must fit in a 32-bit signed integer
  */
-const MAX_INT32 = 2147483647;
+const MAX_INT32 = 0x7fffffff;
 
 /**
  * Minimum value for 32-bit signed integer (-2^31)
  */
-const MIN_INT32 = -2147483648;
+const MIN_INT32 = -0x80000000;
+
+/** ASCII code for semicolon (line separator) */
+const CHAR_SEMICOLON = 59;
+
+/** ASCII code for comma (segment separator) */
+const CHAR_COMMA = 44;
+
+// ============================================================================
+// VLQ DECODING
+// ============================================================================
+
+/**
+ * Convert a base64 character code to its 6-bit value.
+ * Returns -1 for invalid characters.
+ */
+function base64CharToDigit(charCode: number): number {
+    // A-Z: 0-25
+    if (charCode >= 65 && charCode <= 90) return charCode - 65;
+    // a-z: 26-51
+    if (charCode >= 97 && charCode <= 122) return charCode - 71;
+    // 0-9: 52-61
+    if (charCode >= 48 && charCode <= 57) return charCode + 4;
+    // +: 62
+    if (charCode === 43) return 62;
+    // /: 63
+    if (charCode === 47) return 63;
+    // Invalid character
+    return -1;
+}
+
+/**
+ * Decode VLQ values from a segment of the mappings string.
+ * Uses the Result pattern instead of returning Error objects.
+ *
+ * @param mappings - The full mappings string
+ * @param start - Start index of the segment
+ * @param end - End index of the segment (exclusive)
+ * @returns Result with decoded values or error message
+ */
+function decodeVlqSegment(
+    mappings: string,
+    start: number,
+    end: number,
+): Result<number[], string> {
+    const values: number[] = [];
+    let value = 0;
+    let shift = 0;
+
+    for (let pos = start; pos < end; pos++) {
+        const charCode = mappings.charCodeAt(pos);
+        const digit = base64CharToDigit(charCode);
+
+        if (digit === -1) {
+            return Err(
+                `Invalid character '${mappings[pos]}' at position ${pos}`,
+            );
+        }
+
+        // Lower 5 bits are the value, bit 5 is the continuation flag
+        const hasContinuation = (digit & 32) !== 0;
+        const dataBits = digit & 31;
+
+        // Use multiplication to avoid 32-bit overflow in JS bitwise operations
+        // Even with shift < 32, dataBits << shift can overflow if result > 2^31
+        value += dataBits * Math.pow(2, shift);
+        shift += 5;
+
+        if (!hasContinuation) {
+            // Convert from VLQ sign representation (bit 0 is sign)
+            // value=0 -> 0, value=1 -> -0 (treated as 0)
+            // value=2 -> 1, value=3 -> -1
+            // value=4 -> 2, value=5 -> -2
+            // Formula: positive = floor(value/2), negative = -floor(value/2)
+            const decoded =
+                (value & 1) === 1
+                    ? -Math.floor(value / 2)
+                    : Math.floor(value / 2);
+            values.push(decoded);
+            value = 0;
+            shift = 0;
+        }
+    }
+
+    // If we ended with a continuation bit set, the VLQ is invalid
+    if (shift !== 0) {
+        return Err('Missing continuation digits');
+    }
+
+    return Ok(values);
+}
 
 // ============================================================================
 // VALIDATION HELPERS
@@ -41,123 +128,18 @@ const MIN_INT32 = -2147483648;
 const validationError = createValidationErrorResult;
 
 /**
- * Check if a character is a valid base64 character for VLQ
+ * Human-readable field names for VLQ mapping segments
  */
-function isValidBase64Char(char: string): boolean {
-    return BASE64_CHARS.has(char);
-}
+const FIELD_NAMES = [
+    'column',
+    'source index',
+    'original line',
+    'original column',
+    'name index',
+];
 
-/**
- * Pre-validate the mappings string for invalid characters.
- * The ECMA-426 spec requires that mappings only contain:
- * - Base64 characters (A-Z, a-z, 0-9, +, /)
- * - Comma (,) - segment separator
- * - Semicolon (;) - line separator
- */
-function validateMappingsChars(
-    mappings: string,
-): SourceMapValidationError | null {
-    for (let i = 0; i < mappings.length; i++) {
-        const char = mappings[i];
-        if (char !== ',' && char !== ';' && !isValidBase64Char(char)) {
-            return validationError(
-                SourceMapErrorCode.INVALID_VLQ,
-                `Invalid VLQ: contains non-base64 character '${char}' at position ${i}`,
-                'mappings',
-            );
-        }
-    }
-    return null;
-}
-
-/**
- * Manually decode a VLQ segment to get raw relative values.
- * This is needed to properly validate 32-bit overflow and other constraints.
- *
- * Note: We use multiplication instead of bit shifting to handle values > 32 bits,
- * since JavaScript's << operator only works with 32-bit integers.
- */
-function decodeVLQSegment(segment: string): number[] | Error {
-    const values: number[] = [];
-    let shift = 0;
-    let value = 0;
-
-    for (let i = 0; i < segment.length; i++) {
-        const charCode = segment.charCodeAt(i);
-
-        // Convert base64 character to 6-bit value
-        let digit: number;
-        if (charCode >= 65 && charCode <= 90) {
-            // A-Z
-            digit = charCode - 65;
-        } else if (charCode >= 97 && charCode <= 122) {
-            // a-z
-            digit = charCode - 97 + 26;
-        } else if (charCode >= 48 && charCode <= 57) {
-            // 0-9
-            digit = charCode - 48 + 52;
-        } else if (charCode === 43) {
-            // +
-            digit = 62;
-        } else if (charCode === 47) {
-            // /
-            digit = 63;
-        } else {
-            return new Error(
-                `Invalid character '${String.fromCharCode(charCode)}'`,
-            );
-        }
-
-        // Lower 5 bits are the value, bit 5 is the continuation flag
-        const hasContinuation = (digit & 32) !== 0;
-        const dataBits = digit & 31;
-
-        // Use multiplication instead of bit shift to handle values > 32 bits
-        // Math.pow(2, shift) is the same as (1 << shift) but works for large shifts
-        value += dataBits * Math.pow(2, shift);
-        shift += 5;
-
-        if (!hasContinuation) {
-            // Convert from VLQ sign representation
-            // Bit 0 is the sign bit
-            let decoded: number;
-            if (value % 2 === 1) {
-                // Use floor division for large values
-                decoded = -Math.floor(value / 2);
-            } else {
-                decoded = Math.floor(value / 2);
-            }
-            values.push(decoded);
-            value = 0;
-            shift = 0;
-        }
-    }
-
-    // If we ended with a continuation bit set, the VLQ is invalid
-    if (shift !== 0) {
-        return new Error('Missing continuation digits');
-    }
-
-    return values;
-}
-
-/**
- * Check if a segment string contains an empty segment (consecutive commas or leading/trailing comma)
- */
-function hasEmptySegment(mappings: string): boolean {
-    // Check for empty segments between commas (,,)
-    if (mappings.includes(',,')) return true;
-
-    // Check each line for empty segments
-    const lines = mappings.split(';');
-    for (const line of lines) {
-        // Empty line is OK (just a semicolon)
-        if (line === '') continue;
-
-        // Check for leading or trailing comma
-        if (line.startsWith(',') || line.endsWith(',')) return true;
-    }
-    return false;
+function getFieldName(index: number): string {
+    return FIELD_NAMES[index] ?? `field ${index}`;
 }
 
 // ============================================================================
@@ -174,6 +156,7 @@ export interface MappingsValidationResult {
 
 /**
  * Validates a mappings string against the ECMA-426 specification.
+ * Uses a single-pass streaming parser for optimal performance.
  *
  * Checks:
  * - Valid VLQ encoding (base64 characters, proper continuation bits)
@@ -196,221 +179,263 @@ export function validateMappings(
     const errors: SourceMapValidationError[] = [];
 
     // Empty mappings is valid
-    if (mappings === '') {
+    if (mappings.length === 0) {
         return { valid: true, errors: [] };
     }
 
-    // First, validate that all characters are valid
-    const charError = validateMappingsChars(mappings);
-    if (charError) {
-        errors.push(charError);
-        return { valid: false, errors };
-    }
-
-    // Check for empty segments (consecutive commas)
-    if (hasEmptySegment(mappings)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
-                'Invalid mapping: contains empty segment (0 fields)',
-                'mappings',
-            ),
-        );
-        return { valid: false, errors };
-    }
-
-    // Parse and validate each segment manually to check raw VLQ values
-    const lines = mappings.split(';');
-
-    // Track accumulated state for absolute value validation
-    // (per ECMA-426, these accumulate across the entire mappings string)
+    // Accumulated state (persists across entire mappings string)
     let accSourceIndex = 0;
     let accOriginalLine = 0;
     let accOriginalColumn = 0;
     let accNameIndex = 0;
 
-    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-        if (line === '') continue; // Empty line is OK
+    // Per-line state
+    let accColumn = 0;
+    let lineIndex = 0;
+    let segmentIndex = 0;
+    let segmentStart = 0;
+    let hasSegmentContent = false;
 
-        const segments = line.split(',');
+    // Single pass through the mappings string
+    for (let pos = 0; pos <= mappings.length; pos++) {
+        const charCode = pos < mappings.length ? mappings.charCodeAt(pos) : -1;
+        const isEnd = charCode === -1;
+        const isSeparator =
+            charCode === CHAR_SEMICOLON || charCode === CHAR_COMMA;
 
-        // Column resets to 0 for each new line
-        let accColumn = 0;
+        if (isEnd || isSeparator) {
+            const segmentEnd = pos;
+            const segmentLength = segmentEnd - segmentStart;
 
-        for (let segIndex = 0; segIndex < segments.length; segIndex++) {
-            const segmentStr = segments[segIndex];
-            const segmentLocation = `line ${lineIndex}, segment ${segIndex}`;
+            // Check for empty segment (consecutive separators or leading/trailing comma)
+            if (segmentLength === 0 && hasSegmentContent) {
+                // Empty segment after content on this line (e.g., "AAAA," or "AAAA,,")
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                        'Invalid mapping: contains empty segment (0 fields)',
+                        'mappings',
+                    ),
+                );
+                // Skip to next separator
+                segmentStart = pos + 1;
+                if (charCode === CHAR_SEMICOLON) {
+                    lineIndex++;
+                    segmentIndex = 0;
+                    accColumn = 0;
+                    hasSegmentContent = false;
+                } else if (charCode === CHAR_COMMA) {
+                    segmentIndex++;
+                }
+                continue;
+            }
 
-            // Decode the raw VLQ values
-            const rawValues = decodeVLQSegment(segmentStr);
-            if (rawValues instanceof Error) {
+            if (segmentLength === 0 && charCode === CHAR_COMMA) {
+                // Leading comma on a line (e.g., ";,AAAA" or ",AAAA")
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                        'Invalid mapping: contains empty segment (0 fields)',
+                        'mappings',
+                    ),
+                );
+                segmentStart = pos + 1;
+                segmentIndex++;
+                continue;
+            }
+
+            // Process non-empty segment
+            if (segmentLength > 0) {
+                hasSegmentContent = true;
+                const segmentLocation = `line ${lineIndex}, segment ${segmentIndex}`;
+
+                // First validate characters and decode VLQ
+                const decodeResult = decodeVlqSegment(
+                    mappings,
+                    segmentStart,
+                    segmentEnd,
+                );
+
+                if (!decodeResult.ok) {
+                    // Check if it's a character error or continuation error
+                    const errorMessage = decodeResult.error;
+                    if (errorMessage.includes('Invalid character')) {
+                        // Extract the character for the error message
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INVALID_VLQ,
+                                `Invalid VLQ: contains non-base64 character at position ${segmentStart}`,
+                                'mappings',
+                            ),
+                        );
+                        // Return early on invalid character
+                        return { valid: false, errors };
+                    } else {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INVALID_VLQ,
+                                `Invalid VLQ at ${segmentLocation}: ${errorMessage}`,
+                                'mappings',
+                            ),
+                        );
+                    }
+                } else {
+                    const values = decodeResult.value;
+
+                    // Validate segment field count (must be 1, 4, or 5)
+                    if (values.length === 0) {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                                `Invalid mapping segment at ${segmentLocation}: empty segment (0 fields)`,
+                                'mappings',
+                            ),
+                        );
+                    } else if (values.length === 2 || values.length === 3) {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                                `Invalid mapping segment at ${segmentLocation}: ${values.length} fields (must be 1, 4, or 5)`,
+                                'mappings',
+                            ),
+                        );
+                    } else if (values.length > 5) {
+                        errors.push(
+                            validationError(
+                                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                                `Invalid mapping segment at ${segmentLocation}: ${values.length} fields (must be 1, 4, or 5)`,
+                                'mappings',
+                            ),
+                        );
+                    } else {
+                        // Valid field count (1, 4, or 5) - validate values
+
+                        // Check all raw values are within 32-bit range
+                        for (let i = 0; i < values.length; i++) {
+                            const v = values[i];
+                            if (v > MAX_INT32 || v < MIN_INT32) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
+                                        `Mapping ${getFieldName(i)} at ${segmentLocation} exceeds 32-bit range: ${v}`,
+                                        'mappings',
+                                    ),
+                                );
+                            }
+                        }
+
+                        // Field 0: Generated column (relative within line)
+                        accColumn += values[0];
+                        if (accColumn < 0) {
+                            errors.push(
+                                validationError(
+                                    SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                                    `Mapping column at ${segmentLocation} is negative: ${accColumn}`,
+                                    'mappings',
+                                ),
+                            );
+                        }
+
+                        // If segment has 4 or 5 fields, validate source mapping
+                        if (values.length >= 4) {
+                            // Field 1: Source index
+                            accSourceIndex += values[1];
+                            if (accSourceIndex < 0) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                                        `Mapping source index at ${segmentLocation} is negative: ${accSourceIndex}`,
+                                        'mappings',
+                                    ),
+                                );
+                            } else if (accSourceIndex >= sourcesLength) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
+                                        `Mapping source index at ${segmentLocation} is out of bounds: ${accSourceIndex} >= ${sourcesLength}`,
+                                        'mappings',
+                                    ),
+                                );
+                            }
+
+                            // Field 2: Original line
+                            accOriginalLine += values[2];
+                            if (accOriginalLine < 0) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                                        `Mapping original line at ${segmentLocation} is negative: ${accOriginalLine}`,
+                                        'mappings',
+                                    ),
+                                );
+                            }
+
+                            // Field 3: Original column
+                            accOriginalColumn += values[3];
+                            if (accOriginalColumn < 0) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                                        `Mapping original column at ${segmentLocation} is negative: ${accOriginalColumn}`,
+                                        'mappings',
+                                    ),
+                                );
+                            }
+                        }
+
+                        // If segment has 5 fields, validate name mapping
+                        if (values.length === 5) {
+                            // Field 4: Name index
+                            accNameIndex += values[4];
+                            if (accNameIndex < 0) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                                        `Mapping name index at ${segmentLocation} is negative: ${accNameIndex}`,
+                                        'mappings',
+                                    ),
+                                );
+                            } else if (accNameIndex >= namesLength) {
+                                errors.push(
+                                    validationError(
+                                        SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
+                                        `Mapping name index at ${segmentLocation} is out of bounds: ${accNameIndex} >= ${namesLength}`,
+                                        'mappings',
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Update position tracking
+            segmentStart = pos + 1;
+
+            if (charCode === CHAR_SEMICOLON) {
+                // New line - reset column accumulator
+                lineIndex++;
+                segmentIndex = 0;
+                accColumn = 0;
+                hasSegmentContent = false;
+            } else if (charCode === CHAR_COMMA) {
+                segmentIndex++;
+            }
+        } else {
+            // Non-separator character - validate it's a valid base64 char
+            const digit = base64CharToDigit(charCode);
+            if (digit === -1) {
                 errors.push(
                     validationError(
                         SourceMapErrorCode.INVALID_VLQ,
-                        `Invalid VLQ at ${segmentLocation}: ${rawValues.message}`,
+                        `Invalid VLQ: contains non-base64 character '${mappings[pos]}' at position ${pos}`,
                         'mappings',
                     ),
                 );
-                continue;
-            }
-
-            // Validate segment field count (must be 1, 4, or 5 fields)
-            if (rawValues.length === 0) {
-                // This shouldn't happen if we already checked for empty segments
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
-                        `Invalid mapping segment at ${segmentLocation}: empty segment (0 fields)`,
-                        'mappings',
-                    ),
-                );
-                continue;
-            }
-
-            if (rawValues.length === 2 || rawValues.length === 3) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
-                        `Invalid mapping segment at ${segmentLocation}: ${rawValues.length} fields (must be 1, 4, or 5)`,
-                        'mappings',
-                    ),
-                );
-                continue;
-            }
-
-            if (rawValues.length > 5) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
-                        `Invalid mapping segment at ${segmentLocation}: ${rawValues.length} fields (must be 1, 4, or 5)`,
-                        'mappings',
-                    ),
-                );
-                continue;
-            }
-
-            // Check all raw values are within 32-bit range
-            for (let i = 0; i < rawValues.length; i++) {
-                const value = rawValues[i];
-                if (value > MAX_INT32 || value < MIN_INT32) {
-                    const fieldName = getFieldName(i);
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
-                            `Mapping ${fieldName} at ${segmentLocation} exceeds 32-bit range: ${value}`,
-                            'mappings',
-                        ),
-                    );
-                }
-            }
-
-            // Accumulate and validate absolute values
-            // Field 0: Generated column (relative within line)
-            accColumn += rawValues[0];
-            if (accColumn < 0) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
-                        `Mapping column at ${segmentLocation} is negative: ${accColumn}`,
-                        'mappings',
-                    ),
-                );
-            }
-
-            // If segment has 4 or 5 fields, validate source mapping
-            if (rawValues.length >= 4) {
-                // Field 1: Source index (relative across all segments)
-                accSourceIndex += rawValues[1];
-                if (accSourceIndex < 0) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
-                            `Mapping source index at ${segmentLocation} is negative: ${accSourceIndex}`,
-                            'mappings',
-                        ),
-                    );
-                } else if (accSourceIndex >= sourcesLength) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
-                            `Mapping source index at ${segmentLocation} is out of bounds: ${accSourceIndex} >= ${sourcesLength}`,
-                            'mappings',
-                        ),
-                    );
-                }
-
-                // Field 2: Original line (relative across all segments)
-                accOriginalLine += rawValues[2];
-                if (accOriginalLine < 0) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
-                            `Mapping original line at ${segmentLocation} is negative: ${accOriginalLine}`,
-                            'mappings',
-                        ),
-                    );
-                }
-
-                // Field 3: Original column (relative across all segments)
-                accOriginalColumn += rawValues[3];
-                if (accOriginalColumn < 0) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
-                            `Mapping original column at ${segmentLocation} is negative: ${accOriginalColumn}`,
-                            'mappings',
-                        ),
-                    );
-                }
-            }
-
-            // If segment has 5 fields, validate name mapping
-            if (rawValues.length === 5) {
-                // Field 4: Name index (relative across all segments)
-                accNameIndex += rawValues[4];
-                if (accNameIndex < 0) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
-                            `Mapping name index at ${segmentLocation} is negative: ${accNameIndex}`,
-                            'mappings',
-                        ),
-                    );
-                } else if (accNameIndex >= namesLength) {
-                    errors.push(
-                        validationError(
-                            SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
-                            `Mapping name index at ${segmentLocation} is out of bounds: ${accNameIndex} >= ${namesLength}`,
-                            'mappings',
-                        ),
-                    );
-                }
+                return { valid: false, errors };
             }
         }
     }
 
-    return {
-        valid: errors.length === 0,
-        errors,
-    };
-}
-
-/**
- * Human-readable field names for VLQ mapping segments
- * Index 0-4 correspond to the 5 possible fields in a mapping segment
- */
-const MAPPING_FIELD_NAMES = [
-    'column',
-    'source index',
-    'original line',
-    'original column',
-    'name index',
-] as const;
-
-/**
- * Get human-readable field name for error messages
- */
-function getFieldName(index: number): string {
-    return MAPPING_FIELD_NAMES[index] ?? `field ${index}`;
+    return { valid: errors.length === 0, errors };
 }

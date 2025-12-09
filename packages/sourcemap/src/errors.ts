@@ -1,76 +1,93 @@
 /**
  * Source Map Error Handling
  *
- * Provides granular error codes and a custom error class for
- * detailed debugging of source map extraction issues.
+ * Provides a custom error class, error factories, and category helpers
+ * for detailed debugging of source map extraction issues.
  */
 
-import type { SourceMapValidationError } from '@web2local/types';
+import {
+    SourceMapErrorCode,
+    type SourceMapValidationError,
+} from '@web2local/types';
+
+// Re-export for convenience
+export { SourceMapErrorCode };
 
 // ============================================================================
-// ERROR CODES - Granular for debugging
-// ============================================================================
-// ERROR CODES - Granular for debugging
+// ERROR CATEGORY HELPERS
 // ============================================================================
 
-export const SourceMapErrorCode = {
-    // === Network Errors ===
-    FETCH_FAILED: 'FETCH_FAILED',
-    FETCH_TIMEOUT: 'FETCH_TIMEOUT',
-    FETCH_DNS_ERROR: 'FETCH_DNS_ERROR',
-    FETCH_CONNECTION_REFUSED: 'FETCH_CONNECTION_REFUSED',
-    FETCH_CONNECTION_RESET: 'FETCH_CONNECTION_RESET',
-    FETCH_SSL_ERROR: 'FETCH_SSL_ERROR',
+const NETWORK_ERROR_CODES: readonly SourceMapErrorCode[] = [
+    SourceMapErrorCode.FETCH_FAILED,
+    SourceMapErrorCode.FETCH_TIMEOUT,
+    SourceMapErrorCode.FETCH_DNS_ERROR,
+    SourceMapErrorCode.FETCH_CONNECTION_REFUSED,
+    SourceMapErrorCode.FETCH_CONNECTION_RESET,
+    SourceMapErrorCode.FETCH_SSL_ERROR,
+];
 
-    // === HTTP Errors ===
-    HTTP_ERROR: 'HTTP_ERROR',
+const VALIDATION_ERROR_CODES: readonly SourceMapErrorCode[] = [
+    SourceMapErrorCode.INVALID_VERSION,
+    SourceMapErrorCode.MISSING_VERSION,
+    SourceMapErrorCode.MISSING_SOURCES,
+    SourceMapErrorCode.MISSING_MAPPINGS,
+    SourceMapErrorCode.SOURCES_NOT_ARRAY,
+    SourceMapErrorCode.INVALID_SOURCE_ROOT,
+    SourceMapErrorCode.INVALID_NAMES,
+    SourceMapErrorCode.INVALID_FILE,
+    SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+    SourceMapErrorCode.INVALID_IGNORE_LIST,
+    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+    SourceMapErrorCode.INDEX_MAP_OVERLAP,
+    SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+    SourceMapErrorCode.INDEX_MAP_NESTED,
+    SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
+];
 
-    // === Parse Errors ===
-    INVALID_JSON: 'INVALID_JSON',
-    INVALID_BASE64: 'INVALID_BASE64',
-    INVALID_DATA_URI: 'INVALID_DATA_URI',
+const PARSE_ERROR_CODES: readonly SourceMapErrorCode[] = [
+    SourceMapErrorCode.INVALID_JSON,
+    SourceMapErrorCode.INVALID_BASE64,
+    SourceMapErrorCode.INVALID_DATA_URI,
+];
 
-    // === Validation Errors ===
-    INVALID_VERSION: 'INVALID_VERSION',
-    MISSING_VERSION: 'MISSING_VERSION',
-    MISSING_SOURCES: 'MISSING_SOURCES',
-    MISSING_MAPPINGS: 'MISSING_MAPPINGS',
-    SOURCES_NOT_ARRAY: 'SOURCES_NOT_ARRAY',
-    INVALID_SOURCE_ROOT: 'INVALID_SOURCE_ROOT',
-    INVALID_NAMES: 'INVALID_NAMES',
-    INVALID_FILE: 'INVALID_FILE',
-    INVALID_SOURCES_CONTENT: 'INVALID_SOURCES_CONTENT',
-    INVALID_IGNORE_LIST: 'INVALID_IGNORE_LIST',
+const VLQ_ERROR_CODES: readonly SourceMapErrorCode[] = [
+    SourceMapErrorCode.INVALID_VLQ,
+    SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+    SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
+    SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
+    SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+    SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
+];
 
-    // === Index Map Errors ===
-    INVALID_INDEX_MAP_SECTIONS: 'INVALID_INDEX_MAP_SECTIONS',
-    INVALID_INDEX_MAP_OFFSET: 'INVALID_INDEX_MAP_OFFSET',
-    INVALID_INDEX_MAP_SECTION_MAP: 'INVALID_INDEX_MAP_SECTION_MAP',
-    INDEX_MAP_OVERLAP: 'INDEX_MAP_OVERLAP',
-    INDEX_MAP_INVALID_ORDER: 'INDEX_MAP_INVALID_ORDER',
-    INDEX_MAP_NESTED: 'INDEX_MAP_NESTED',
-    INDEX_MAP_WITH_MAPPINGS: 'INDEX_MAP_WITH_MAPPINGS',
+/**
+ * Check if an error code is a network-related error
+ */
+export function isNetworkError(code: SourceMapErrorCode): boolean {
+    return (NETWORK_ERROR_CODES as readonly string[]).includes(code);
+}
 
-    // === VLQ/Mapping Errors ===
-    INVALID_VLQ: 'INVALID_VLQ',
-    INVALID_MAPPING_SEGMENT: 'INVALID_MAPPING_SEGMENT',
-    MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS: 'MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS',
-    MAPPING_NAME_INDEX_OUT_OF_BOUNDS: 'MAPPING_NAME_INDEX_OUT_OF_BOUNDS',
-    MAPPING_NEGATIVE_VALUE: 'MAPPING_NEGATIVE_VALUE',
-    MAPPING_VALUE_EXCEEDS_32_BITS: 'MAPPING_VALUE_EXCEEDS_32_BITS',
+/**
+ * Check if an error code is a validation error
+ */
+export function isValidationError(code: SourceMapErrorCode): boolean {
+    return (VALIDATION_ERROR_CODES as readonly string[]).includes(code);
+}
 
-    // === Content Errors ===
-    NO_EXTRACTABLE_SOURCES: 'NO_EXTRACTABLE_SOURCES',
+/**
+ * Check if an error code is a parse error
+ */
+export function isParseError(code: SourceMapErrorCode): boolean {
+    return (PARSE_ERROR_CODES as readonly string[]).includes(code);
+}
 
-    // === Discovery Errors ===
-    NO_SOURCE_MAP_FOUND: 'NO_SOURCE_MAP_FOUND',
-
-    // === Size Errors ===
-    SOURCE_MAP_TOO_LARGE: 'SOURCE_MAP_TOO_LARGE',
-} as const;
-
-export type SourceMapErrorCode =
-    (typeof SourceMapErrorCode)[keyof typeof SourceMapErrorCode];
+/**
+ * Check if an error code is a VLQ/mapping error
+ */
+export function isVlqError(code: SourceMapErrorCode): boolean {
+    return (VLQ_ERROR_CODES as readonly string[]).includes(code);
+}
 
 // ============================================================================
 // ERROR CLASS

@@ -2,130 +2,109 @@
  * @web2local/sourcemap
  *
  * Professional source map parsing, discovery, and extraction.
+ * Implements the ECMA-426 Source Map specification.
  *
- * This package provides a clean, well-structured API for working with source maps:
+ * ## Quick Start
  *
- * - **Discovery**: Find source maps from bundle URLs (headers, comments, probing)
- * - **Parsing**: Parse and validate source map JSON (including inline base64)
- * - **Extraction**: Extract source files with path normalization and filtering
- *
- * @example
  * ```typescript
  * import { extractSourceMap } from '@web2local/sourcemap';
  *
- * // Simple: extract sources from a bundle URL
  * const result = await extractSourceMap('https://example.com/bundle.js');
  * for (const source of result.sources) {
- *   console.log(source.path, source.content.length);
+ *     console.log(source.path, source.content.length);
  * }
+ * ```
  *
- * // Advanced: use individual functions for more control
+ * ## Advanced Usage
+ *
+ * ```typescript
  * import { discoverSourceMap, parseSourceMap, extractSources } from '@web2local/sourcemap';
  *
  * const discovery = await discoverSourceMap(bundleUrl);
  * if (discovery.found) {
- *   const content = await fetch(discovery.sourceMapUrl).then(r => r.text());
- *   const parsed = parseSourceMap(content);
- *   const result = extractSources(parsed, bundleUrl, discovery.sourceMapUrl);
+ *     const content = await fetch(discovery.sourceMapUrl).then(r => r.text());
+ *     const parsed = parseSourceMap(content);
+ *     const result = extractSources(parsed, bundleUrl, discovery.sourceMapUrl);
  * }
  * ```
+ *
+ * @see https://tc39.es/ecma426/ - ECMA-426 Source Map Specification
  */
 
 // ============================================================================
-// TYPE RE-EXPORTS
+// PRIMARY API
+// ============================================================================
+
+/**
+ * High-level extraction function - all-in-one discovery, fetch, parse, extract.
+ * This is the recommended entry point for most use cases.
+ */
+export { extractSourceMap } from './extract.js';
+
+// ============================================================================
+// TYPES
 // ============================================================================
 
 export type {
+    // Source Map Types
     SourceMapV3,
     IndexMapV3,
     IndexMapSection,
     IndexMapOffset,
     SourceMap,
+    // Extraction Types
     ExtractedSource,
     SourceMapMetadata,
     SourceMapExtractionResult,
+    // Discovery Types
     SourceMapLocationType,
     SourceMapDiscoveryResult,
+    // Options Types
     ExtractSourceMapOptions,
     DiscoverSourceMapOptions,
+    // Validation Types
     SourceMapValidationResult,
     SourceMapValidationError,
+    // Result Type
+    Result,
 } from '@web2local/types';
 
-// ============================================================================
-// ERROR EXPORTS
-// ============================================================================
-
-export {
-    SourceMapError,
-    SourceMapErrorCode,
-    createHttpError,
-    createParseError,
-    createValidationError,
-    createNetworkError,
-    createSizeError,
-    createDiscoveryError,
-    createContentError,
-    createDataUriError,
-} from './errors.js';
+export { SourceMapErrorCode, Ok, Err } from '@web2local/types';
 
 // ============================================================================
-// CONSTANT EXPORTS
+// DISCOVERY API
 // ============================================================================
 
-export {
-    WEBPACK_PROTOCOL,
-    VITE_VIRTUAL_PREFIX,
-    SOURCE_MAP_HEADERS,
-    VALID_SOURCE_MAP_CONTENT_TYPES,
-    INVALID_SOURCE_MAP_CONTENT_TYPES,
-    ALLOW_MISSING_CONTENT_TYPE,
-    DATA_URI_PATTERN,
-    EXCLUDE_PATH_PATTERNS,
-    DEFAULT_MAX_SOURCE_MAP_SIZE,
-    DEFAULT_TIMEOUT,
-    SUPPORTED_SOURCE_MAP_VERSION,
-    ERROR_PREVIEW_LENGTH,
-} from './constants.js';
+/**
+ * Discovers source maps from bundle URLs using multiple strategies:
+ * HTTP headers, inline/external comments, and URL probing.
+ */
+export { discoverSourceMap, findSourceMapInComment } from './discovery.js';
 
 // ============================================================================
-// UTILITY EXPORTS
+// PARSING & VALIDATION API
 // ============================================================================
 
-export { normalizeSourcePath, getCleanFilename } from './utils/path.js';
-export { isDataUri, resolveSourceMapUrl, decodeDataUri } from './utils/url.js';
-export { shouldIncludeSource, type FilterOptions } from './utils/filter.js';
-
-// ============================================================================
-// PARSER EXPORTS
-// ============================================================================
-
+/**
+ * Parse and validate source map JSON content.
+ * Supports both regular and index maps per ECMA-426.
+ */
 export {
     parseSourceMap,
-    parseInlineSourceMap,
     parseSourceMapAuto,
+    parseInlineSourceMap,
     validateSourceMap,
     isSourceMapV3,
 } from './parser.js';
 
 // ============================================================================
-// DISCOVERY EXPORTS
+// SOURCE EXTRACTION API
 // ============================================================================
 
-export {
-    discoverSourceMap,
-    findSourceMapInHeaders,
-    findSourceMapInComment,
-    findSourceMapInJsComment,
-    findSourceMapInCssComment,
-    probeSourceMapUrl,
-    isValidSourceMapContentType,
-} from './discovery.js';
-
-// ============================================================================
-// SOURCE EXTRACTION EXPORTS
-// ============================================================================
-
+/**
+ * Extract source files from parsed source maps.
+ * Handles path normalization and filtering.
+ */
 export {
     extractSources,
     hasExtractableContent,
@@ -133,13 +112,50 @@ export {
 } from './sources.js';
 
 // ============================================================================
-// MAPPINGS VALIDATION EXPORTS
+// MAPPINGS VALIDATION API
 // ============================================================================
 
+/**
+ * Validate VLQ-encoded mappings strings.
+ * Low-level API for custom validation needs.
+ */
 export { validateMappings, type MappingsValidationResult } from './mappings.js';
 
 // ============================================================================
-// HIGH-LEVEL CONVENIENCE FUNCTION
+// ERROR HANDLING
 // ============================================================================
 
-export { extractSourceMap } from './extract.js';
+/**
+ * Custom error class with structured error codes.
+ * Use isNetworkError(), isValidationError(), etc. for error classification.
+ */
+export {
+    SourceMapError,
+    isNetworkError,
+    isValidationError,
+    isParseError,
+    isVlqError,
+} from './errors.js';
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+/**
+ * Path normalization for webpack://, vite, and other bundler formats.
+ */
+export { normalizeSourcePath, getCleanFilename } from './utils/path.js';
+
+/**
+ * Source filtering for node_modules, internal packages, etc.
+ */
+export { shouldIncludeSource, type FilterOptions } from './utils/filter.js';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+/**
+ * Default configuration values. Use these for reference when customizing options.
+ */
+export { DEFAULT_MAX_SOURCE_MAP_SIZE, DEFAULT_TIMEOUT } from './constants.js';
