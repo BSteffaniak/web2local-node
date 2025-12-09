@@ -11,7 +11,8 @@
  */
 
 import { createHash } from 'crypto';
-import { VersionResult, SourceFile } from './version-detector.js';
+import { VersionResult } from './version-detector.js';
+import type { ExtractedSource } from '@web2local/types';
 import {
     FingerprintCache,
     getCache,
@@ -815,7 +816,7 @@ function computeMinifiedSimilarity(
  * Extracts structural fingerprint from extracted package files.
  * Returns a set of normalized filenames that represent the package structure.
  */
-function extractStructuralFingerprint(files: SourceFile[]): Set<string> {
+function extractStructuralFingerprint(files: ExtractedSource[]): Set<string> {
     const filenames = new Set<string>();
 
     for (const file of files) {
@@ -975,7 +976,7 @@ function computeStructuralSimilarity(
  */
 async function findMatchingVersionByStructure(
     packageName: string,
-    extractedFiles: SourceFile[],
+    extractedFiles: ExtractedSource[],
     versions: string[],
     options: {
         minSimilarity?: number;
@@ -1187,7 +1188,7 @@ async function fetchMinifiedFromUnpkg(
 /**
  * Computes fingerprint for extracted source file
  */
-function computeExtractedFingerprint(file: SourceFile): {
+function computeExtractedFingerprint(file: ExtractedSource): {
     contentHash: string;
     normalizedHash: string;
     signature: string;
@@ -1262,7 +1263,9 @@ function computeSimilarity(
 /**
  * Finds the entry point file from extracted package files
  */
-function findExtractedEntryPoint(files: SourceFile[]): SourceFile | null {
+function findExtractedEntryPoint(
+    files: ExtractedSource[],
+): ExtractedSource | null {
     const priorities = [
         /src\/index\.(m?[jt]sx?)$/,
         /dist\/index\.(m?js)$/,
@@ -1300,7 +1303,7 @@ function findExtractedEntryPoint(files: SourceFile[]): SourceFile | null {
  * Collects combined features from all package files for multi-file fingerprinting.
  * This is useful for packages split into many small files (like lodash, date-fns).
  */
-function collectPackageFeatures(files: SourceFile[]): {
+function collectPackageFeatures(files: ExtractedSource[]): {
     strings: Set<string>;
     functionCalls: Set<string>;
     numbers: Set<string>;
@@ -1483,7 +1486,7 @@ async function checkVersionSimilarity(
  */
 export async function findMatchingVersion(
     packageName: string,
-    extractedFiles: SourceFile[],
+    extractedFiles: ExtractedSource[],
     options: {
         maxVersionsToCheck?: number;
         minSimilarity?: number;
@@ -1721,7 +1724,7 @@ export async function findMatchingVersion(
  * Batch fingerprint matching for multiple packages
  */
 export async function findMatchingVersions(
-    packages: Map<string, SourceFile[]>,
+    packages: Map<string, ExtractedSource[]>,
     options: FingerprintOptions = {},
 ): Promise<Map<string, FingerprintResult>> {
     const {

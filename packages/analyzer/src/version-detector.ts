@@ -3,6 +3,8 @@
  * Tries multiple detection methods and returns the highest confidence result
  */
 
+import type { ExtractedSource } from '@web2local/types';
+
 export type VersionConfidence =
     | 'exact'
     | 'high'
@@ -26,11 +28,6 @@ export interface VersionResult {
     version: string;
     confidence: VersionConfidence;
     source: VersionSource;
-}
-
-export interface SourceFile {
-    path: string;
-    content: string;
 }
 
 /**
@@ -339,10 +336,10 @@ export function detectVersionFromBanner(
  * Enhanced to detect vendor bundles and custom build directories generically
  */
 export function getPackageFiles(
-    files: SourceFile[],
+    files: ExtractedSource[],
     packageName: string,
-): SourceFile[] {
-    const packageFiles: SourceFile[] = [];
+): ExtractedSource[] {
+    const packageFiles: ExtractedSource[] = [];
     const normalizedName = packageName.toLowerCase();
     const baseName = packageName.replace(/^@[^/]+\//, '').toLowerCase();
 
@@ -398,7 +395,7 @@ export function getPackageFiles(
  */
 export function detectCustomBuild(
     packageName: string,
-    packageFiles: SourceFile[],
+    packageFiles: ExtractedSource[],
 ): VersionResult | null {
     const baseName = packageName.replace(/^@[^/]+\//, '');
     const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -473,8 +470,8 @@ export function detectCustomBuild(
  */
 export function detectVersion(
     packageName: string,
-    packageFiles: SourceFile[],
-    _allFiles: SourceFile[],
+    packageFiles: ExtractedSource[],
+    _allFiles: ExtractedSource[],
 ): VersionResult | null {
     // Try each detection method in order of confidence
 
@@ -517,7 +514,7 @@ export function detectVersion(
  */
 export function detectVersions(
     packageNames: string[],
-    allFiles: SourceFile[],
+    allFiles: ExtractedSource[],
     onProgress?: (packageName: string, result: VersionResult | null) => void,
 ): Map<string, VersionResult> {
     const results = new Map<string, VersionResult>();

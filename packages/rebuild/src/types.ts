@@ -2,15 +2,7 @@
  * Type definitions for the rebuild system
  */
 
-/**
- * Source file with path and content (matches dependency-analyzer's SourceFile)
- */
-export interface SourceFile {
-    /** Relative path from project root */
-    path: string;
-    /** File content */
-    content: string;
-}
+import type { ExtractedSource } from '@web2local/types';
 
 /**
  * Detected frontend framework
@@ -86,7 +78,7 @@ export interface PrepareRebuildOptions {
      * Source files extracted from source maps.
      * When provided, enables accurate alias detection by analyzing actual imports.
      */
-    sourceFiles?: SourceFile[];
+    sourceFiles?: ExtractedSource[];
 }
 
 /**

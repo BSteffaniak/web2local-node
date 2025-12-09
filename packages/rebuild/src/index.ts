@@ -12,8 +12,9 @@ import type {
     BuildOptions,
     BuildResult,
     ProjectConfig,
-    SourceFile,
 } from './types.js';
+
+import type { ExtractedSource } from '@web2local/types';
 
 import {
     detectEntryPoints,
@@ -95,7 +96,7 @@ export {
  */
 export async function analyzeProject(
     projectDir: string,
-    sourceFiles?: SourceFile[],
+    sourceFiles?: ExtractedSource[],
 ): Promise<ProjectConfig> {
     // Detect entry points
     const entryPoints = await detectEntryPoints(projectDir);

@@ -5,13 +5,13 @@
  * The core extraction logic lives in @web2local/sourcemap.
  */
 
-import type { SourceFile, SourceMapResult } from '@web2local/types';
+import type { ExtractedSource, SourceMapResult } from '@web2local/types';
 import { getCache } from '@web2local/cache';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 import { parseSourceMap, normalizeSourcePath } from '@web2local/sourcemap';
 
-// Re-export types from @web2local/types for backwards compatibility
-export type { SourceFile, SourceMapResult } from '@web2local/types';
+// Re-export types from @web2local/types
+export type { ExtractedSource, SourceMapResult } from '@web2local/types';
 
 // Re-export utilities from @web2local/sourcemap
 export {
@@ -27,7 +27,7 @@ export {
 export async function extractSourcesFromMap(
     sourceMapUrl: string,
     bundleUrl: string,
-    onFile?: (file: SourceFile) => void,
+    onFile?: (file: ExtractedSource) => void,
 ): Promise<SourceMapResult> {
     const cache = getCache();
 
@@ -120,7 +120,7 @@ export async function extractSourcesFromMap(
             // Normalize the path using @web2local/sourcemap
             const normalizedPath = normalizeSourcePath(sourcePath, sourceRoot);
 
-            const file: SourceFile = {
+            const file: ExtractedSource = {
                 path: normalizedPath,
                 content,
             };

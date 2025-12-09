@@ -30,7 +30,8 @@ import {
     type BundleInfo,
     type ScrapedRedirect,
 } from '@web2local/scraper';
-import { extractSourcesFromMap, type SourceFile } from '@web2local/scraper';
+import { extractSourcesFromMap } from '@web2local/scraper';
+import type { ExtractedSource } from '@web2local/types';
 import {
     reconstructSources,
     writeManifest,
@@ -255,13 +256,13 @@ export async function runMain(options: CliOptions) {
     let totalFilesSkipped = 0;
 
     // Collect all source files for version extraction (includes node_modules files)
-    const allExtractedFiles: SourceFile[] = [];
+    const allExtractedFiles: ExtractedSource[] = [];
 
     // Store extraction results per bundle for later reconstruction
     const bundleExtractions: Array<{
         bundle: BundleInfo;
         bundleName: string;
-        files: SourceFile[];
+        files: ExtractedSource[];
         errors: string[];
     }> = [];
 
@@ -310,7 +311,7 @@ export async function runMain(options: CliOptions) {
                         ? { ...f, path: `${bundleName}/${sanitized}` }
                         : null;
                 })
-                .filter((f): f is SourceFile => f !== null);
+                .filter((f): f is ExtractedSource => f !== null);
             allExtractedFiles.push(...filesWithBundlePrefix);
 
             // Store for reconstruction phase (original paths, bundleName is added during reconstruction)

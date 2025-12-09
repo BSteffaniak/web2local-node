@@ -23,7 +23,7 @@ export {
 
 // From sourcemap.ts
 export {
-    type SourceFile,
+    type ExtractedSource,
     type SourceMapResult,
     extractSourcesFromMap,
     normalizePath,

@@ -11,8 +11,8 @@ import type {
     AliasMapping,
     Framework,
     EnvVariable,
-    SourceFile,
 } from './types.js';
+import type { ExtractedSource } from '@web2local/types';
 import {
     detectImportAliases,
     buildAliasPathMappings,
@@ -695,7 +695,7 @@ async function detectSubpathExports(packagePath: string): Promise<string[]> {
  */
 export async function extractAliasesFromTsConfig(
     projectDir: string,
-    sourceFiles?: SourceFile[],
+    sourceFiles?: ExtractedSource[],
 ): Promise<AliasMapping[]> {
     const aliases: AliasMapping[] = [];
     const existingAliases = new Set<string>();

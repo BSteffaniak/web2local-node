@@ -140,9 +140,9 @@ export function renderBox(content: BoxContent, width: number): string[] {
         const indicatorNeeded = content.moreLogsCount > 0 ? 1 : 0;
         const logLinesAvailable = content.recentLogsHeight - indicatorNeeded;
 
-        // Recent log lines (show most recent, pad with empty lines if fewer logs)
+        // Recent log lines (show most recent first, pad with empty lines if fewer logs)
         for (let i = 0; i < logLinesAvailable; i++) {
-            const logIndex = content.recentLogs.length - logLinesAvailable + i;
+            const logIndex = content.recentLogs.length - 1 - i;
             const logText = logIndex >= 0 ? content.recentLogs[logIndex] : '';
             lines.push(
                 vertical +

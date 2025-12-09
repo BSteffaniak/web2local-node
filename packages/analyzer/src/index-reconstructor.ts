@@ -14,7 +14,7 @@ import { readFile, writeFile, stat, readdir } from 'fs/promises';
 import { join, dirname, basename, relative, extname, resolve } from 'path';
 import { parseSync } from '@swc/core';
 import { extractImportsFromSource, categorizeImport } from '@web2local/ast';
-import type { SourceFile } from '@web2local/types';
+import type { ExtractedSource } from '@web2local/types';
 
 /**
  * Extract ALL exported symbols from source code, including re-exports.
@@ -129,7 +129,7 @@ export interface IndexReconstructionOptions {
     /** Project root directory */
     projectDir: string;
     /** All source files in the project */
-    sourceFiles: SourceFile[];
+    sourceFiles: ExtractedSource[];
     /** Alias mappings from vite config */
     aliases?: AliasMapping[];
     /** Progress callback */

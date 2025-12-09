@@ -70,7 +70,7 @@ export interface ExtractedSource {
     /** Original source content */
     readonly content: string;
     /** Original path before normalization (for debugging) */
-    readonly originalPath: string;
+    readonly originalPath?: string;
 }
 
 /**
@@ -178,17 +178,6 @@ export interface SourceMapValidationResult {
 // ============================================================================
 
 /**
- * A source file extracted from a source map
- * @deprecated Use ExtractedSource instead
- */
-export interface SourceFile {
-    /** The file path (relative to source root) */
-    path: string;
-    /** The file content */
-    content: string;
-}
-
-/**
  * Information about a JavaScript/CSS bundle
  */
 export interface BundleInfo {
@@ -209,7 +198,7 @@ export interface SourceMapResult {
     /** The URL of the source map */
     sourceMapUrl: string;
     /** The extracted source files */
-    files: SourceFile[];
+    files: ExtractedSource[];
     /** Any errors encountered during extraction */
     errors: string[];
 }

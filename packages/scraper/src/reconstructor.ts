@@ -2,7 +2,7 @@ import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
 import { toPosixPath } from '@web2local/utils';
-import { SourceFile } from './sourcemap.js';
+import type { ExtractedSource } from '@web2local/types';
 import { shouldIncludeSource } from '@web2local/sourcemap';
 import type { BundleWithContent } from './scraper.js';
 
@@ -76,7 +76,7 @@ async function fileExistsWithSameContent(
  * Skips writing files that already exist with the same content.
  */
 export async function reconstructSources(
-    files: SourceFile[],
+    files: ExtractedSource[],
     options: ReconstructionOptions,
 ): Promise<ReconstructionResult> {
     const result: ReconstructionResult = {

@@ -6,8 +6,8 @@ import {
     type VersionResult,
     type VersionConfidence,
     type VersionSource,
-    type SourceFile,
 } from './version-detector.js';
+import type { ExtractedSource } from '@web2local/types';
 import {
     findMatchingVersions,
     fingerprintVendorBundles,
@@ -204,7 +204,9 @@ function extractImportsFromSource(
  * @param sourceFiles - Source files to analyze
  * @returns Set of package names that are imported as bare modules
  */
-export function extractBareImports(sourceFiles: SourceFile[]): Set<string> {
+export function extractBareImports(
+    sourceFiles: ExtractedSource[],
+): Set<string> {
     const allImports = new Set<string>();
 
     for (const file of sourceFiles) {
@@ -233,7 +235,7 @@ export function extractBareImports(sourceFiles: SourceFile[]): Set<string> {
  * @returns Set of full import specifiers
  */
 export function extractFullImportSpecifiers(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
 ): Set<string> {
     const allImports = new Set<string>();
 
@@ -348,7 +350,7 @@ export interface InferredAlias {
  * @returns Array of inferred alias mappings
  */
 export function inferAliasesFromImports(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
     existingAliases: Set<string> = new Set(),
 ): InferredAlias[] {
     const result: InferredAlias[] = [];
@@ -625,7 +627,7 @@ export async function analyzeDependencies(
  * like @fp/sarsaparilla that import react-stately, react-modal, etc.
  */
 export function analyzeDependenciesFromSourceFiles(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
     onProgress?: (file: string) => void,
 ): AnalysisResult {
     const result: AnalysisResult = {
@@ -1098,7 +1100,7 @@ export interface DependencyClassification {
  * Returns a map of package name -> package root path
  */
 function detectWorkspacePackageRoots(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
 ): Map<string, string> {
     const packageRoots = new Map<string, string>();
 
@@ -1292,7 +1294,7 @@ function detectWorkspacePackageRoots(
  */
 export async function classifyDependencies(
     importedPackages: string[],
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
     onProgress?: (
         checked: number,
         total: number,
@@ -1425,7 +1427,7 @@ export interface AliasMap {
  * @param sourceFiles - All extracted source files with their paths and content
  * @returns Map of aliases to their actual package names
  */
-export function detectImportAliases(sourceFiles: SourceFile[]): AliasMap {
+export function detectImportAliases(sourceFiles: ExtractedSource[]): AliasMap {
     const aliasMap: AliasMap = { aliases: new Map(), evidence: new Map() };
 
     // Step 1: Build a map of all packages found in node_modules paths
@@ -1708,7 +1710,7 @@ export interface DetectedProjectConfig {
  * This properly handles code analysis without false positives from strings/comments.
  */
 export function detectProjectConfig(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
 ): DetectedProjectConfig {
     const config: DetectedProjectConfig = {
         hasTypeScript: false,
@@ -1844,7 +1846,7 @@ export interface AliasPathMapping {
  */
 export function buildAliasPathMappings(
     aliasMap: AliasMap | undefined,
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
 ): AliasPathMapping[] {
     if (!aliasMap || aliasMap.aliases.size === 0) {
         return [];
@@ -1917,7 +1919,7 @@ export function buildAliasPathMappings(
  * Flow or other type systems that TypeScript can't parse.
  */
 export function detectVendorBundleDirectories(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
 ): string[] {
     const topLevelDirs = new Map<
         string,
@@ -1997,7 +1999,7 @@ export interface SubpathMapping {
  * and attempts to map them to actual directories.
  */
 export function detectSubpathImports(
-    sourceFiles: SourceFile[],
+    sourceFiles: ExtractedSource[],
     aliasMap?: AliasMap,
     workspacePackages?: WorkspacePackageMapping[],
 ): SubpathMapping[] {
@@ -2525,7 +2527,7 @@ export async function generateDependencyManifest(
             packageName: string,
         ) => void;
         /** Raw source files from extraction (used to get versions from package.json files) */
-        extractedSourceFiles?: SourceFile[];
+        extractedSourceFiles?: ExtractedSource[];
         /** Include pre-release versions when fingerprinting */
         includePrereleases?: boolean;
         /** Number of packages to fingerprint concurrently (default: 5) */
@@ -2836,7 +2838,7 @@ export async function generateDependencyManifest(
                 );
 
                 // Build map of package -> files for fingerprinting
-                const packageFilesMap = new Map<string, SourceFile[]>();
+                const packageFilesMap = new Map<string, ExtractedSource[]>();
                 for (const packageName of packagesStillNeedingVersions) {
                     const files = getPackageFiles(
                         extractedSourceFiles,
