@@ -12,6 +12,19 @@ export const terminal = {
     moveDown: (n: number): string => (n > 0 ? `\x1b[${n}B` : ''),
     moveToColumn: (n: number): string => `\x1b[${n}G`,
 
+    // Cursor positioning (1-indexed row and column)
+    moveTo: (row: number, col: number): string => `\x1b[${row};${col}H`,
+    saveCursor: (): string => '\x1b[s',
+    restoreCursor: (): string => '\x1b[u',
+
+    // Scroll region (1-indexed, inclusive)
+    setScrollRegion: (top: number, bottom: number): string =>
+        `\x1b[${top};${bottom}r`,
+    resetScrollRegion: (): string => '\x1b[r',
+
+    // Scroll content up within current scroll region
+    scrollUp: (n: number): string => (n > 0 ? `\x1b[${n}S` : ''),
+
     // Line clearing
     clearLine: (): string => '\x1b[2K',
     clearToEnd: (): string => '\x1b[0J',

@@ -8,6 +8,12 @@ export interface BoxContent {
     title: string;
     statsLine: string;
     workerLines: string[];
+    /** Recent log lines to display at the bottom of the box */
+    recentLogs: string[];
+    /** Number of additional logs in buffer not shown (0 = hide indicator) */
+    moreLogsCount: number;
+    /** Total height available for the logs section (including indicator line) */
+    recentLogsHeight: number;
 }
 
 // ANSI escape code regex for stripping colors
@@ -57,6 +63,16 @@ export function padRight(str: string, len: number): string {
 /**
  * Render the progress box
  *
+ * Layout:
+ * ┌─ Title ─────────────────────────────────┐
+ * │ Stats line                              │
+ * ├─────────────────────────────────────────┤
+ * │ Worker lines...                         │
+ * ├─────────────────────────────────────────┤
+ * │ Recent log lines...                     │
+ * │                          [+N more logs] │  (only if moreLogsCount > 0)
+ * └─────────────────────────────────────────┘
+ *
  * @param content - The content to render
  * @param width - Total width of the box
  * @returns Array of lines to write to the terminal
@@ -104,7 +120,7 @@ export function renderBox(content: BoxContent, width: number): string[] {
             vertical,
     );
 
-    // Separator
+    // Separator after stats
     lines.push(teeLeft + horizontal.repeat(actualWidth - 2) + teeRight);
 
     // Worker lines
@@ -112,6 +128,40 @@ export function renderBox(content: BoxContent, width: number): string[] {
         lines.push(
             vertical + ' ' + padRight(workerLine, innerWidth) + ' ' + vertical,
         );
+    }
+
+    // Only show logs section if there's space for it
+    if (content.recentLogsHeight > 0) {
+        // Separator before logs
+        lines.push(teeLeft + horizontal.repeat(actualWidth - 2) + teeRight);
+
+        // Calculate lines available for actual log content
+        // If moreLogsCount > 0, we need 1 line for the indicator
+        const indicatorNeeded = content.moreLogsCount > 0 ? 1 : 0;
+        const logLinesAvailable = content.recentLogsHeight - indicatorNeeded;
+
+        // Recent log lines (show most recent, pad with empty lines if fewer logs)
+        for (let i = 0; i < logLinesAvailable; i++) {
+            const logIndex = content.recentLogs.length - logLinesAvailable + i;
+            const logText = logIndex >= 0 ? content.recentLogs[logIndex] : '';
+            lines.push(
+                vertical +
+                    ' ' +
+                    padRight(truncate(logText, innerWidth), innerWidth) +
+                    ' ' +
+                    vertical,
+            );
+        }
+
+        // Buffer indicator line (only if there are more logs in buffer)
+        if (content.moreLogsCount > 0) {
+            const indicator = chalk.gray(
+                `[+${content.moreLogsCount} more logs]`,
+            );
+            const indicatorLen = visibleLength(indicator);
+            const padding = ' '.repeat(Math.max(0, innerWidth - indicatorLen));
+            lines.push(vertical + ' ' + padding + indicator + ' ' + vertical);
+        }
     }
 
     // Bottom border

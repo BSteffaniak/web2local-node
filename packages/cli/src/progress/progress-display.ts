@@ -1,17 +1,33 @@
 /**
  * Multi-line progress display for parallel capture operations
  *
- * Displays a box with aggregate stats and per-worker status,
- * with a scrolling log history below. Includes:
+ * Uses a unified TUI that takes over the terminal with:
+ * - Stats at top
+ * - Workers in middle
+ * - Recent logs at bottom (with full buffer dump on exit)
  * - Progress bar per worker
  * - Elapsed time tracking
  * - Phase text
  * - Adaptive layout based on terminal width
+ * - Robust cleanup on exit/interrupt
  */
 
 import chalk from 'chalk';
 import { terminal } from './terminal.js';
+import type { BoxContent } from './box-renderer.js';
 import { renderBox, truncate, visibleLength } from './box-renderer.js';
+
+/**
+ * Number of lines each worker occupies in the TUI (main line + asset activity line)
+ */
+export const LINES_PER_WORKER = 2;
+
+/**
+ * Fixed lines in TUI chrome (top border, stats, separator after stats, separator before logs, bottom border)
+ * Note: separator before logs is only shown when recentLogsHeight > 0
+ */
+const TUI_CHROME_LINES = 4; // top border + stats + separator after stats + bottom border
+const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
 
 /**
  * Worker phase types - matches the capture module phases
@@ -95,7 +111,6 @@ export class ProgressDisplay {
     private options: ProgressDisplayOptions;
     private workers: WorkerState[];
     private stats: AggregateStats;
-    private boxLineCount: number = 0;
     private started: boolean = false;
     private baseOriginParsed: URL | null = null;
     private resizeHandler: (() => void) | null = null;
@@ -104,6 +119,20 @@ export class ProgressDisplay {
     private readonly RENDER_INTERVAL_MS = 100;
     private flushingCount: number = 0;
     private flushingStartTime: number | null = null;
+
+    /** Total height of the TUI box in lines */
+    private tuiHeight: number = 0;
+    /** Row where the TUI starts (1-indexed) */
+    private tuiStartRow: number = 1;
+    /** Flag to prevent re-entrancy in cleanup */
+    private cleaningUp: boolean = false;
+
+    /** Recent logs for display (circular buffer showing in TUI) */
+    private recentLogs: string[] = [];
+    /** Full log buffer for dump on exit (unlimited) */
+    private logBuffer: string[] = [];
+    /** Calculated height available for recent logs section */
+    private recentLogsHeight: number = 0;
 
     constructor(options: ProgressDisplayOptions) {
         this.options = options;
@@ -154,18 +183,23 @@ export class ProgressDisplay {
         // Hide cursor
         terminal.write(terminal.hideCursor());
 
+        // Calculate layout
+        this.calculateLayout();
+
+        // Push existing terminal content into scrollback by printing blank lines
+        for (let i = 0; i < this.tuiHeight; i++) {
+            terminal.write('\n');
+        }
+
+        // Initial render
+        this.render();
+
         // Set up resize handler
-        this.resizeHandler = () => this.render();
+        this.resizeHandler = () => this.handleResize();
         process.stdout.on('resize', this.resizeHandler);
 
         // Set up cleanup handlers for signals
-        const cleanup = () => this.stop();
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
-        this.cleanupHandlers.push(() => {
-            process.off('SIGINT', cleanup);
-            process.off('SIGTERM', cleanup);
-        });
+        this.setupCleanupHandlers();
 
         // Start render loop for elapsed time updates
         this.renderInterval = setInterval(() => {
@@ -173,9 +207,148 @@ export class ProgressDisplay {
                 this.render();
             }
         }, this.RENDER_INTERVAL_MS);
+    }
 
-        // Initial render
+    /**
+     * Calculate layout dimensions based on terminal size
+     * Layout: stats at top, workers in middle, logs at bottom
+     */
+    private calculateLayout(): void {
+        const termHeight = terminal.getHeight();
+
+        // Fixed height for non-log parts of TUI
+        const workersHeight = this.options.workerCount * LINES_PER_WORKER;
+        const fixedHeight = TUI_CHROME_LINES + workersHeight;
+
+        // Recent logs get remaining space (0 if terminal too small)
+        this.recentLogsHeight = Math.max(
+            0,
+            termHeight - fixedHeight - TUI_LOGS_SEPARATOR,
+        );
+
+        // Total TUI height (include logs separator only if we have logs space)
+        if (this.recentLogsHeight > 0) {
+            this.tuiHeight =
+                fixedHeight + TUI_LOGS_SEPARATOR + this.recentLogsHeight;
+        } else {
+            this.tuiHeight = fixedHeight;
+        }
+
+        // TUI starts at row 1 (takes over terminal)
+        this.tuiStartRow = 1;
+    }
+
+    /**
+     * Set up cleanup handlers for various exit scenarios
+     */
+    private setupCleanupHandlers(): void {
+        const cleanup = () => {
+            if (this.cleaningUp) return;
+            this.cleaningUp = true;
+            this.forceCleanup();
+        };
+
+        // Handle various termination signals
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('beforeExit', cleanup);
+
+        // Last resort - process.on('exit') is synchronous only
+        const exitHandler = () => {
+            if (this.started) {
+                terminal.write(terminal.resetScrollRegion());
+                terminal.write(terminal.showCursor());
+            }
+        };
+        process.on('exit', exitHandler);
+
+        this.cleanupHandlers.push(() => {
+            process.off('SIGINT', cleanup);
+            process.off('SIGTERM', cleanup);
+            process.off('beforeExit', cleanup);
+            process.off('exit', exitHandler);
+        });
+    }
+
+    /**
+     * Force cleanup - used by signal handlers
+     */
+    private forceCleanup(): void {
+        // Stop render interval immediately
+        if (this.renderInterval) {
+            clearInterval(this.renderInterval);
+            this.renderInterval = null;
+        }
+
+        this.started = false;
+
+        // Clear TUI area
+        this.clearTuiArea();
+
+        // Move cursor to top of cleared area
+        terminal.write(terminal.moveTo(this.tuiStartRow, 1));
+
+        // Reset any scroll region (safety)
+        terminal.write(terminal.resetScrollRegion());
+
+        // Show cursor
+        terminal.write(terminal.showCursor());
+
+        // Dump full log buffer with header
+        this.dumpLogBuffer();
+
+        // Print interruption message
+        console.log(chalk.yellow('Capture interrupted'));
+    }
+
+    /**
+     * Handle terminal resize
+     */
+    private handleResize(): void {
+        if (!this.started) return;
+
+        // Recalculate layout
+        this.calculateLayout();
+
+        // Trim recent logs to fit new size
+        while (this.recentLogs.length > this.recentLogsHeight) {
+            this.recentLogs.shift();
+        }
+
+        // Clear and redraw TUI
+        this.clearTuiArea();
         this.render();
+    }
+
+    /**
+     * Clear the TUI area (all lines where TUI is drawn)
+     */
+    private clearTuiArea(): void {
+        for (let i = 0; i < this.tuiHeight; i++) {
+            terminal.write(terminal.moveTo(this.tuiStartRow + i, 1));
+            terminal.write(terminal.clearLine());
+        }
+    }
+
+    /**
+     * Dump the full log buffer to terminal with header/footer
+     */
+    private dumpLogBuffer(): void {
+        if (this.logBuffer.length > 0) {
+            console.log(
+                chalk.gray(
+                    '─── Verbose Log History ─────────────────────────────────────',
+                ),
+            );
+            for (const log of this.logBuffer) {
+                console.log(log);
+            }
+            console.log(
+                chalk.gray(
+                    '─────────────────────────────────────────────────────────────',
+                ),
+            );
+        }
     }
 
     /**
@@ -207,20 +380,32 @@ export class ProgressDisplay {
             this.resizeHandler = null;
         }
 
-        // Run cleanup handlers
+        // Run cleanup handlers (removes signal handlers)
         for (const handler of this.cleanupHandlers) {
             handler();
         }
         this.cleanupHandlers = [];
 
+        // Clear TUI area
+        this.clearTuiArea();
+
+        // Move cursor to top of cleared area
+        terminal.write(terminal.moveTo(this.tuiStartRow, 1));
+
+        // Reset scroll region (safety)
+        terminal.write(terminal.resetScrollRegion());
+
         // Show cursor
         terminal.write(terminal.showCursor());
 
-        // Clear the box
-        this.clearBox();
+        // Dump full log buffer with header
+        this.dumpLogBuffer();
 
+        // Print completion message
         if (finalMessage) {
             console.log(finalMessage);
+        } else {
+            console.log(chalk.green('Capture completed'));
         }
     }
 
@@ -282,28 +467,34 @@ export class ProgressDisplay {
     }
 
     /**
-     * Log a message below the progress box
+     * Log a message - adds to both recent logs display and full buffer
      */
     log(message: string): void {
-        if (!this.isInteractive()) {
-            // Non-TTY: just print directly
-            console.log(this.formatLogMessage(message));
+        const formattedMessage = this.formatLogMessage(message);
+
+        // Always add to full buffer (unlimited, for dump on exit)
+        this.logBuffer.push(formattedMessage);
+
+        // If not interactive or not started, just console.log
+        if (!this.isInteractive() || !this.started) {
+            console.log(formattedMessage);
             return;
         }
 
-        if (!this.started) {
-            console.log(this.formatLogMessage(message));
-            return;
+        // Add to recent logs display
+        this.recentLogs.push(formattedMessage);
+
+        // Trim recent logs to fit display area
+        while (this.recentLogs.length > this.recentLogsHeight) {
+            this.recentLogs.shift();
         }
 
-        // Clear the box, print message, re-render box
-        this.clearBox();
-        console.log(this.formatLogMessage(message));
-        this.render();
+        // The render interval will pick up the new logs
     }
 
     /**
      * Render the progress box
+     * Draws unified TUI with stats, workers, and recent logs
      */
     private render(): void {
         if (!this.isInteractive() || !this.started) {
@@ -323,43 +514,28 @@ export class ProgressDisplay {
             );
         }
 
-        const content = {
+        // Calculate how many more logs are in buffer vs displayed
+        const moreLogsCount = Math.max(
+            0,
+            this.logBuffer.length - this.recentLogs.length,
+        );
+
+        const content: BoxContent = {
             title: 'Capture Progress',
             statsLine: this.buildStatsLine(),
             workerLines,
+            recentLogs: this.recentLogs,
+            moreLogsCount,
+            recentLogsHeight: this.recentLogsHeight,
         };
 
         const boxLines = renderBox(content, width);
 
-        // Clear previous box
-        this.clearBox();
-
-        // Draw new box
-        for (const line of boxLines) {
-            terminal.writeLine(line);
-        }
-
-        this.boxLineCount = boxLines.length;
-    }
-
-    /**
-     * Clear the progress box from the terminal
-     */
-    private clearBox(): void {
-        if (this.boxLineCount > 0) {
-            // Move up to the top of the box
-            terminal.write(terminal.moveUp(this.boxLineCount));
-
-            // Clear each line
-            for (let i = 0; i < this.boxLineCount; i++) {
-                terminal.write(terminal.clearLine());
-                if (i < this.boxLineCount - 1) {
-                    terminal.write('\n');
-                }
-            }
-
-            // Move back up
-            terminal.write(terminal.moveUp(this.boxLineCount - 1));
+        // Draw TUI at fixed position
+        for (let i = 0; i < boxLines.length; i++) {
+            terminal.write(terminal.moveTo(this.tuiStartRow + i, 1));
+            terminal.write(terminal.clearLine());
+            terminal.write(boxLines[i]);
         }
     }
 
