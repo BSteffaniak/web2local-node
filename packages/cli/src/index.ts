@@ -868,6 +868,16 @@ export async function runMain(options: CliOptions) {
                 crawl: options.crawl,
                 crawlMaxDepth: options.crawlMaxDepth,
                 crawlMaxPages: options.crawlMaxPages,
+                // Parallelization options
+                concurrency: options.captureConcurrency,
+                pageRetries: options.pageRetries,
+                rateLimitDelay: options.rateLimitDelay,
+                pageTimeout: options.pageTimeout,
+                // Wait time options
+                networkIdleTimeout: options.networkIdleTimeout,
+                networkIdleTime: options.networkIdleTime,
+                scrollDelay: options.scrollDelay,
+                pageSettleTime: options.pageSettleTime,
                 // Pass scraped redirect to include in manifest
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]

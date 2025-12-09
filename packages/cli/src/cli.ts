@@ -46,6 +46,16 @@ export interface CliOptions {
     headless: boolean;
     browseTimeout: number;
     autoScroll: boolean;
+    // Capture parallelization options
+    captureConcurrency: number;
+    pageRetries: number;
+    rateLimitDelay: number;
+    pageTimeout: number;
+    // Capture wait time options
+    networkIdleTimeout: number;
+    networkIdleTime: number;
+    scrollDelay: number;
+    pageSettleTime: number;
     // Rebuild options (default: enabled)
     noRebuild: boolean;
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
@@ -200,6 +210,48 @@ export function parseArgs(): CliOptions {
             'Capture rendered HTML after JS execution instead of original (use for SPAs)',
             false,
         )
+        // Capture parallelization options
+        .option(
+            '--capture-concurrency <number>',
+            'Number of pages to crawl in parallel (default: 5)',
+            '5',
+        )
+        .option(
+            '--page-retries <number>',
+            'Number of retries for failed page navigations (default: 2)',
+            '2',
+        )
+        .option(
+            '--rate-limit-delay <ms>',
+            'Delay between requests in ms to avoid rate limiting (0 = disabled)',
+            '0',
+        )
+        .option(
+            '--page-timeout <ms>',
+            'Per-page navigation timeout in ms (default: 30000)',
+            '30000',
+        )
+        // Capture wait time options
+        .option(
+            '--network-idle-timeout <ms>',
+            'Network idle wait timeout in ms (default: 5000)',
+            '5000',
+        )
+        .option(
+            '--network-idle-time <ms>',
+            'Consider page idle after this many ms without network requests (default: 1000)',
+            '1000',
+        )
+        .option(
+            '--scroll-delay <ms>',
+            'Delay between scroll steps when auto-scrolling in ms (default: 50)',
+            '50',
+        )
+        .option(
+            '--page-settle-time <ms>',
+            'Additional settle time after scrolling in ms (default: 1000)',
+            '1000',
+        )
         // Rebuild options (enabled by default)
         .option(
             '--no-rebuild',
@@ -284,6 +336,16 @@ export function parseArgs(): CliOptions {
                 headless: options.headless !== false,
                 browseTimeout: parseInt(options.browseTimeout, 10),
                 autoScroll: options.scroll !== false,
+                // Capture parallelization options
+                captureConcurrency: parseInt(options.captureConcurrency, 10),
+                pageRetries: parseInt(options.pageRetries, 10),
+                rateLimitDelay: parseInt(options.rateLimitDelay, 10),
+                pageTimeout: parseInt(options.pageTimeout, 10),
+                // Capture wait time options
+                networkIdleTimeout: parseInt(options.networkIdleTimeout, 10),
+                networkIdleTime: parseInt(options.networkIdleTime, 10),
+                scrollDelay: parseInt(options.scrollDelay, 10),
+                pageSettleTime: parseInt(options.pageSettleTime, 10),
                 // Rebuild options
                 noRebuild: options.rebuild === false,
                 packageManager: options.packageManager || 'auto',
@@ -426,6 +488,16 @@ export function parseArgs(): CliOptions {
         headless: options.headless !== false,
         browseTimeout: parseInt(options.browseTimeout, 10),
         autoScroll: options.scroll !== false,
+        // Capture parallelization options
+        captureConcurrency: parseInt(options.captureConcurrency, 10),
+        pageRetries: parseInt(options.pageRetries, 10),
+        rateLimitDelay: parseInt(options.rateLimitDelay, 10),
+        pageTimeout: parseInt(options.pageTimeout, 10),
+        // Capture wait time options
+        networkIdleTimeout: parseInt(options.networkIdleTimeout, 10),
+        networkIdleTime: parseInt(options.networkIdleTime, 10),
+        scrollDelay: parseInt(options.scrollDelay, 10),
+        pageSettleTime: parseInt(options.pageSettleTime, 10),
         // Rebuild options
         noRebuild: options.rebuild === false,
         packageManager: options.packageManager || 'auto',

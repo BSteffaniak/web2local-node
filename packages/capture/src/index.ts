@@ -1,7 +1,8 @@
 /**
  * Main capture orchestration module
  *
- * Coordinates browser automation, API interception, and static asset capture
+ * Coordinates browser automation, API interception, and static asset capture.
+ * Supports parallel page crawling for improved performance.
  */
 
 import { join } from 'path';
@@ -22,6 +23,9 @@ import {
     generateServerManifest,
     generateCaptureSummary,
 } from '@web2local/manifest';
+import { CrawlQueue } from './crawl-queue.js';
+import { CrawlWorker, type SharedCrawlState } from './crawl-worker.js';
+import { smartWaitForPage } from './smart-wait.js';
 import type {
     CaptureOptions,
     CaptureResult,
@@ -61,6 +65,9 @@ export {
     generateServerManifest,
     generateCaptureSummary,
 } from '@web2local/manifest';
+export { CrawlQueue } from './crawl-queue.js';
+export { CrawlWorker } from './crawl-worker.js';
+export { smartWaitForPage, sleep } from './smart-wait.js';
 export * from './types.js';
 
 /**
@@ -82,6 +89,16 @@ const DEFAULT_CAPTURE_OPTIONS: Partial<CaptureOptions> = {
     crawl: true,
     crawlMaxDepth: 5,
     crawlMaxPages: 100,
+    // Parallelization defaults
+    concurrency: 5,
+    pageRetries: 2,
+    rateLimitDelay: 0,
+    pageTimeout: 30000,
+    // Wait time defaults
+    networkIdleTimeout: 5000,
+    networkIdleTime: 1000,
+    scrollDelay: 50,
+    pageSettleTime: 1000,
 };
 
 /**
@@ -90,6 +107,8 @@ const DEFAULT_CAPTURE_OPTIONS: Partial<CaptureOptions> = {
  * This is the main entry point for capturing a website's API calls and static assets.
  * When crawling is enabled, it will follow links on the page to capture additional
  * routes and their associated chunks.
+ *
+ * Supports parallel crawling with configurable concurrency for improved performance.
  */
 export async function captureWebsite(
     options: CaptureOptions,
@@ -109,13 +128,17 @@ export async function captureWebsite(
     const maxDepth = opts.crawlMaxDepth ?? 5;
     const maxPages = opts.crawlMaxPages ?? 100;
 
-    // Crawl tracking
-    const visitedUrls = new Set<string>();
-    const urlQueue: Array<{ url: string; depth: number }> = [];
-    let pagesVisited = 0;
-    let linksDiscovered = 0;
-    let maxDepthReached = false;
-    let maxPagesReached = false;
+    // Parallelization settings
+    const concurrency = opts.concurrency ?? 5;
+    const pageRetries = opts.pageRetries ?? 2;
+    const rateLimitDelay = opts.rateLimitDelay ?? 0;
+    const pageTimeout = opts.pageTimeout ?? 30000;
+
+    // Wait time settings
+    const networkIdleTimeout = opts.networkIdleTimeout ?? 5000;
+    const networkIdleTime = opts.networkIdleTime ?? 1000;
+    const scrollDelay = opts.scrollDelay ?? 50;
+    const pageSettleTime = opts.pageSettleTime ?? 1000;
 
     // Initialize browser
     opts.onProgress?.('Launching browser...');
@@ -151,143 +174,85 @@ export async function captureWebsite(
     let fixtures: ApiFixture[] = [];
     let assets: CapturedAsset[] = [];
 
+    // Create shared crawl queue
+    const crawlQueue = new CrawlQueue({
+        maxRetries: pageRetries,
+        maxPages,
+        maxDepth,
+    });
+
+    // Add initial URL to queue
+    crawlQueue.add(opts.url, 0);
+
+    // Shared state for coordinating between workers
+    const sharedState: SharedCrawlState = {
+        htmlCaptured: false,
+        finalUrl: null,
+        firstPageHandled: false,
+    };
+
     try {
         await browser.launch();
-        opts.onProgress?.('Creating page and attaching interceptors...');
-        const page = await browser.newPage();
 
-        // Attach interceptors - they stay attached throughout the crawl
-        apiInterceptor.attach(page);
-        if (opts.captureStatic) {
-            await staticCapturer.attach(page, opts.url);
+        // Determine actual concurrency (limited by maxPages)
+        const actualConcurrency = Math.min(concurrency, maxPages);
+
+        opts.onProgress?.(`Creating ${actualConcurrency} browser page(s)...`);
+
+        // Create page pool and attach interceptors to all pages
+        const pages = [];
+        for (let i = 0; i < actualConcurrency; i++) {
+            const page = await browser.newPage();
+
+            // Attach interceptors - they handle concurrent events from all pages
+            apiInterceptor.attach(page);
+            if (opts.captureStatic) {
+                await staticCapturer.attach(page, opts.url);
+            }
+
+            pages.push(page);
         }
 
-        opts.onProgress?.('Starting crawl...');
+        opts.onProgress?.(
+            `Starting parallel crawl with ${actualConcurrency} worker(s)...`,
+        );
 
-        // Initialize the crawl queue with the entry URL
-        urlQueue.push({ url: opts.url, depth: 0 });
+        // Create workers
+        const workers = pages.map(
+            (page, i) =>
+                new CrawlWorker(
+                    i,
+                    {
+                        page,
+                        queue: crawlQueue,
+                        staticCapturer,
+                        apiInterceptor,
+                        baseOrigin,
+                        networkIdleTimeout,
+                        networkIdleTime,
+                        scrollDelay,
+                        pageSettleTime,
+                        autoScroll: opts.autoScroll,
+                        pageTimeout,
+                        rateLimitDelay,
+                        captureStatic: opts.captureStatic,
+                        captureRenderedHtml: opts.captureRenderedHtml ?? false,
+                        crawlEnabled,
+                        maxDepth,
+                        onProgress: opts.onProgress,
+                        onVerbose: opts.onVerbose,
+                        verbose: opts.verbose,
+                    },
+                    sharedState,
+                ),
+        );
 
-        // Crawl loop
-        while (urlQueue.length > 0) {
-            // Check if we've reached the max pages limit
-            if (pagesVisited >= maxPages) {
-                maxPagesReached = true;
-                break;
-            }
+        // Run all workers concurrently
+        const results = await Promise.all(workers.map((w) => w.run()));
 
-            const { url: currentUrl, depth } = urlQueue.shift()!;
-            const normalizedUrl = normalizeUrlForCrawl(currentUrl);
-
-            // Skip if already visited
-            if (visitedUrls.has(normalizedUrl)) {
-                continue;
-            }
-            visitedUrls.add(normalizedUrl);
-
-            // Progress message
-            const isFirstPage = pagesVisited === 0;
-            if (crawlEnabled && maxPages > 1) {
-                opts.onProgress?.(
-                    `Crawling page ${pagesVisited + 1}/${maxPages} (depth ${depth}/${maxDepth}, ${urlQueue.length} queued): ${currentUrl}`,
-                );
-            } else {
-                opts.onProgress?.(`Navigating to ${currentUrl}...`);
-            }
-
-            // Verbose log
-            if (opts.verbose) {
-                opts.onVerbose?.(`Crawled: ${currentUrl} (depth ${depth})`);
-            }
-
-            try {
-                // Set the current page URL before navigation (for onAssetCaptured callback)
-                if (opts.captureStatic) {
-                    staticCapturer.setCurrentPageUrl(currentUrl);
-                }
-
-                // Navigate to the page
-                await page.goto(currentUrl, {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 60000,
-                });
-
-                // Update base URL on first page (handles redirects)
-                if (isFirstPage && opts.captureStatic) {
-                    const finalUrl = page.url();
-                    if (finalUrl !== currentUrl) {
-                        opts.onProgress?.(
-                            `Redirected to ${finalUrl}, updating base URL...`,
-                        );
-                        // Also add the redirected URL to visited set
-                        visitedUrls.add(normalizeUrlForCrawl(finalUrl));
-                        // Update the current page URL to the final URL after redirect
-                        staticCapturer.setCurrentPageUrl(finalUrl);
-                    }
-                    staticCapturer.updateBaseUrl(finalUrl);
-                }
-
-                // Wait for network to settle
-                opts.onProgress?.('Waiting for network to settle...');
-                await waitForNetworkIdle(page, { timeout: 10000 });
-
-                // Auto-scroll to trigger lazy loading
-                if (opts.autoScroll) {
-                    opts.onProgress?.(
-                        'Scrolling page to trigger lazy content...',
-                    );
-                    await autoScrollPage(page, {
-                        step: 500,
-                        delay: 100,
-                        maxScrolls: 30,
-                    });
-                }
-
-                // Wait for additional time (shorter for subsequent pages)
-                const waitTime = isFirstPage
-                    ? opts.browseTimeout
-                    : Math.min(opts.browseTimeout, 3000);
-                opts.onProgress?.(
-                    `Waiting for page activity (${(waitTime / 1000).toFixed(1)}s)...`,
-                );
-                await page.waitForTimeout(waitTime);
-
-                // Wait for network to be idle again
-                opts.onProgress?.('Waiting for final network idle...');
-                await waitForNetworkIdle(page, { timeout: 5000 });
-
-                // Capture the HTML document only for the first page
-                if (isFirstPage && opts.captureStatic) {
-                    opts.onProgress?.('Capturing HTML document...');
-                    await staticCapturer.captureDocument(page);
-                }
-
-                pagesVisited++;
-
-                // Extract links for crawling if enabled and not at max depth
-                if (crawlEnabled && depth < maxDepth) {
-                    const links = await extractPageLinks(page, baseOrigin);
-                    linksDiscovered += links.length;
-
-                    for (const link of links) {
-                        const normalizedLink = normalizeUrlForCrawl(link);
-                        if (!visitedUrls.has(normalizedLink)) {
-                            urlQueue.push({ url: link, depth: depth + 1 });
-                        }
-                    }
-
-                    // Track if we hit max depth
-                    if (depth + 1 >= maxDepth && links.length > 0) {
-                        maxDepthReached = true;
-                    }
-                }
-            } catch (error) {
-                // Log navigation errors but continue crawling
-                const errorMsg = `Error navigating to ${currentUrl}: ${error}`;
-                errors.push(errorMsg);
-                if (opts.verbose) {
-                    opts.onVerbose?.(errorMsg);
-                }
-            }
+        // Aggregate errors from all workers
+        for (const result of results) {
+            errors.push(...result.errors);
         }
 
         // Wait for all pending asset captures to complete
@@ -357,14 +322,17 @@ export async function captureWebsite(
     const captureTimeMs = Date.now() - startTime;
     const totalBytes = assets.reduce((sum, a) => sum + a.size, 0);
 
+    // Get crawl stats from queue
+    const queueStats = crawlQueue.getStats();
+
     // Build crawl stats
     const crawlStats: CrawlStats | undefined = crawlEnabled
         ? {
-              pagesVisited,
-              pagesSkipped: visitedUrls.size - pagesVisited,
-              linksDiscovered,
-              maxDepthReached,
-              maxPagesReached,
+              pagesVisited: queueStats.pagesVisited,
+              pagesSkipped: queueStats.pagesSkipped,
+              linksDiscovered: queueStats.linksDiscovered,
+              maxDepthReached: queueStats.maxDepthReached,
+              maxPagesReached: queueStats.maxPagesReached,
           }
         : undefined;
 

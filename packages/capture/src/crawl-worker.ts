@@ -1,0 +1,276 @@
+/**
+ * Crawl worker for parallel page processing
+ *
+ * Each worker owns a single Page instance and processes URLs from the shared queue.
+ */
+
+import type { Page } from 'playwright';
+import { CrawlQueue, type QueueItem } from './crawl-queue.js';
+import { StaticCapturer } from './static-downloader.js';
+import { ApiInterceptor } from './api-interceptor.js';
+import { extractPageLinks } from './browser.js';
+import { smartWaitForPage, sleep } from './smart-wait.js';
+
+/**
+ * Options for the crawl worker
+ */
+export interface CrawlWorkerOptions {
+    /** Playwright page instance (reused for all URLs) */
+    page: Page;
+    /** Shared crawl queue */
+    queue: CrawlQueue;
+    /** Static asset capturer */
+    staticCapturer: StaticCapturer;
+    /** API call interceptor */
+    apiInterceptor: ApiInterceptor;
+    /** Base origin for same-origin link filtering */
+    baseOrigin: string;
+
+    // Wait configuration
+    /** Network idle wait timeout in ms */
+    networkIdleTimeout: number;
+    /** Consider idle after this many ms without requests */
+    networkIdleTime: number;
+    /** Delay between scroll steps in ms */
+    scrollDelay: number;
+    /** Additional settle time after scrolling in ms */
+    pageSettleTime: number;
+    /** Enable auto-scroll to trigger lazy loading */
+    autoScroll: boolean;
+    /** Per-page navigation timeout in ms */
+    pageTimeout: number;
+    /** Delay between requests in ms (rate limiting) */
+    rateLimitDelay: number;
+
+    // Capture options
+    /** Whether to capture static assets */
+    captureStatic: boolean;
+    /** Whether to capture rendered HTML instead of original */
+    captureRenderedHtml: boolean;
+    /** Whether crawling is enabled */
+    crawlEnabled: boolean;
+    /** Maximum link depth to follow */
+    maxDepth: number;
+
+    // Callbacks
+    /** Progress callback */
+    onProgress?: (message: string) => void;
+    /** Verbose log callback */
+    onVerbose?: (message: string) => void;
+    /** Verbose mode enabled */
+    verbose: boolean;
+}
+
+/**
+ * Result from a worker's run
+ */
+export interface WorkerResult {
+    /** Number of pages successfully processed */
+    pagesProcessed: number;
+    /** Errors encountered during processing */
+    errors: string[];
+    /** Whether this worker captured the HTML document */
+    htmlCaptured: boolean;
+}
+
+/**
+ * Shared state for coordinating HTML capture across workers
+ */
+export interface SharedCrawlState {
+    /** Whether the initial HTML document has been captured */
+    htmlCaptured: boolean;
+    /** The final URL after any redirects (set by first successful navigation) */
+    finalUrl: string | null;
+    /** Lock for first page handling */
+    firstPageHandled: boolean;
+}
+
+/**
+ * Worker that processes pages from a shared queue.
+ *
+ * Each worker:
+ * 1. Takes URLs from the queue
+ * 2. Navigates to the URL
+ * 3. Waits for the page to settle
+ * 4. Extracts links (if crawling enabled)
+ * 5. Adds new links to the queue
+ *
+ * The page instance is reused across all URLs for maximum efficiency.
+ */
+export class CrawlWorker {
+    private pagesProcessed = 0;
+    private errors: string[] = [];
+    private htmlCaptured = false;
+
+    constructor(
+        private workerId: number,
+        private options: CrawlWorkerOptions,
+        private sharedState: SharedCrawlState,
+    ) {}
+
+    /**
+     * Run the worker until the queue is exhausted.
+     */
+    async run(): Promise<WorkerResult> {
+        const { queue, rateLimitDelay, onProgress, onVerbose, verbose } =
+            this.options;
+
+        while (!queue.isDone()) {
+            const item = queue.take();
+
+            if (!item) {
+                // Queue is empty but other workers may still be processing
+                // and could add new URLs. Wait a bit and check again.
+                await sleep(100);
+                continue;
+            }
+
+            const isFirstPage = !this.sharedState.firstPageHandled;
+
+            try {
+                if (verbose) {
+                    onVerbose?.(
+                        `[Worker ${this.workerId}] Processing: ${item.url} (depth ${item.depth}, retry ${item.retries})`,
+                    );
+                }
+
+                onProgress?.(`[${this.workerId + 1}] Crawling: ${item.url}`);
+
+                await this.processPage(item, isFirstPage);
+                queue.complete(item.url);
+                this.pagesProcessed++;
+
+                if (verbose) {
+                    onVerbose?.(
+                        `[Worker ${this.workerId}] Completed: ${item.url}`,
+                    );
+                }
+            } catch (error) {
+                const errorMsg = `[Worker ${this.workerId}] Error on ${item.url}: ${error}`;
+
+                if (verbose) {
+                    onVerbose?.(errorMsg);
+                }
+
+                // Try to retry the URL
+                if (!queue.retry(item)) {
+                    // Max retries exceeded
+                    this.errors.push(
+                        `Failed after ${item.retries + 1} attempts: ${item.url}: ${error}`,
+                    );
+                }
+            }
+
+            // Rate limit delay between requests
+            if (rateLimitDelay > 0) {
+                await sleep(rateLimitDelay);
+            }
+        }
+
+        return {
+            pagesProcessed: this.pagesProcessed,
+            errors: this.errors,
+            htmlCaptured: this.htmlCaptured,
+        };
+    }
+
+    /**
+     * Process a single page.
+     */
+    private async processPage(
+        item: QueueItem,
+        isFirstPage: boolean,
+    ): Promise<void> {
+        const {
+            page,
+            queue,
+            staticCapturer,
+            baseOrigin,
+            networkIdleTimeout,
+            networkIdleTime,
+            scrollDelay,
+            pageSettleTime,
+            autoScroll,
+            pageTimeout,
+            captureStatic,
+            crawlEnabled,
+            maxDepth,
+            onProgress,
+        } = this.options;
+
+        // Set current page URL for asset tracking
+        if (captureStatic) {
+            staticCapturer.setCurrentPageUrl(item.url);
+        }
+
+        // Navigate to the page
+        onProgress?.(`[${this.workerId + 1}] Navigating to ${item.url}...`);
+
+        await page.goto(item.url, {
+            waitUntil: 'domcontentloaded',
+            timeout: pageTimeout,
+        });
+
+        // Handle first page special cases (redirects, HTML capture)
+        if (isFirstPage && !this.sharedState.firstPageHandled) {
+            this.sharedState.firstPageHandled = true;
+
+            const finalUrl = page.url();
+            this.sharedState.finalUrl = finalUrl;
+
+            // Handle redirects
+            if (finalUrl !== item.url) {
+                onProgress?.(
+                    `[${this.workerId + 1}] Redirected to ${finalUrl}`,
+                );
+
+                // Mark the redirected URL as visited
+                queue.markVisited(finalUrl);
+
+                // Update the current page URL
+                if (captureStatic) {
+                    staticCapturer.setCurrentPageUrl(finalUrl);
+                    staticCapturer.updateBaseUrl(finalUrl);
+                }
+            }
+        }
+
+        // Wait for the page to settle
+        onProgress?.(`[${this.workerId + 1}] Waiting for page to settle...`);
+
+        await smartWaitForPage(page, {
+            networkIdleTimeout,
+            networkIdleTime,
+            scrollDelay,
+            pageSettleTime,
+            autoScroll,
+        });
+
+        // Capture HTML document (only first page, only once)
+        if (isFirstPage && captureStatic && !this.sharedState.htmlCaptured) {
+            this.sharedState.htmlCaptured = true;
+            this.htmlCaptured = true;
+
+            onProgress?.(`[${this.workerId + 1}] Capturing HTML document...`);
+            await staticCapturer.captureDocument(page);
+        }
+
+        // Extract links for crawling
+        if (crawlEnabled && item.depth < maxDepth) {
+            const links = await extractPageLinks(page, baseOrigin);
+
+            let addedCount = 0;
+            for (const link of links) {
+                if (queue.add(link, item.depth + 1)) {
+                    addedCount++;
+                }
+            }
+
+            if (this.options.verbose && addedCount > 0) {
+                this.options.onVerbose?.(
+                    `[Worker ${this.workerId}] Discovered ${addedCount} new links from ${item.url}`,
+                );
+            }
+        }
+    }
+}

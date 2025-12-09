@@ -153,7 +153,7 @@ export interface CaptureOptions {
     captureRenderedHtml?: boolean;
     /** Run browser in headless mode */
     headless: boolean;
-    /** Time to wait for API calls in ms */
+    /** Time to wait for API calls in ms (legacy, use pageSettleTime for new code) */
     browseTimeout: number;
     /** Auto-scroll to trigger lazy loading */
     autoScroll: boolean;
@@ -171,6 +171,28 @@ export interface CaptureOptions {
     crawlMaxDepth?: number;
     /** Maximum number of pages to visit (default: 100) */
     crawlMaxPages?: number;
+
+    // ===== Parallelization Options =====
+
+    /** Number of pages to crawl in parallel (default: 5) */
+    concurrency?: number;
+    /** Number of retries for failed page navigations (default: 2) */
+    pageRetries?: number;
+    /** Delay between requests in ms to avoid rate limiting (default: 0, disabled) */
+    rateLimitDelay?: number;
+    /** Per-page navigation timeout in ms (default: 30000) */
+    pageTimeout?: number;
+
+    // ===== Wait Time Configuration =====
+
+    /** Network idle wait timeout in ms (default: 5000) */
+    networkIdleTimeout?: number;
+    /** Consider page idle after this many ms without network requests (default: 1000) */
+    networkIdleTime?: number;
+    /** Delay between scroll steps when auto-scrolling in ms (default: 50) */
+    scrollDelay?: number;
+    /** Additional settle time after scrolling in ms (default: 1000) */
+    pageSettleTime?: number;
 }
 
 /**
