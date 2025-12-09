@@ -2,6 +2,15 @@ import { Command } from 'commander';
 import type { ServerOptions } from '@web2local/server';
 import { runMain } from './index.js';
 
+export interface ExtractOptions {
+    url: string;
+    output: string;
+    verbose: boolean;
+    includeNodeModules: boolean;
+    concurrency: number;
+    noCache: boolean;
+}
+
 export interface CliOptions {
     url: string;
     output: string;
@@ -91,6 +100,7 @@ export function parseArgs(): CliOptions {
 
     program
         .name('web2local')
+        .enablePositionalOptions()
         .description(
             'Extract and reconstruct original source code from publicly available source maps. ' +
                 'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
@@ -310,6 +320,43 @@ export function parseArgs(): CliOptions {
             const serverOptions = getServerOptions(opts, resolve(dir));
 
             await runServer(serverOptions);
+        });
+
+    /**
+     * Extract command - extract source files from source maps only
+     */
+    program
+        .command('extract')
+        .description(
+            'Extract source files from source maps (no rebuild, no capture)',
+        )
+        .argument(
+            '<url>',
+            'URL of a page to find bundles, or a direct source map URL',
+        )
+        .option('-o, --output <dir>', 'Output directory', './output')
+        .option('-v, --verbose', 'Enable verbose logging', false)
+        .option(
+            '-n, --include-node-modules',
+            'Include node_modules in output',
+            false,
+        )
+        .option(
+            '-c, --concurrency <number>',
+            'Number of concurrent downloads',
+            '5',
+        )
+        .option('--no-cache', 'Bypass cache, fetch fresh')
+        .action(async (url: string, opts: any) => {
+            const { runExtract } = await import('./run-extract.js');
+            await runExtract({
+                url,
+                output: opts.output,
+                verbose: opts.verbose || false,
+                includeNodeModules: opts.includeNodeModules || false,
+                concurrency: parseInt(opts.concurrency, 10),
+                noCache: opts.cache === false,
+            });
         });
 
     program.parse();
