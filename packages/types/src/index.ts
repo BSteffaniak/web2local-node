@@ -10,16 +10,19 @@
 
 /**
  * Source Map V3 specification
- * @see https://sourcemaps.info/spec.html
+ * @see https://tc39.es/ecma426/
  */
 export interface SourceMapV3 {
     readonly version: 3;
     readonly file?: string;
     readonly sourceRoot?: string;
-    readonly sources: readonly string[];
+    /** Array of source file paths. Entries can be null per ECMA-426. */
+    readonly sources: readonly (string | null)[];
     readonly sourcesContent?: readonly (string | null)[];
     readonly names?: readonly string[];
     readonly mappings: string;
+    /** Indices into sources array that should be ignored (e.g., library code) */
+    readonly ignoreList?: readonly number[];
 }
 
 /**

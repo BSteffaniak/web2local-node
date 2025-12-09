@@ -144,12 +144,6 @@ function categorizeTest(name: string): TestCategory {
  *
  * 2. Index maps: We don't currently support index maps (sections field)
  *
- * 3. ignoreList: We don't validate the ignoreList field
- *
- * 4. sources can contain null: ECMA-426 allows null in sources array
- *
- * 5. file field validation: We don't validate the file field type
- *
  * Tests in this set are expected to fail until we add support.
  */
 const KNOWN_LIMITATIONS: Set<string> = new Set([
@@ -197,28 +191,6 @@ const KNOWN_LIMITATIONS: Set<string> = new Set([
     'basicMappingWithIndexMap',
     'indexMapWithMissingFile',
     'indexMapWithTwoConcatenatedSources',
-
-    // ignoreList validation - we don't validate this yet
-    'ignoreListEmpty',
-    'ignoreListValid1',
-    'ignoreListWrongType1',
-    'ignoreListWrongType2',
-    'ignoreListWrongType3',
-    'ignoreListWrongType4',
-    'ignoreListOutOfBounds1',
-    'ignoreListOutOfBounds2',
-
-    // file field validation - we don't validate file type
-    'fileNotAString1',
-    'fileNotAString2',
-
-    // sources can contain null - we require strings
-    'sourcesNotStringOrNull',
-    'sourcesAndSourcesContentBothNull',
-    'sourcesNullSourcesContentNonNull',
-
-    // sourcesContent items can be null - this is valid per spec
-    'sourcesContentNotStringOrNull',
 ]);
 
 // ============================================================================

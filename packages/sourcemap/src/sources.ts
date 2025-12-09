@@ -87,6 +87,12 @@ export function extractSources(
         const originalPath = sourceMap.sources[i];
         const content = sourceMap.sourcesContent[i];
 
+        // Skip null/undefined source paths (allowed per ECMA-426)
+        if (originalPath === null || originalPath === undefined) {
+            nullContentCount++;
+            continue;
+        }
+
         // Skip null/undefined content
         if (content === null || content === undefined) {
             nullContentCount++;

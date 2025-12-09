@@ -108,6 +108,11 @@ export async function extractSourcesFromMap(
             const sourcePath = sourceMap.sources[i];
             const content = sourceMap.sourcesContent[i];
 
+            // Skip null source paths (allowed per ECMA-426)
+            if (sourcePath === null || sourcePath === undefined) {
+                continue;
+            }
+
             if (content === null || content === undefined) {
                 continue;
             }

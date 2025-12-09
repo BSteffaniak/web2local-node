@@ -199,6 +199,114 @@ describe('validateSourceMap', () => {
         expect(sourcesError).toBeDefined();
         expect(sourcesError?.code).toBe(SourceMapErrorCode.MISSING_SOURCES);
     });
+
+    it('validates file is a string', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            file: 123,
+        });
+        expect(result.valid).toBe(false);
+        expect(
+            hasErrorMessage(result.errors, 'Field "file" must be a string'),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_FILE),
+        ).toBe(true);
+    });
+
+    it('allows null entries in sources array', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts', null, 'other.ts'],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(true);
+    });
+
+    it('allows null entries in sourcesContent array', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts', 'other.ts'],
+            sourcesContent: ['content', null],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(true);
+    });
+
+    it('fails on non-string/non-null sourcesContent entries', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            sourcesContent: [123],
+            mappings: 'AAAA',
+        });
+        expect(result.valid).toBe(false);
+        expect(
+            hasErrorCode(
+                result.errors,
+                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+            ),
+        ).toBe(true);
+    });
+
+    it('validates ignoreList is an array', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            ignoreList: 'not an array',
+        });
+        expect(result.valid).toBe(false);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_IGNORE_LIST),
+        ).toBe(true);
+    });
+
+    it('validates ignoreList entries are non-negative integers', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts', 'other.ts'],
+            mappings: 'AAAA',
+            ignoreList: [-1],
+        });
+        expect(result.valid).toBe(false);
+        expect(hasErrorMessage(result.errors, 'non-negative integers')).toBe(
+            true,
+        );
+    });
+
+    it('validates ignoreList indices are within bounds', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            ignoreList: [5],
+        });
+        expect(result.valid).toBe(false);
+        expect(hasErrorMessage(result.errors, 'out of bounds')).toBe(true);
+    });
+
+    it('allows valid ignoreList', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts', 'vendor.ts'],
+            mappings: 'AAAA',
+            ignoreList: [1],
+        });
+        expect(result.valid).toBe(true);
+    });
+
+    it('allows empty ignoreList', () => {
+        const result = validateSourceMap({
+            version: 3,
+            sources: ['index.ts'],
+            mappings: 'AAAA',
+            ignoreList: [],
+        });
+        expect(result.valid).toBe(true);
+    });
 });
 
 describe('isSourceMapV3', () => {

@@ -34,6 +34,7 @@ interface RawSourceMap {
     sourcesContent?: unknown;
     names?: unknown;
     mappings?: unknown;
+    ignoreList?: unknown;
     [key: string]: unknown;
 }
 
@@ -123,11 +124,11 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
                 'sources',
             ),
         );
-    } else if (!obj.sources.every((s) => typeof s === 'string')) {
+    } else if (!obj.sources.every((s) => typeof s === 'string' || s === null)) {
         errors.push(
             validationError(
                 SourceMapErrorCode.SOURCES_NOT_ARRAY,
-                'All entries in "sources" must be strings',
+                'All entries in "sources" must be strings or null',
                 'sources',
             ),
         );
@@ -157,18 +158,35 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         if (!Array.isArray(obj.sourcesContent)) {
             errors.push(
                 validationError(
-                    SourceMapErrorCode.SOURCES_NOT_ARRAY,
+                    SourceMapErrorCode.INVALID_SOURCES_CONTENT,
                     'Field "sourcesContent" must be an array',
                     'sourcesContent',
                 ),
             );
-        } else if (
-            Array.isArray(obj.sources) &&
-            obj.sourcesContent.length !== obj.sources.length
-        ) {
-            warnings.push(
-                `sourcesContent length (${obj.sourcesContent.length}) does not match sources length (${obj.sources.length})`,
-            );
+        } else {
+            // Check that all entries are strings or null
+            if (
+                !obj.sourcesContent.every(
+                    (c) => typeof c === 'string' || c === null,
+                )
+            ) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+                        'All entries in "sourcesContent" must be strings or null',
+                        'sourcesContent',
+                    ),
+                );
+            }
+            // Length mismatch is a warning, not an error
+            if (
+                Array.isArray(obj.sources) &&
+                obj.sourcesContent.length !== obj.sources.length
+            ) {
+                warnings.push(
+                    `sourcesContent length (${obj.sourcesContent.length}) does not match sources length (${obj.sources.length})`,
+                );
+            }
         }
     }
 
@@ -201,6 +219,62 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
                     'names',
                 ),
             );
+        }
+    }
+
+    // file check (optional) - must be string if present
+    if (obj.file !== undefined && typeof obj.file !== 'string') {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_FILE,
+                'Field "file" must be a string',
+                'file',
+            ),
+        );
+    }
+
+    // ignoreList check (optional) - must be array of non-negative integers within bounds
+    if (obj.ignoreList !== undefined) {
+        if (!Array.isArray(obj.ignoreList)) {
+            errors.push(
+                validationError(
+                    SourceMapErrorCode.INVALID_IGNORE_LIST,
+                    'Field "ignoreList" must be an array',
+                    'ignoreList',
+                ),
+            );
+        } else {
+            // Check that all entries are non-negative integers
+            const hasInvalidType = obj.ignoreList.some(
+                (idx) =>
+                    typeof idx !== 'number' ||
+                    !Number.isInteger(idx) ||
+                    idx < 0,
+            );
+            if (hasInvalidType) {
+                errors.push(
+                    validationError(
+                        SourceMapErrorCode.INVALID_IGNORE_LIST,
+                        'All entries in "ignoreList" must be non-negative integers',
+                        'ignoreList',
+                    ),
+                );
+            } else if (Array.isArray(obj.sources)) {
+                // Check bounds
+                const sourcesArray = obj.sources as unknown[];
+                const hasOutOfBounds = obj.ignoreList.some(
+                    (idx) => (idx as number) >= sourcesArray.length,
+                );
+                if (hasOutOfBounds) {
+                    errors.push(
+                        validationError(
+                            SourceMapErrorCode.INVALID_IGNORE_LIST,
+                            'ignoreList contains index out of bounds of sources array',
+                            'ignoreList',
+                        ),
+                    );
+                }
+            }
         }
     }
 
