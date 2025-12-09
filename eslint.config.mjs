@@ -76,6 +76,14 @@ export default [
                 },
             ],
             '@typescript-eslint/no-namespace': 'off',
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector: 'TSEnumDeclaration',
+                    message:
+                        'Use const objects with `as const` instead of enums. See: https://www.typescriptlang.org/docs/handbook/enums.html#objects-vs-enums',
+                },
+            ],
         },
         files: [...tsFiles],
     },

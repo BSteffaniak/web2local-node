@@ -9,41 +9,44 @@
 // ERROR CODES - Granular for debugging
 // ============================================================================
 
-export enum SourceMapErrorCode {
+export const SourceMapErrorCode = {
     // === Network Errors ===
-    FETCH_FAILED = 'FETCH_FAILED',
-    FETCH_TIMEOUT = 'FETCH_TIMEOUT',
-    FETCH_DNS_ERROR = 'FETCH_DNS_ERROR',
-    FETCH_CONNECTION_REFUSED = 'FETCH_CONNECTION_REFUSED',
-    FETCH_CONNECTION_RESET = 'FETCH_CONNECTION_RESET',
-    FETCH_SSL_ERROR = 'FETCH_SSL_ERROR',
+    FETCH_FAILED: 'FETCH_FAILED',
+    FETCH_TIMEOUT: 'FETCH_TIMEOUT',
+    FETCH_DNS_ERROR: 'FETCH_DNS_ERROR',
+    FETCH_CONNECTION_REFUSED: 'FETCH_CONNECTION_REFUSED',
+    FETCH_CONNECTION_RESET: 'FETCH_CONNECTION_RESET',
+    FETCH_SSL_ERROR: 'FETCH_SSL_ERROR',
 
     // === HTTP Errors ===
-    HTTP_ERROR = 'HTTP_ERROR',
+    HTTP_ERROR: 'HTTP_ERROR',
 
     // === Parse Errors ===
-    INVALID_JSON = 'INVALID_JSON',
-    INVALID_BASE64 = 'INVALID_BASE64',
-    INVALID_DATA_URI = 'INVALID_DATA_URI',
+    INVALID_JSON: 'INVALID_JSON',
+    INVALID_BASE64: 'INVALID_BASE64',
+    INVALID_DATA_URI: 'INVALID_DATA_URI',
 
     // === Validation Errors ===
-    INVALID_VERSION = 'INVALID_VERSION',
-    MISSING_VERSION = 'MISSING_VERSION',
-    MISSING_SOURCES = 'MISSING_SOURCES',
-    MISSING_MAPPINGS = 'MISSING_MAPPINGS',
-    SOURCES_NOT_ARRAY = 'SOURCES_NOT_ARRAY',
-    INVALID_SOURCE_ROOT = 'INVALID_SOURCE_ROOT',
-    INVALID_NAMES = 'INVALID_NAMES',
+    INVALID_VERSION: 'INVALID_VERSION',
+    MISSING_VERSION: 'MISSING_VERSION',
+    MISSING_SOURCES: 'MISSING_SOURCES',
+    MISSING_MAPPINGS: 'MISSING_MAPPINGS',
+    SOURCES_NOT_ARRAY: 'SOURCES_NOT_ARRAY',
+    INVALID_SOURCE_ROOT: 'INVALID_SOURCE_ROOT',
+    INVALID_NAMES: 'INVALID_NAMES',
 
     // === Content Errors ===
-    NO_EXTRACTABLE_SOURCES = 'NO_EXTRACTABLE_SOURCES',
+    NO_EXTRACTABLE_SOURCES: 'NO_EXTRACTABLE_SOURCES',
 
     // === Discovery Errors ===
-    NO_SOURCE_MAP_FOUND = 'NO_SOURCE_MAP_FOUND',
+    NO_SOURCE_MAP_FOUND: 'NO_SOURCE_MAP_FOUND',
 
     // === Size Errors ===
-    SOURCE_MAP_TOO_LARGE = 'SOURCE_MAP_TOO_LARGE',
-}
+    SOURCE_MAP_TOO_LARGE: 'SOURCE_MAP_TOO_LARGE',
+} as const;
+
+export type SourceMapErrorCode =
+    (typeof SourceMapErrorCode)[keyof typeof SourceMapErrorCode];
 
 // ============================================================================
 // ERROR CLASS
@@ -146,7 +149,7 @@ export function createValidationError(
 export function createNetworkError(error: Error, url: string): SourceMapError {
     const message = error.message.toLowerCase();
 
-    let code = SourceMapErrorCode.FETCH_FAILED;
+    let code: SourceMapErrorCode = SourceMapErrorCode.FETCH_FAILED;
     if (message.includes('timeout') || message.includes('etimedout')) {
         code = SourceMapErrorCode.FETCH_TIMEOUT;
     } else if (message.includes('enotfound') || message.includes('dns')) {
@@ -213,8 +216,8 @@ export function createContentError(
  */
 export function createDataUriError(
     code:
-        | SourceMapErrorCode.INVALID_DATA_URI
-        | SourceMapErrorCode.INVALID_BASE64,
+        | typeof SourceMapErrorCode.INVALID_DATA_URI
+        | typeof SourceMapErrorCode.INVALID_BASE64,
     message: string,
     url?: string,
 ): SourceMapError {
