@@ -248,6 +248,14 @@ export class CrawlQueue {
     }
 
     /**
+     * Check if the max pages limit has been reached.
+     * Workers should use this to exit early when take() returns null.
+     */
+    isMaxPagesReached(): boolean {
+        return this.completedCount >= this.options.maxPages;
+    }
+
+    /**
      * Manually mark a URL as visited without processing.
      * Useful for handling redirects.
      */

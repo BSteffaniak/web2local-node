@@ -176,6 +176,10 @@ export class CrawlWorker {
             const item = queue.take();
 
             if (!item) {
+                // If max pages reached, exit immediately - no point waiting
+                if (queue.isMaxPagesReached()) {
+                    break;
+                }
                 // Queue is empty but other workers may still be processing
                 // and could add new URLs. Wait a bit and check again.
                 await sleep(100);
