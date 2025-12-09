@@ -19,15 +19,7 @@ export enum SourceMapErrorCode {
     FETCH_SSL_ERROR = 'FETCH_SSL_ERROR',
 
     // === HTTP Errors ===
-    HTTP_BAD_REQUEST = 'HTTP_BAD_REQUEST',
-    HTTP_UNAUTHORIZED = 'HTTP_UNAUTHORIZED',
-    HTTP_FORBIDDEN = 'HTTP_FORBIDDEN',
-    HTTP_NOT_FOUND = 'HTTP_NOT_FOUND',
-    HTTP_TOO_MANY_REQUESTS = 'HTTP_TOO_MANY_REQUESTS',
-    HTTP_SERVER_ERROR = 'HTTP_SERVER_ERROR',
-    HTTP_BAD_GATEWAY = 'HTTP_BAD_GATEWAY',
-    HTTP_SERVICE_UNAVAILABLE = 'HTTP_SERVICE_UNAVAILABLE',
-    HTTP_OTHER = 'HTTP_OTHER',
+    HTTP_ERROR = 'HTTP_ERROR',
 
     // === Parse Errors ===
     INVALID_JSON = 'INVALID_JSON',
@@ -41,6 +33,8 @@ export enum SourceMapErrorCode {
     MISSING_MAPPINGS = 'MISSING_MAPPINGS',
     SOURCES_NOT_ARRAY = 'SOURCES_NOT_ARRAY',
     SOURCES_CONTENT_LENGTH_MISMATCH = 'SOURCES_CONTENT_LENGTH_MISMATCH',
+    INVALID_SOURCE_ROOT = 'INVALID_SOURCE_ROOT',
+    INVALID_NAMES = 'INVALID_NAMES',
 
     // === Content Errors ===
     EMPTY_SOURCE_MAP = 'EMPTY_SOURCE_MAP',
@@ -98,49 +92,20 @@ export class SourceMapError extends Error {
 // ============================================================================
 
 /**
- * Map HTTP status codes to error codes
- */
-function getHttpErrorCode(status: number): SourceMapErrorCode {
-    switch (status) {
-        case 400:
-            return SourceMapErrorCode.HTTP_BAD_REQUEST;
-        case 401:
-            return SourceMapErrorCode.HTTP_UNAUTHORIZED;
-        case 403:
-            return SourceMapErrorCode.HTTP_FORBIDDEN;
-        case 404:
-            return SourceMapErrorCode.HTTP_NOT_FOUND;
-        case 429:
-            return SourceMapErrorCode.HTTP_TOO_MANY_REQUESTS;
-        case 500:
-            return SourceMapErrorCode.HTTP_SERVER_ERROR;
-        case 502:
-            return SourceMapErrorCode.HTTP_BAD_GATEWAY;
-        case 503:
-            return SourceMapErrorCode.HTTP_SERVICE_UNAVAILABLE;
-        default:
-            return SourceMapErrorCode.HTTP_OTHER;
-    }
-}
-
-/**
- * Create an error for HTTP failures
+ * Create an error for HTTP failures.
+ * Status code is available in error.details.status for programmatic handling.
  */
 export function createHttpError(
     status: number,
     statusText: string,
     url: string,
 ): SourceMapError {
-    const code = getHttpErrorCode(status);
     return new SourceMapError(
-        code,
+        SourceMapErrorCode.HTTP_ERROR,
         `HTTP ${status} ${statusText}`,
         url,
         undefined,
-        {
-            status,
-            statusText,
-        },
+        { status, statusText },
     );
 }
 

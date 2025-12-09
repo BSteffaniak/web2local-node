@@ -201,13 +201,7 @@ export async function discoverSourceMap(
     bundleUrl: string,
     options?: DiscoverSourceMapOptions,
 ): Promise<SourceMapDiscoveryResult> {
-    const {
-        skipHeaderCheck = false,
-        skipCommentCheck = false,
-        skipProbe = false,
-        headers = {},
-        signal,
-    } = options ?? {};
+    const { headers = {}, signal } = options ?? {};
 
     try {
         // Fetch the bundle
@@ -225,62 +219,57 @@ export async function discoverSourceMap(
         }
 
         // Strategy 1: Check HTTP headers
-        if (!skipHeaderCheck) {
-            const headerUrl = findSourceMapInHeaders(response.headers);
-            if (headerUrl) {
-                const resolved = resolveSourceMapUrl(bundleUrl, headerUrl);
-                return {
-                    found: true,
-                    sourceMapUrl: resolved,
-                    locationType: 'http-header',
-                };
-            }
+        const headerUrl = findSourceMapInHeaders(response.headers);
+        if (headerUrl) {
+            const resolved = resolveSourceMapUrl(bundleUrl, headerUrl);
+            return {
+                found: true,
+                sourceMapUrl: resolved,
+                locationType: 'http-header',
+            };
         }
 
         // Get content for comment check and fallback
         const content = await response.text();
 
         // Strategy 2: Check comments in content
-        if (!skipCommentCheck) {
-            // Determine file type from URL
-            const isCSS = bundleUrl.toLowerCase().includes('.css');
-            const commentUrl = findSourceMapInComment(
-                content,
-                isCSS ? 'css' : 'js',
-            );
+        // Determine file type from URL extension
+        const lowerUrl = bundleUrl.toLowerCase();
+        const isCSS = lowerUrl.endsWith('.css') || lowerUrl.includes('.css?');
+        const commentUrl = findSourceMapInComment(
+            content,
+            isCSS ? 'css' : 'js',
+        );
 
-            if (commentUrl) {
-                // Check if it's an inline data URI
-                if (isDataUri(commentUrl)) {
-                    return {
-                        found: true,
-                        sourceMapUrl: commentUrl,
-                        locationType: 'inline-data-uri',
-                        bundleContent: content,
-                    };
-                }
-
-                const resolved = resolveSourceMapUrl(bundleUrl, commentUrl);
+        if (commentUrl) {
+            // Check if it's an inline data URI
+            if (isDataUri(commentUrl)) {
                 return {
                     found: true,
-                    sourceMapUrl: resolved,
-                    locationType: isCSS ? 'css-comment' : 'js-comment',
+                    sourceMapUrl: commentUrl,
+                    locationType: 'inline-data-uri',
                     bundleContent: content,
                 };
             }
+
+            const resolved = resolveSourceMapUrl(bundleUrl, commentUrl);
+            return {
+                found: true,
+                sourceMapUrl: resolved,
+                locationType: isCSS ? 'css-comment' : 'js-comment',
+                bundleContent: content,
+            };
         }
 
         // Strategy 3: Probe {url}.map
-        if (!skipProbe) {
-            const probeUrl = await probeSourceMapUrl(bundleUrl, options);
-            if (probeUrl) {
-                return {
-                    found: true,
-                    sourceMapUrl: probeUrl,
-                    locationType: 'url-probe',
-                    bundleContent: content,
-                };
-            }
+        const probeUrl = await probeSourceMapUrl(bundleUrl, options);
+        if (probeUrl) {
+            return {
+                found: true,
+                sourceMapUrl: probeUrl,
+                locationType: 'url-probe',
+                bundleContent: content,
+            };
         }
 
         // No source map found

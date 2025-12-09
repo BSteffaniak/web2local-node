@@ -104,12 +104,6 @@ export interface ExtractSourceMapOptions {
  * Options for source map discovery
  */
 export interface DiscoverSourceMapOptions {
-    /** Skip HTTP header check */
-    readonly skipHeaderCheck?: boolean;
-    /** Skip comment parsing */
-    readonly skipCommentCheck?: boolean;
-    /** Skip .map URL probing */
-    readonly skipProbe?: boolean;
     /** Fetch timeout in milliseconds */
     readonly timeout?: number;
     /** Custom fetch headers */

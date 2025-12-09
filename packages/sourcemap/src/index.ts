@@ -81,10 +81,9 @@ export {
     DATA_URI_PATTERN,
     EXCLUDE_PATH_PATTERNS,
     DEFAULT_MAX_SOURCE_MAP_SIZE,
-    STREAMING_THRESHOLD,
     DEFAULT_TIMEOUT,
     SUPPORTED_SOURCE_MAP_VERSION,
-    PREVIEW_LENGTH,
+    ERROR_PREVIEW_LENGTH,
 } from './constants.js';
 
 // ============================================================================
@@ -122,26 +121,14 @@ export {
 } from './discovery.js';
 
 // ============================================================================
-// EXTRACTOR EXPORTS
+// SOURCE EXTRACTION EXPORTS
 // ============================================================================
 
 export {
     extractSources,
     hasExtractableContent,
     getSourceMapSummary,
-} from './extractor.js';
-
-// ============================================================================
-// STREAMING EXPORTS
-// ============================================================================
-
-export {
-    parseSourceMapStreaming,
-    parseSourceMapFromResponse,
-    shouldUseStreaming,
-    type StreamingParseOptions,
-    type StreamingParseResult,
-} from './streaming.js';
+} from './sources.js';
 
 // ============================================================================
 // HIGH-LEVEL CONVENIENCE FUNCTION

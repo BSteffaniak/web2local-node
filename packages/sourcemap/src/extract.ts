@@ -22,7 +22,7 @@ import { DEFAULT_MAX_SOURCE_MAP_SIZE, DEFAULT_TIMEOUT } from './constants.js';
 import { isDataUri } from './utils/url.js';
 import { parseSourceMapAuto } from './parser.js';
 import { discoverSourceMap } from './discovery.js';
-import { extractSources } from './extractor.js';
+import { extractSources } from './sources.js';
 
 // ============================================================================
 // INTERNAL HELPERS

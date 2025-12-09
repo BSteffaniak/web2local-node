@@ -82,9 +82,6 @@ export const EXCLUDE_PATH_PATTERNS = [
 /** Maximum source map size in bytes (100MB) */
 export const DEFAULT_MAX_SOURCE_MAP_SIZE = 100 * 1024 * 1024;
 
-/** Size threshold for switching to streaming parser (50MB) */
-export const STREAMING_THRESHOLD = 50 * 1024 * 1024;
-
 /** Default fetch timeout in milliseconds (30s) */
 export const DEFAULT_TIMEOUT = 30000;
 
@@ -100,4 +97,4 @@ export const SUPPORTED_SOURCE_MAP_VERSION = 3;
 // ============================================================================
 
 /** Maximum length for content preview in error messages */
-export const PREVIEW_LENGTH = 500;
+export const ERROR_PREVIEW_LENGTH = 500;

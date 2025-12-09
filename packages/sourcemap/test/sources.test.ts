@@ -3,7 +3,7 @@ import {
     extractSources,
     hasExtractableContent,
     getSourceMapSummary,
-} from '../src/extractor.js';
+} from '../src/sources.js';
 import type { SourceMapV3 } from '@web2local/types';
 
 describe('extractSources', () => {

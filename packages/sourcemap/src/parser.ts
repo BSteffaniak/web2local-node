@@ -17,7 +17,10 @@ import {
     createValidationError,
     createDataUriError,
 } from './errors.js';
-import { SUPPORTED_SOURCE_MAP_VERSION, PREVIEW_LENGTH } from './constants.js';
+import {
+    SUPPORTED_SOURCE_MAP_VERSION,
+    ERROR_PREVIEW_LENGTH,
+} from './constants.js';
 import { decodeDataUri, isDataUri } from './utils/url.js';
 
 // ============================================================================
@@ -174,7 +177,7 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
     if (obj.sourceRoot !== undefined && typeof obj.sourceRoot !== 'string') {
         errors.push(
             validationError(
-                SourceMapErrorCode.INVALID_VERSION,
+                SourceMapErrorCode.INVALID_SOURCE_ROOT,
                 'Field "sourceRoot" must be a string',
                 'sourceRoot',
             ),
@@ -186,7 +189,7 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         if (!Array.isArray(obj.names)) {
             errors.push(
                 validationError(
-                    SourceMapErrorCode.INVALID_VERSION,
+                    SourceMapErrorCode.INVALID_NAMES,
                     'Field "names" must be an array',
                     'names',
                 ),
@@ -194,7 +197,7 @@ export function validateSourceMap(raw: unknown): SourceMapValidationResult {
         } else if (!obj.names.every((n) => typeof n === 'string')) {
             errors.push(
                 validationError(
-                    SourceMapErrorCode.INVALID_VERSION,
+                    SourceMapErrorCode.INVALID_NAMES,
                     'All entries in "names" must be strings',
                     'names',
                 ),
@@ -238,7 +241,9 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
     try {
         parsed = JSON.parse(content);
     } catch (e) {
-        const preview = content.slice(0, PREVIEW_LENGTH).replace(/\n/g, ' ');
+        const preview = content
+            .slice(0, ERROR_PREVIEW_LENGTH)
+            .replace(/\n/g, ' ');
         throw createParseError(
             `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
             url ?? 'unknown',
@@ -246,13 +251,13 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
         );
     }
 
-    // Validate structure using the type guard
-    if (isSourceMapV3(parsed)) {
-        return parsed;
+    // Validate structure (single validation call)
+    const validation = validateSourceMap(parsed);
+    if (validation.valid) {
+        return parsed as SourceMapV3;
     }
 
-    // Get validation errors for detailed error message
-    const validation = validateSourceMap(parsed);
+    // Build error message from validation errors
     const firstError = validation.errors[0];
     const errorCode = firstError?.code as SourceMapErrorCode;
     const errorMessages = validation.errors.map((e) => e.message).join('; ');

@@ -165,6 +165,9 @@ describe('validateSourceMap', () => {
         expect(
             hasErrorMessage(result.errors, 'Field "names" must be an array'),
         ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_NAMES),
+        ).toBe(true);
     });
 
     it('validates sourceRoot is a string', () => {
@@ -180,6 +183,9 @@ describe('validateSourceMap', () => {
                 result.errors,
                 'Field "sourceRoot" must be a string',
             ),
+        ).toBe(true);
+        expect(
+            hasErrorCode(result.errors, SourceMapErrorCode.INVALID_SOURCE_ROOT),
         ).toBe(true);
     });
 

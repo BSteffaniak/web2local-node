@@ -380,7 +380,10 @@ describe('extractSourceMap', () => {
             expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
             expect((result.errors[0] as SourceMapError).code).toBe(
-                SourceMapErrorCode.HTTP_FORBIDDEN,
+                SourceMapErrorCode.HTTP_ERROR,
+            );
+            expect((result.errors[0] as SourceMapError).details?.status).toBe(
+                403,
             );
         });
 
