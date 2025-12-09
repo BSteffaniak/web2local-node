@@ -37,6 +37,10 @@
 
 export type {
     SourceMapV3,
+    IndexMapV3,
+    IndexMapSection,
+    IndexMapOffset,
+    SourceMap,
     ExtractedSource,
     SourceMapMetadata,
     SourceMapExtractionResult,
@@ -127,6 +131,12 @@ export {
     hasExtractableContent,
     getSourceMapSummary,
 } from './sources.js';
+
+// ============================================================================
+// MAPPINGS VALIDATION EXPORTS
+// ============================================================================
+
+export { validateMappings, type MappingsValidationResult } from './mappings.js';
 
 // ============================================================================
 // HIGH-LEVEL CONVENIENCE FUNCTION

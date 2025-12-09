@@ -139,37 +139,10 @@ function categorizeTest(name: string): TestCategory {
 /**
  * Known limitations of our current parser:
  *
- * VLQ/Mapping validation: Our parser validates the structure but doesn't
- * decode VLQ mappings to check for invalid values (negative indices, etc.)
- *
- * Tests in this set are expected to fail until we add VLQ decoding support.
+ * All ECMA-426 spec tests are now implemented! This set is empty.
  */
 const KNOWN_LIMITATIONS: Set<string> = new Set([
-    // VLQ/Mapping validation - we don't decode mappings yet
-    'invalidVLQDueToNonBase64Character',
-    'invalidVLQDueToNonBase64CharacterPadding',
-    'invalidVLQDueToMissingContinuationDigits',
-    'invalidMappingSegmentBadSeparator',
-    'invalidMappingSegmentWithZeroFields',
-    'invalidMappingSegmentWithTwoFields',
-    'invalidMappingSegmentWithThreeFields',
-    'invalidMappingSegmentWithSourceIndexOutOfBounds',
-    'invalidMappingSegmentWithNameIndexOutOfBounds',
-    'invalidMappingSegmentWithNegativeColumn',
-    'invalidMappingSegmentWithNegativeSourceIndex',
-    'invalidMappingSegmentWithNegativeOriginalLine',
-    'invalidMappingSegmentWithNegativeOriginalColumn',
-    'invalidMappingSegmentWithNegativeNameIndex',
-    'invalidMappingSegmentWithNegativeRelativeColumn',
-    'invalidMappingSegmentWithNegativeRelativeSourceIndex',
-    'invalidMappingSegmentWithNegativeRelativeOriginalLine',
-    'invalidMappingSegmentWithNegativeRelativeOriginalColumn',
-    'invalidMappingSegmentWithNegativeRelativeNameIndex',
-    'invalidMappingSegmentWithColumnExceeding32Bits',
-    'invalidMappingSegmentWithSourceIndexExceeding32Bits',
-    'invalidMappingSegmentWithOriginalLineExceeding32Bits',
-    'invalidMappingSegmentWithOriginalColumnExceeding32Bits',
-    'invalidMappingSegmentWithNameIndexExceeding32Bits',
+    // All spec tests implemented!
 ]);
 
 // ============================================================================

@@ -23,6 +23,7 @@ import {
     ERROR_PREVIEW_LENGTH,
 } from './constants.js';
 import { decodeDataUri, isDataUri } from './utils/url.js';
+import { validateMappings } from './mappings.js';
 
 // ============================================================================
 // RAW SOURCE MAP TYPES (before validation)
@@ -281,6 +282,19 @@ function validateRegularSourceMap(
                 }
             }
         }
+    }
+
+    // VLQ mappings validation - only if we have valid structural prerequisites
+    // (mappings is a string, sources is an array)
+    if (typeof obj.mappings === 'string' && Array.isArray(obj.sources)) {
+        const sourcesLength = obj.sources.length;
+        const namesLength = Array.isArray(obj.names) ? obj.names.length : 0;
+        const mappingsResult = validateMappings(
+            obj.mappings,
+            sourcesLength,
+            namesLength,
+        );
+        errors.push(...mappingsResult.errors);
     }
 
     return {
