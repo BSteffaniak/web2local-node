@@ -1,5 +1,5 @@
 /**
- * Tests for responsive image URL extraction from static-downloader.ts
+ * Tests for responsive image URL extraction and filtering from static-downloader.ts
  */
 
 import { describe, it, expect } from 'vitest';
@@ -8,7 +8,9 @@ import {
     parseImageSetUrls,
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
+    passesFilter,
 } from '@web2local/capture';
+import type { StaticAssetFilter, ResourceType } from '@web2local/capture';
 
 describe('parseSrcsetUrls', () => {
     it('parses srcset with width descriptors', () => {
@@ -454,5 +456,659 @@ describe('extractResponsiveUrlsFromCss', () => {
         `;
         const urls = extractResponsiveUrlsFromCss(css, cssUrl);
         expect(urls).toContain('https://cdn.example.com/img/photo.jpg');
+    });
+});
+
+// ============================================================================
+// passesFilter Tests
+// ============================================================================
+
+describe('passesFilter', () => {
+    // Helper to create a resource type
+    const scriptType: ResourceType = 'script';
+    const stylesheetType: ResourceType = 'stylesheet';
+    const imageType: ResourceType = 'image';
+
+    describe('no filter (pass-through)', () => {
+        it('should return true when no filter is provided', () => {
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                undefined,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should return true when filter is an empty object', () => {
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                {},
+            );
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('extension filtering', () => {
+        it('should pass when URL extension matches filter extensions', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should fail when URL extension does not match filter extensions', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilter(
+                'https://example.com/styles.css',
+                'text/css',
+                stylesheetType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should normalize extensions with leading dot (.js)', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should normalize extensions without leading dot (js)', () => {
+            const filter: StaticAssetFilter = { extensions: ['js'] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle multiple allowed extensions', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js', '.mjs', '.css'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/app.mjs',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/styles.css',
+                    'text/css',
+                    stylesheetType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/image.png',
+                    'image/png',
+                    imageType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should be case-insensitive for extensions', () => {
+            const filter: StaticAssetFilter = { extensions: ['.JS'] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle URLs with query strings', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilter(
+                'https://example.com/app.js?v=123&hash=abc',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle URLs without extensions', () => {
+            const filter: StaticAssetFilter = { extensions: ['.js'] };
+            const result = passesFilter(
+                'https://example.com/api/data',
+                'application/json',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should handle empty extension array gracefully', () => {
+            const filter: StaticAssetFilter = { extensions: [] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            // Empty extensions array means no restriction
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('MIME type filtering', () => {
+        it('should pass when contentType matches mimeTypes filter', () => {
+            const filter: StaticAssetFilter = {
+                mimeTypes: ['application/javascript'],
+            };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should fail when contentType does not match mimeTypes filter', () => {
+            const filter: StaticAssetFilter = {
+                mimeTypes: ['application/javascript'],
+            };
+            const result = passesFilter(
+                'https://example.com/styles.css',
+                'text/css',
+                stylesheetType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should match MIME type prefixes', () => {
+            const filter: StaticAssetFilter = { mimeTypes: ['text/'] };
+            expect(
+                passesFilter(
+                    'https://example.com/styles.css',
+                    'text/css',
+                    stylesheetType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/page.html',
+                    'text/html',
+                    'document',
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should handle multiple allowed MIME types', () => {
+            const filter: StaticAssetFilter = {
+                mimeTypes: ['application/javascript', 'text/css'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/styles.css',
+                    'text/css',
+                    stylesheetType,
+                    filter,
+                ),
+            ).toBe(true);
+        });
+
+        it('should be case-insensitive for MIME types', () => {
+            const filter: StaticAssetFilter = {
+                mimeTypes: ['APPLICATION/JAVASCRIPT'],
+            };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle contentType with charset', () => {
+            const filter: StaticAssetFilter = { mimeTypes: ['text/css'] };
+            const result = passesFilter(
+                'https://example.com/styles.css',
+                'text/css; charset=utf-8',
+                stylesheetType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should handle empty mimeTypes array gracefully', () => {
+            const filter: StaticAssetFilter = { mimeTypes: [] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            // Empty mimeTypes array means no restriction
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('include patterns', () => {
+        it('should pass when pathname matches include pattern', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/assets/**'],
+            };
+            const result = passesFilter(
+                'https://example.com/static/assets/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should fail when pathname does not match any include pattern', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/assets/**'],
+            };
+            const result = passesFilter(
+                'https://example.com/scripts/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should support glob patterns with **', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/js/**/*.js'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/static/js/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/js/vendor/lodash.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+        });
+
+        it('should support glob patterns with *', () => {
+            const filter: StaticAssetFilter = { includePatterns: ['*.js'] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should require at least one include pattern to match (OR logic)', () => {
+            const filter: StaticAssetFilter = {
+                includePatterns: ['**/assets/**', '**/dist/**'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/assets/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/dist/bundle.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            expect(
+                passesFilter(
+                    'https://example.com/src/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should handle empty includePatterns array gracefully', () => {
+            const filter: StaticAssetFilter = { includePatterns: [] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            // Empty includePatterns array means no restriction
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('exclude patterns', () => {
+        it('should fail when pathname matches exclude pattern', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/node_modules/**'],
+            };
+            const result = passesFilter(
+                'https://example.com/node_modules/lodash/index.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should pass when pathname does not match any exclude pattern', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/node_modules/**'],
+            };
+            const result = passesFilter(
+                'https://example.com/src/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(true);
+        });
+
+        it('should support glob patterns in excludePatterns', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/*.map', '**/*.test.js'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/app.js.map',
+                    'application/json',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+            expect(
+                passesFilter(
+                    'https://example.com/app.test.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+        });
+
+        it('should fail if any exclude pattern matches (OR logic for exclusion)', () => {
+            const filter: StaticAssetFilter = {
+                excludePatterns: ['**/vendor/**', '**/legacy/**'],
+            };
+            expect(
+                passesFilter(
+                    'https://example.com/vendor/jquery.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+            expect(
+                passesFilter(
+                    'https://example.com/legacy/old-code.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should handle empty excludePatterns array gracefully', () => {
+            const filter: StaticAssetFilter = { excludePatterns: [] };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            // Empty excludePatterns array means no exclusions
+            expect(result).toBe(true);
+        });
+    });
+
+    describe('combined filters (AND logic)', () => {
+        it('should apply extension AND mimeType filters together', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                mimeTypes: ['application/javascript'],
+            };
+            // Both match
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            // Extension matches but mimeType doesn't
+            expect(
+                passesFilter(
+                    'https://example.com/app.js',
+                    'text/plain',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should apply includePatterns AND extensions together', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                includePatterns: ['**/assets/**'],
+            };
+            // Both match
+            expect(
+                passesFilter(
+                    'https://example.com/assets/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            // Extension matches but pattern doesn't
+            expect(
+                passesFilter(
+                    'https://example.com/src/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+            // Pattern matches but extension doesn't
+            expect(
+                passesFilter(
+                    'https://example.com/assets/styles.css',
+                    'text/css',
+                    stylesheetType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should apply excludePatterns after other filters pass', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                excludePatterns: ['**/vendor/**'],
+            };
+            // Extension matches, not excluded
+            expect(
+                passesFilter(
+                    'https://example.com/src/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+            // Extension matches, but excluded
+            expect(
+                passesFilter(
+                    'https://example.com/vendor/jquery.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
+
+        it('should fail if extension passes but mimeType fails', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                mimeTypes: ['text/css'],
+            };
+            const result = passesFilter(
+                'https://example.com/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should fail if includePattern fails even if extension passes', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js'],
+                includePatterns: ['**/dist/**'],
+            };
+            const result = passesFilter(
+                'https://example.com/src/app.js',
+                'application/javascript',
+                scriptType,
+                filter,
+            );
+            expect(result).toBe(false);
+        });
+
+        it('should handle complex filter with all criteria', () => {
+            const filter: StaticAssetFilter = {
+                extensions: ['.js', '.mjs'],
+                mimeTypes: ['application/javascript', 'text/javascript'],
+                includePatterns: ['**/assets/**', '**/dist/**'],
+                excludePatterns: ['**/*.min.js', '**/vendor/**'],
+            };
+
+            // Passes all criteria
+            expect(
+                passesFilter(
+                    'https://example.com/assets/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(true);
+
+            // Fails extension
+            expect(
+                passesFilter(
+                    'https://example.com/assets/styles.css',
+                    'text/css',
+                    stylesheetType,
+                    filter,
+                ),
+            ).toBe(false);
+
+            // Fails mimeType
+            expect(
+                passesFilter(
+                    'https://example.com/assets/app.js',
+                    'text/plain',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+
+            // Fails includePattern
+            expect(
+                passesFilter(
+                    'https://example.com/src/app.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+
+            // Fails excludePattern (minified file)
+            expect(
+                passesFilter(
+                    'https://example.com/assets/app.min.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+
+            // Fails excludePattern (vendor)
+            expect(
+                passesFilter(
+                    'https://example.com/assets/vendor/lodash.js',
+                    'application/javascript',
+                    scriptType,
+                    filter,
+                ),
+            ).toBe(false);
+        });
     });
 });

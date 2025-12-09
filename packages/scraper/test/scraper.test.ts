@@ -11,8 +11,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import {
     findSourceMapUrl,
+    findSourceMapUrlWithContent,
     extractBundleUrls,
     findAllSourceMaps,
+    type BundleInfo,
+    type PreFetchedBundle,
 } from '@web2local/scraper';
 import { server } from '../../../helpers/msw-handlers.js';
 import { initCache } from '@web2local/cache';
@@ -720,7 +723,7 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'script' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithMaps).toHaveLength(0);
         expect(result.bundlesWithoutMaps).toHaveLength(1);
@@ -748,7 +751,7 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'script' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithoutMaps[0].content).toBe(content);
     });
@@ -781,7 +784,7 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'script' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithMaps).toHaveLength(1);
         expect(result.bundlesWithMaps[0].url).toBe(
@@ -823,7 +826,7 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'stylesheet' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithoutMaps).toHaveLength(2);
         expect(result.bundlesWithoutMaps.map((b) => b.bundle.type)).toContain(
@@ -864,7 +867,7 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'script' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithMaps).toHaveLength(2);
         expect(result.bundlesWithoutMaps).toHaveLength(0);
@@ -900,17 +903,451 @@ describe('findAllSourceMaps - bundlesWithoutMaps collection', () => {
                 type: 'script' as const,
             },
         ];
-        const result = await findAllSourceMaps(bundles, 5);
+        const result = await findAllSourceMaps(bundles, { concurrency: 5 });
 
         expect(result.bundlesWithMaps).toHaveLength(0);
         expect(result.bundlesWithoutMaps).toHaveLength(2);
     });
 
     it('should handle empty bundles array', async () => {
-        const result = await findAllSourceMaps([], 5);
+        const result = await findAllSourceMaps([]);
 
         expect(result.bundlesWithMaps).toHaveLength(0);
         expect(result.bundlesWithoutMaps).toHaveLength(0);
         expect(result.vendorBundles).toHaveLength(0);
+    });
+});
+
+// ============================================================================
+// findSourceMapUrlWithContent Tests
+// ============================================================================
+
+describe('findSourceMapUrlWithContent', () => {
+    describe('source map detection from content', () => {
+        it('should find source map URL from JS sourceMappingURL comment', async () => {
+            const content = `function hello(){console.log("hello")}\n//# sourceMappingURL=bundle.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/bundle.js.map',
+            );
+        });
+
+        it('should find source map URL from CSS sourceMappingURL comment', async () => {
+            const content = `.container{color:red}\n/*# sourceMappingURL=styles.css.map */`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/styles.css',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/styles.css.map',
+            );
+        });
+
+        it('should handle sourceMappingURL with # prefix', async () => {
+            const content = `var x=1;\n//# sourceMappingURL=app.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/app.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe('https://example.com/app.js.map');
+        });
+
+        it('should handle sourceMappingURL with @ prefix', async () => {
+            const content = `var x=1;\n//@ sourceMappingURL=app.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/app.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe('https://example.com/app.js.map');
+        });
+
+        it('should resolve relative source map URLs against bundle URL', async () => {
+            const content = `var x=1;\n//# sourceMappingURL=../maps/app.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/js/app.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/maps/app.js.map',
+            );
+        });
+
+        it('should handle absolute source map URLs', async () => {
+            const content = `var x=1;\n//# sourceMappingURL=https://cdn.example.com/maps/app.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/app.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://cdn.example.com/maps/app.js.map',
+            );
+        });
+    });
+
+    describe('.map fallback', () => {
+        it('should try .map fallback when no comment found', async () => {
+            const content = `function noComment(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-test.example.com/bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, {
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrlWithContent(
+                'https://prefetch-test.example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://prefetch-test.example.com/bundle.js.map',
+            );
+        });
+
+        it('should accept .map file with application/json Content-Type', async () => {
+            const content = `function noComment(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-ct.example.com/bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, {
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrlWithContent(
+                'https://prefetch-ct.example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://prefetch-ct.example.com/bundle.js.map',
+            );
+        });
+
+        it('should reject .map file with text/html Content-Type (SPA false positive)', async () => {
+            const content = `function noComment(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-spa.example.com/bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, {
+                            headers: { 'Content-Type': 'text/html' },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrlWithContent(
+                'https://prefetch-spa.example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBe(content);
+        });
+    });
+
+    describe('return values', () => {
+        it('should return bundleContent when no source map found', async () => {
+            const content = `function noMap(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-nomap.example.com/bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, { status: 404 });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrlWithContent(
+                'https://prefetch-nomap.example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBeNull();
+            expect(result.bundleContent).toBe(content);
+        });
+
+        it('should not return bundleContent when source map is found via comment', async () => {
+            const content = `function hello(){}\n//# sourceMappingURL=found.js.map`;
+            const result = await findSourceMapUrlWithContent(
+                'https://example.com/found.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://example.com/found.js.map',
+            );
+            expect(result.bundleContent).toBeUndefined();
+        });
+
+        it('should not return bundleContent when source map is found via .map fallback', async () => {
+            const content = `function noComment(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-fallback.example.com/bundle.js.map',
+                    () => {
+                        return new HttpResponse(null, {
+                            headers: { 'Content-Type': 'application/json' },
+                        });
+                    },
+                ),
+            );
+
+            const result = await findSourceMapUrlWithContent(
+                'https://prefetch-fallback.example.com/bundle.js',
+                content,
+            );
+            expect(result.sourceMapUrl).toBe(
+                'https://prefetch-fallback.example.com/bundle.js.map',
+            );
+            expect(result.bundleContent).toBeUndefined();
+        });
+    });
+});
+
+// ============================================================================
+// findAllSourceMaps with preFetchedBundles Tests
+// ============================================================================
+
+describe('findAllSourceMaps with preFetchedBundles', () => {
+    describe('pre-fetched content usage', () => {
+        it('should use pre-fetched content instead of fetching', async () => {
+            const content = `var prefetched=true;\n//# sourceMappingURL=prefetched.js.map`;
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-usage.example.com/prefetched.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-usage.example.com/prefetched.js',
+                    content,
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            // No MSW handler needed - if it fetches, it will fail
+            const result = await findAllSourceMaps(bundles, {
+                concurrency: 5,
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(1);
+            expect(result.bundlesWithMaps[0].sourceMapUrl).toBe(
+                'https://prefetch-usage.example.com/prefetched.js.map',
+            );
+        });
+
+        it('should handle string content in preFetchedBundles', async () => {
+            const content = `var str="content";\n//# sourceMappingURL=str.js.map`;
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-str.example.com/str.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-str.example.com/str.js',
+                    content: content, // string
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            const result = await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(1);
+        });
+
+        it('should handle Buffer content in preFetchedBundles', async () => {
+            const content = `var buf="buffer";\n//# sourceMappingURL=buf.js.map`;
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-buf.example.com/buf.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-buf.example.com/buf.js',
+                    content: Buffer.from(content, 'utf-8'), // Buffer
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            const result = await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(1);
+            expect(result.bundlesWithMaps[0].sourceMapUrl).toBe(
+                'https://prefetch-buf.example.com/buf.js.map',
+            );
+        });
+    });
+
+    describe('mixed mode', () => {
+        it('should fetch bundles not in preFetchedBundles map', async () => {
+            const prefetchedContent = `var prefetched=1;\n//# sourceMappingURL=a.js.map`;
+            const fetchedContent = `var fetched=2;\n//# sourceMappingURL=b.js.map`;
+
+            server.use(
+                http.get('https://prefetch-mixed.example.com/b.js', () => {
+                    return new HttpResponse(fetchedContent, {
+                        headers: { 'Content-Type': 'application/javascript' },
+                    });
+                }),
+            );
+
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-mixed.example.com/a.js',
+                    type: 'script',
+                },
+                {
+                    url: 'https://prefetch-mixed.example.com/b.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-mixed.example.com/a.js',
+                    content: prefetchedContent,
+                    contentType: 'application/javascript',
+                },
+                // b.js is NOT pre-fetched, so it will be fetched via MSW
+            ];
+
+            const result = await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(2);
+            expect(result.bundlesWithMaps.map((b) => b.url)).toContain(
+                'https://prefetch-mixed.example.com/a.js',
+            );
+            expect(result.bundlesWithMaps.map((b) => b.url)).toContain(
+                'https://prefetch-mixed.example.com/b.js',
+            );
+        });
+    });
+
+    describe('result structure', () => {
+        it('should return bundlesWithMaps for pre-fetched bundles with source maps', async () => {
+            const content = `var x=1;\n//# sourceMappingURL=app.js.map`;
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-result.example.com/app.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-result.example.com/app.js',
+                    content,
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            const result = await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(1);
+            expect(result.bundlesWithMaps[0].url).toBe(
+                'https://prefetch-result.example.com/app.js',
+            );
+            expect(result.bundlesWithMaps[0].sourceMapUrl).toBe(
+                'https://prefetch-result.example.com/app.js.map',
+            );
+        });
+
+        it('should return bundlesWithoutMaps for pre-fetched bundles without source maps', async () => {
+            const content = `function noSourceMap(){}`;
+            server.use(
+                http.head(
+                    'https://prefetch-nomap2.example.com/vendor.js.map',
+                    () => {
+                        return new HttpResponse(null, { status: 404 });
+                    },
+                ),
+            );
+
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-nomap2.example.com/vendor.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-nomap2.example.com/vendor.js',
+                    content,
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            const result = await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+            });
+
+            expect(result.bundlesWithMaps).toHaveLength(0);
+            expect(result.bundlesWithoutMaps).toHaveLength(1);
+            expect(result.bundlesWithoutMaps[0].bundle.url).toBe(
+                'https://prefetch-nomap2.example.com/vendor.js',
+            );
+            expect(result.bundlesWithoutMaps[0].content).toBe(content);
+        });
+
+        it('should call onProgress callback', async () => {
+            const content = `var x=1;\n//# sourceMappingURL=progress.js.map`;
+            const bundles: BundleInfo[] = [
+                {
+                    url: 'https://prefetch-progress.example.com/a.js',
+                    type: 'script',
+                },
+                {
+                    url: 'https://prefetch-progress.example.com/b.js',
+                    type: 'script',
+                },
+            ];
+            const preFetchedBundles: PreFetchedBundle[] = [
+                {
+                    url: 'https://prefetch-progress.example.com/a.js',
+                    content,
+                    contentType: 'application/javascript',
+                },
+                {
+                    url: 'https://prefetch-progress.example.com/b.js',
+                    content,
+                    contentType: 'application/javascript',
+                },
+            ];
+
+            const progressCalls: Array<{ completed: number; total: number }> =
+                [];
+
+            await findAllSourceMaps(bundles, {
+                preFetchedBundles,
+                onProgress: (completed, total) => {
+                    progressCalls.push({ completed, total });
+                },
+            });
+
+            expect(progressCalls.length).toBeGreaterThan(0);
+            expect(progressCalls[progressCalls.length - 1]).toEqual({
+                completed: 2,
+                total: 2,
+            });
+        });
     });
 });

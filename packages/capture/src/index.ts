@@ -49,6 +49,7 @@ export {
     parseImageSetUrls,
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
+    passesFilter,
 } from './static-downloader.js';
 export {
     extractUrlPattern,
@@ -143,6 +144,10 @@ export async function captureWebsite(
         captureFonts: opts.captureStatic,
         captureMedia: opts.captureStatic,
         captureRenderedHtml: opts.captureRenderedHtml ?? false,
+        // Pass through the new filter-based options
+        staticFilter: opts.staticFilter,
+        onAssetCaptured: opts.onAssetCaptured,
+        skipAssetWrite: opts.skipAssetWrite,
         onCapture: (asset) => {
             opts.onProgress?.(`Static: ${asset.localPath}`);
         },
@@ -201,6 +206,11 @@ export async function captureWebsite(
             }
 
             try {
+                // Set the current page URL before navigation (for onAssetCaptured callback)
+                if (opts.captureStatic) {
+                    staticCapturer.setCurrentPageUrl(currentUrl);
+                }
+
                 // Navigate to the page
                 await page.goto(currentUrl, {
                     waitUntil: 'domcontentloaded',
@@ -216,6 +226,8 @@ export async function captureWebsite(
                         );
                         // Also add the redirected URL to visited set
                         visitedUrls.add(normalizeUrlForCrawl(finalUrl));
+                        // Update the current page URL to the final URL after redirect
+                        staticCapturer.setCurrentPageUrl(finalUrl);
                     }
                     staticCapturer.updateBaseUrl(finalUrl);
                 }

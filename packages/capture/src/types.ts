@@ -81,6 +81,43 @@ export interface RouteConfig {
 }
 
 /**
+ * Filter for static asset capture.
+ * When provided, only assets matching the filter criteria are captured.
+ */
+export interface StaticAssetFilter {
+    /** Only capture files matching these extensions (e.g., ['.js', '.css', '.map']) */
+    extensions?: string[];
+    /** Only capture files matching these MIME type prefixes (e.g., ['text/css', 'application/javascript']) */
+    mimeTypes?: string[];
+    /** URL patterns to include (glob-style, e.g., ['**\/assets\/**']) */
+    includePatterns?: string[];
+    /** URL patterns to exclude (glob-style) */
+    excludePatterns?: string[];
+}
+
+/**
+ * Information about a captured asset, passed to onAssetCaptured callback
+ */
+export interface CapturedAssetInfo {
+    /** Original URL of the asset */
+    url: string;
+    /** Content-Type header value */
+    contentType: string;
+    /** Raw content of the asset */
+    content: Buffer;
+    /** Browser resource type (script, stylesheet, document, etc.) */
+    resourceType: string;
+    /** URL of the page where this asset was discovered */
+    pageUrl: string;
+}
+
+/**
+ * Callback fired when an asset is captured.
+ * This is fire-and-forget - the capture process does not wait for the callback to complete.
+ */
+export type OnAssetCaptured = (asset: CapturedAssetInfo) => void;
+
+/**
  * Options for API capture
  */
 export interface CaptureOptions {
@@ -92,6 +129,21 @@ export interface CaptureOptions {
     apiFilter: string[];
     /** Whether to capture static assets */
     captureStatic: boolean;
+    /**
+     * Filter for static asset capture.
+     * When provided, only assets matching the filter are captured.
+     */
+    staticFilter?: StaticAssetFilter;
+    /**
+     * Callback fired when an asset is captured (fire-and-forget).
+     * Useful for collecting assets without writing to disk.
+     */
+    onAssetCaptured?: OnAssetCaptured;
+    /**
+     * Skip writing assets to disk.
+     * Useful when only using onAssetCaptured callback to collect assets.
+     */
+    skipAssetWrite?: boolean;
     /**
      * Whether to capture rendered HTML (after JS execution) instead of original.
      * Set to true for SPAs where the initial HTML is mostly empty and JS renders content.

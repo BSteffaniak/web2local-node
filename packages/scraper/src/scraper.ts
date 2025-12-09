@@ -277,6 +277,19 @@ export interface BundleWithContent {
 }
 
 /**
+ * Pre-fetched bundle content for use with findAllSourceMaps.
+ * When provided, the bundle content won't be re-fetched.
+ */
+export interface PreFetchedBundle {
+    /** The URL of the bundle */
+    url: string;
+    /** The raw content of the bundle */
+    content: Buffer | string;
+    /** The Content-Type header value */
+    contentType: string;
+}
+
+/**
  * Result from processing all bundles for source maps
  */
 export interface SourceMapSearchResult {
@@ -370,14 +383,118 @@ function looksLikeVendorBundle(filename: string, content: string): boolean {
 }
 
 /**
+ * Checks if a bundle has an associated source map using pre-fetched content.
+ * This avoids re-fetching bundles that have already been captured during crawling.
+ *
+ * @param bundleUrl - The URL of the bundle
+ * @param content - The pre-fetched content of the bundle
+ * @returns The source map URL result
+ */
+export async function findSourceMapUrlWithContent(
+    bundleUrl: string,
+    content: string,
+): Promise<SourceMapCheckResult> {
+    const cache = getCache();
+
+    // Check cache first for positive source map results
+    const cached = await cache.getSourceMapDiscovery(bundleUrl);
+    if (cached && cached.sourceMapUrl) {
+        return { sourceMapUrl: cached.sourceMapUrl };
+    }
+
+    // If we already know there's no source map (from cache), return with the content
+    if (cached) {
+        return { sourceMapUrl: null, bundleContent: content };
+    }
+
+    // Look for source map reference in the content
+    // Check for sourceMappingURL comment at the end
+    const jsMatch = content.match(/\/\/[#@]\s*sourceMappingURL=(\S+)\s*$/);
+    const cssMatch = content.match(
+        /\/\*[#@]\s*sourceMappingURL=(\S+)\s*\*\/\s*$/,
+    );
+
+    const match = jsMatch || cssMatch;
+    if (match) {
+        const mapUrl = match[1];
+        const sourceMapUrl = resolveUrl(mapUrl, new URL(bundleUrl));
+        await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+        return { sourceMapUrl };
+    }
+
+    // Try appending .map as a fallback (still need to make a HEAD request)
+    try {
+        const mapUrl = bundleUrl + '.map';
+        const mapResponse = await robustFetch(mapUrl, {
+            method: 'HEAD',
+            headers: BROWSER_HEADERS,
+        });
+        if (mapResponse.ok) {
+            // Validate Content-Type to avoid false positives from SPAs that return HTML for all routes
+            const contentType = mapResponse.headers.get('Content-Type') || '';
+            const isValidSourceMap =
+                contentType.includes('application/json') ||
+                contentType.includes('application/octet-stream') ||
+                contentType.includes('text/plain') ||
+                // Some servers don't set Content-Type for .map files
+                contentType === '';
+
+            if (isValidSourceMap && !contentType.includes('text/html')) {
+                const sourceMapUrl = mapUrl;
+                await cache.setSourceMapDiscovery(bundleUrl, sourceMapUrl);
+                return { sourceMapUrl };
+            }
+        }
+    } catch {
+        // Ignore errors from .map fallback check
+    }
+
+    // Cache negative result
+    await cache.setSourceMapDiscovery(bundleUrl, null);
+
+    // No source map found - return bundle content for fallback saving
+    return { sourceMapUrl: null, bundleContent: content };
+}
+
+/**
+ * Options for findAllSourceMaps
+ */
+export interface FindAllSourceMapsOptions {
+    /** Concurrency limit for fetching bundles (default: 5) */
+    concurrency?: number;
+    /** Progress callback */
+    onProgress?: (completed: number, total: number) => void;
+    /** Pre-fetched bundle content to avoid re-fetching */
+    preFetchedBundles?: PreFetchedBundle[];
+}
+
+/**
  * Processes all bundles and finds their source maps.
  * Also collects vendor bundles without source maps for fingerprinting.
+ *
+ * @param bundles - The bundles to process
+ * @param options - Processing options including concurrency, progress callback, and pre-fetched content
  */
 export async function findAllSourceMaps(
     bundles: BundleInfo[],
-    concurrency: number = 5,
-    onProgress?: (completed: number, total: number) => void,
+    options?: FindAllSourceMapsOptions,
 ): Promise<SourceMapSearchResult> {
+    const concurrency = options?.concurrency ?? 5;
+    const onProgress = options?.onProgress;
+    const preFetchedBundles = options?.preFetchedBundles;
+
+    // Build a map of pre-fetched content for quick lookup
+    const preFetchedMap = new Map<string, string>();
+    if (preFetchedBundles) {
+        for (const pf of preFetchedBundles) {
+            const contentStr =
+                typeof pf.content === 'string'
+                    ? pf.content
+                    : pf.content.toString('utf-8');
+            preFetchedMap.set(pf.url, contentStr);
+        }
+    }
+
     const bundlesWithMaps: BundleInfo[] = [];
     const vendorBundles: VendorBundle[] = [];
     const bundlesWithoutMaps: BundleWithContent[] = [];
@@ -388,7 +505,14 @@ export async function findAllSourceMaps(
         const batch = bundles.slice(i, i + concurrency);
         const batchResults = await Promise.all(
             batch.map(async (bundle) => {
-                const result = await findSourceMapUrl(bundle.url);
+                // Use pre-fetched content if available, otherwise fetch
+                const preFetchedContent = preFetchedMap.get(bundle.url);
+                const result = preFetchedContent
+                    ? await findSourceMapUrlWithContent(
+                          bundle.url,
+                          preFetchedContent,
+                      )
+                    : await findSourceMapUrl(bundle.url);
                 completed++;
                 onProgress?.(completed, bundles.length);
                 return {

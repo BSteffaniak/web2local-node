@@ -264,9 +264,11 @@ async function extractFromPageUrl(
 
     const { bundlesWithMaps, bundlesWithoutMaps } = await findAllSourceMaps(
         bundles,
-        options.concurrency,
-        (completed, total) => {
-            mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
+        {
+            concurrency: options.concurrency,
+            onProgress: (completed, total) => {
+                mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
+            },
         },
     );
 
@@ -412,6 +414,278 @@ async function extractFromPageUrl(
 }
 
 // ============================================================================
+// CRAWL-BASED EXTRACTION
+// ============================================================================
+
+/**
+ * Extract sources by crawling the site with a browser.
+ * This discovers bundles as they're loaded during navigation.
+ */
+async function extractWithCrawl(
+    options: ExtractOptions,
+    registry: SpinnerRegistry,
+): Promise<void> {
+    // Dynamically import capture module to avoid loading Playwright when not needed
+    const { captureWebsite } = await import('@web2local/capture');
+    // Import type separately
+    type CapturedAssetInfo = import('@web2local/capture').CapturedAssetInfo;
+
+    const hostname = getHostname(options.url);
+    const outputDir = join(options.output, hostname);
+
+    console.log(chalk.bold.cyan('\n  web2local extract'));
+    console.log(chalk.gray('  ' + '─'.repeat(25)));
+    console.log();
+
+    // Collect JS/CSS bundles during crawl
+    const capturedBundles: Map<
+        string,
+        { content: string; contentType: string }
+    > = new Map();
+
+    const crawlSpinner = ora({
+        text: `Crawling ${options.url}...`,
+        color: 'cyan',
+    }).start();
+    registry.register(crawlSpinner);
+
+    try {
+        // Use captureWebsite with a filter for JS/CSS only and skipAssetWrite
+        const result = await captureWebsite({
+            url: options.url,
+            outputDir: options.output,
+            apiFilter: [], // Don't capture API calls
+            captureStatic: true,
+            headless: options.headless ?? true,
+            browseTimeout: 5000, // Shorter timeout for extract
+            autoScroll: false, // Skip scrolling for extract
+            verbose: options.verbose,
+            crawl: true,
+            crawlMaxDepth: options.crawlMaxDepth ?? 5,
+            crawlMaxPages: options.crawlMaxPages ?? 100,
+            // Only capture JS and CSS bundles
+            staticFilter: {
+                extensions: ['.js', '.mjs', '.css'],
+            },
+            // Don't write assets to disk - we'll process them differently
+            skipAssetWrite: true,
+            // Collect bundle content
+            onAssetCaptured: (asset: CapturedAssetInfo) => {
+                const contentStr =
+                    typeof asset.content === 'string'
+                        ? asset.content
+                        : asset.content.toString('utf-8');
+                capturedBundles.set(asset.url, {
+                    content: contentStr,
+                    contentType: asset.contentType,
+                });
+            },
+            onProgress: (message: string) => {
+                crawlSpinner.text = message;
+            },
+            onVerbose: options.verbose
+                ? (message: string) => registry.safeLog(message, true)
+                : undefined,
+        });
+
+        const crawlStats = result.stats.crawlStats;
+        crawlSpinner.succeed(
+            `Crawled ${chalk.bold(crawlStats?.pagesVisited || 1)} pages, found ${chalk.bold(capturedBundles.size)} bundles`,
+        );
+
+        if (options.verbose) {
+            console.log(chalk.gray('\nBundles captured:'));
+            for (const url of capturedBundles.keys()) {
+                console.log(chalk.gray(`  - ${url}`));
+            }
+            console.log();
+        }
+
+        if (capturedBundles.size === 0) {
+            console.log(
+                chalk.yellow(
+                    '\nNo JavaScript or CSS bundles found during crawl.',
+                ),
+            );
+            return;
+        }
+
+        // Convert captured bundles to BundleInfo format
+        const bundles: BundleInfo[] = Array.from(capturedBundles.entries()).map(
+            ([url, { contentType }]) => ({
+                url,
+                type: contentType.includes('css')
+                    ? ('stylesheet' as const)
+                    : ('script' as const),
+            }),
+        );
+
+        // Create pre-fetched bundles for findAllSourceMaps
+        const preFetchedBundles = Array.from(capturedBundles.entries()).map(
+            ([url, { content, contentType }]) => ({
+                url,
+                content,
+                contentType,
+            }),
+        );
+
+        // Find source maps using pre-fetched content
+        const mapSpinner = ora({
+            text: 'Checking bundles for source maps...',
+            color: 'cyan',
+        }).start();
+        registry.register(mapSpinner);
+
+        const { bundlesWithMaps, bundlesWithoutMaps } = await findAllSourceMaps(
+            bundles,
+            {
+                concurrency: options.concurrency,
+                preFetchedBundles,
+                onProgress: (completed, total) => {
+                    mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
+                },
+            },
+        );
+
+        if (bundlesWithMaps.length === 0) {
+            mapSpinner.fail('No source maps found for any bundles');
+            console.log(
+                chalk.yellow(
+                    '\nThis site may not have publicly accessible source maps.',
+                ),
+            );
+            return;
+        }
+
+        mapSpinner.succeed(
+            `Found ${chalk.bold(bundlesWithMaps.length)} source maps`,
+        );
+
+        // Extract sources from each source map (same logic as extractFromPageUrl)
+        console.log(chalk.bold('\nExtracting source files:'));
+        console.log();
+
+        const manifestBundles: BundleManifest[] = [];
+        let totalFilesWritten = 0;
+        let totalFilesSkipped = 0;
+
+        for (const bundle of bundlesWithMaps) {
+            const bundleName = getBundleName(bundle.url);
+            const extractSpinner = ora({
+                text: `Extracting ${chalk.cyan(bundleName)}...`,
+                indent: 2,
+            }).start();
+            registry.register(extractSpinner);
+
+            try {
+                const result = await extractSourcesFromMap(
+                    bundle.sourceMapUrl!,
+                    bundle.url,
+                );
+
+                if (result.errors.length > 0) {
+                    extractSpinner.warn(
+                        `${bundleName}: ${result.errors.length} errors during extraction`,
+                    );
+                    if (options.verbose) {
+                        for (const error of result.errors) {
+                            console.log(chalk.red(`    ${error}`));
+                        }
+                    }
+                }
+
+                if (result.files.length === 0) {
+                    extractSpinner.info(`${bundleName}: No source files found`);
+                    continue;
+                }
+
+                const reconstructResult = await reconstructSources(
+                    result.files,
+                    {
+                        outputDir: options.output,
+                        includeNodeModules: options.includeNodeModules,
+                        siteHostname: hostname,
+                        bundleName,
+                    },
+                );
+
+                totalFilesWritten += reconstructResult.filesWritten;
+                totalFilesSkipped += reconstructResult.filesSkipped;
+
+                manifestBundles.push({
+                    bundleUrl: bundle.url,
+                    sourceMapUrl: bundle.sourceMapUrl!,
+                    filesExtracted: reconstructResult.filesWritten,
+                    files: result.files.map((f) => f.path).slice(0, 100),
+                });
+
+                extractSpinner.succeed(
+                    `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files` +
+                        (reconstructResult.filesSkipped > 0
+                            ? chalk.gray(
+                                  ` (${reconstructResult.filesSkipped} skipped)`,
+                              )
+                            : ''),
+                );
+            } catch (error) {
+                extractSpinner.fail(`${bundleName}: ${error}`);
+            }
+        }
+
+        // Write manifest
+        if (manifestBundles.length > 0) {
+            const manifest: ExtractManifest = {
+                extractedAt: new Date().toISOString(),
+                sourceUrl: options.url,
+                mode: 'page',
+                bundles: manifestBundles,
+                totalFiles: totalFilesWritten,
+            };
+            await writeExtractManifest(outputDir, manifest);
+        }
+
+        // Summary
+        console.log(chalk.gray('\n  ' + '─'.repeat(20)));
+        console.log(chalk.bold('\n  Summary:'));
+        if (crawlStats) {
+            console.log(
+                `    ${chalk.blue('○')} Pages crawled: ${chalk.bold(crawlStats.pagesVisited)}`,
+            );
+        }
+        if (totalFilesWritten > 0) {
+            console.log(
+                `    ${chalk.green('✓')} Files extracted: ${chalk.bold(totalFilesWritten)}`,
+            );
+        }
+        if (totalFilesSkipped > 0) {
+            console.log(
+                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)} (node_modules)`,
+            );
+        }
+        if (bundlesWithoutMaps.length > 0) {
+            console.log(
+                `    ${chalk.yellow('○')} Bundles without source maps: ${chalk.yellow(bundlesWithoutMaps.length)}`,
+            );
+        }
+        console.log(`    ${chalk.blue('→')} Output: ${chalk.cyan(outputDir)}`);
+
+        if (!options.includeNodeModules && totalFilesSkipped > 0) {
+            console.log(
+                chalk.gray(
+                    '\n  Tip: Use --include-node-modules to include dependency source files',
+                ),
+            );
+        }
+        console.log();
+    } catch (error) {
+        crawlSpinner.fail(
+            `Crawl failed: ${error instanceof Error ? error.message : error}`,
+        );
+        process.exit(1);
+    }
+}
+
+// ============================================================================
 // MAIN ENTRY POINT
 // ============================================================================
 
@@ -432,6 +706,9 @@ export async function runExtract(options: ExtractOptions): Promise<void> {
         // Detect if URL is a direct source map URL or a page URL
         if (isSourceMapUrl(options.url)) {
             await extractFromSourceMapUrl(options, registry);
+        } else if (options.crawl) {
+            // Use browser-based crawling to discover bundles
+            await extractWithCrawl(options, registry);
         } else {
             await extractFromPageUrl(options, registry);
         }

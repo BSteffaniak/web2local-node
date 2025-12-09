@@ -8,7 +8,14 @@ import type { Page, Response } from 'playwright';
 import { mkdir, writeFile } from 'fs/promises';
 import { dirname, join, extname } from 'path';
 import { createHash } from 'crypto';
-import type { CapturedAsset, ResourceType } from './types.js';
+import { minimatch } from 'minimatch';
+import type {
+    CapturedAsset,
+    ResourceType,
+    StaticAssetFilter,
+    CapturedAssetInfo,
+    OnAssetCaptured,
+} from './types.js';
 import { robustFetch, FetchError } from '@web2local/http';
 
 /**
@@ -96,6 +103,26 @@ export interface StaticCaptureOptions {
     onCapture?: (asset: CapturedAsset) => void;
     /** Verbose log callback - handles spinner-safe logging */
     onVerbose?: (message: string) => void;
+
+    /**
+     * Filter for selective asset capture.
+     * When provided, only assets matching the filter criteria are captured.
+     * This allows fine-grained control over which assets to capture.
+     */
+    staticFilter?: StaticAssetFilter;
+
+    /**
+     * Callback fired when an asset is captured (fire-and-forget).
+     * Useful for collecting asset content without writing to disk.
+     * The callback receives the full asset content including the Buffer.
+     */
+    onAssetCaptured?: OnAssetCaptured;
+
+    /**
+     * Skip writing assets to disk.
+     * Useful when only using onAssetCaptured callback to collect assets.
+     */
+    skipAssetWrite?: boolean;
 }
 
 const DEFAULT_OPTIONS: StaticCaptureOptions = {
@@ -110,6 +137,7 @@ const DEFAULT_OPTIONS: StaticCaptureOptions = {
     captureRenderedHtml: false,
     captureMediaSources: false,
     verbose: false,
+    skipAssetWrite: false,
 };
 
 /**
@@ -147,6 +175,96 @@ function shouldCaptureResourceType(
         default:
             return false;
     }
+}
+
+/**
+ * Map resource type to MIME type prefix for filter matching
+ */
+function resourceTypeToMimePrefix(type: ResourceType): string {
+    switch (type) {
+        case 'document':
+            return 'text/html';
+        case 'stylesheet':
+            return 'text/css';
+        case 'script':
+            return 'application/javascript';
+        case 'image':
+            return 'image/';
+        case 'font':
+            return 'font/';
+        case 'media':
+            return 'video/'; // also matches audio/ but we check both
+        default:
+            return '';
+    }
+}
+
+/**
+ * Check if an asset passes the static filter criteria.
+ * If no filter is provided, all assets pass.
+ *
+ * @param url - The URL of the asset
+ * @param contentType - The Content-Type header value
+ * @param resourceType - The browser resource type
+ * @param filter - The filter to apply (optional)
+ * @returns true if the asset should be captured
+ */
+export function passesFilter(
+    url: string,
+    contentType: string,
+    resourceType: ResourceType,
+    filter?: StaticAssetFilter,
+): boolean {
+    // No filter means capture everything
+    if (!filter) {
+        return true;
+    }
+
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const ext = extname(pathname).toLowerCase();
+
+    // Check extension filter
+    if (filter.extensions && filter.extensions.length > 0) {
+        const normalizedExts = filter.extensions.map((e) =>
+            e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`,
+        );
+        if (!normalizedExts.includes(ext)) {
+            return false;
+        }
+    }
+
+    // Check MIME type filter
+    if (filter.mimeTypes && filter.mimeTypes.length > 0) {
+        const matchesMime = filter.mimeTypes.some((mimePrefix) =>
+            contentType.toLowerCase().startsWith(mimePrefix.toLowerCase()),
+        );
+        if (!matchesMime) {
+            return false;
+        }
+    }
+
+    // Check include patterns (URL must match at least one)
+    if (filter.includePatterns && filter.includePatterns.length > 0) {
+        const matchesInclude = filter.includePatterns.some((pattern) =>
+            minimatch(pathname, pattern, { matchBase: true }),
+        );
+        if (!matchesInclude) {
+            return false;
+        }
+    }
+
+    // Check exclude patterns (URL must not match any)
+    if (filter.excludePatterns && filter.excludePatterns.length > 0) {
+        const matchesExclude = filter.excludePatterns.some((pattern) =>
+            minimatch(pathname, pattern, { matchBase: true }),
+        );
+        if (matchesExclude) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -278,9 +396,28 @@ export class StaticCapturer {
     }> = [];
     /** URLs discovered in CSS image-set() that need to be fetched */
     private pendingResponsiveUrls: Set<string> = new Set();
+    /** Current page URL being crawled (for onAssetCaptured callback) */
+    private currentPageUrl: string | null = null;
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
+    }
+
+    /**
+     * Set the current page URL.
+     * Called by the capture orchestrator when navigating to a new page during crawling.
+     * This URL is passed to the onAssetCaptured callback.
+     */
+    setCurrentPageUrl(url: string): void {
+        this.currentPageUrl = url;
+        this.log(`[StaticCapturer] Current page URL set to: ${url}`);
+    }
+
+    /**
+     * Get the current page URL
+     */
+    getCurrentPageUrl(): string | null {
+        return this.currentPageUrl;
     }
 
     /**
@@ -512,7 +649,7 @@ export class StaticCapturer {
     private async captureAsset(
         response: Response,
         url: string,
-        _resourceType: ResourceType,
+        resourceType: ResourceType,
     ): Promise<void> {
         try {
             const headers = response.headers();
@@ -589,6 +726,65 @@ export class StaticCapturer {
                 return;
             }
 
+            const contentType = getContentType(response, url);
+
+            // Apply static filter if provided
+            if (
+                this.options.staticFilter &&
+                !passesFilter(
+                    url,
+                    contentType,
+                    resourceType,
+                    this.options.staticFilter,
+                )
+            ) {
+                this.log(
+                    `[Static] Skipping ${url} (does not pass static filter)`,
+                );
+                return;
+            }
+
+            // Fire the onAssetCaptured callback (fire-and-forget)
+            if (this.options.onAssetCaptured) {
+                const assetInfo: CapturedAssetInfo = {
+                    url,
+                    contentType,
+                    content: body,
+                    resourceType,
+                    pageUrl:
+                        this.currentPageUrl || this.entrypointUrl || 'unknown',
+                };
+                // Fire-and-forget: don't await the callback
+                try {
+                    this.options.onAssetCaptured(assetInfo);
+                } catch (callbackError) {
+                    this.log(
+                        `[Static] onAssetCaptured callback error: ${callbackError}`,
+                    );
+                }
+            }
+
+            // Skip writing to disk if skipAssetWrite is enabled
+            if (this.options.skipAssetWrite) {
+                this.log(
+                    `[Static] Skipping disk write for ${url} (skipAssetWrite=true)`,
+                );
+                // Still track the asset but don't write it
+                const isEntrypoint = url === this.entrypointUrl;
+                const baseUrl = this.baseOrigin || this.entrypointUrl || url;
+                const localPath = urlToLocalPath(url, baseUrl);
+                const asset: CapturedAsset = {
+                    url,
+                    localPath,
+                    contentType,
+                    size: body.length,
+                    isEntrypoint,
+                };
+                this.assets.push(asset);
+                this.options.onCapture?.(asset);
+                return;
+            }
+
             // Generate local path using the base origin (which may have been updated after redirects)
             const baseUrl = this.baseOrigin || this.entrypointUrl || url;
             const localPath = urlToLocalPath(url, baseUrl);
@@ -598,7 +794,6 @@ export class StaticCapturer {
             await mkdir(dirname(fullPath), { recursive: true });
             await writeFile(fullPath, body);
 
-            const contentType = getContentType(response, url);
             const isEntrypoint = url === this.entrypointUrl;
 
             const asset: CapturedAsset = {
@@ -867,6 +1062,7 @@ export class StaticCapturer {
         this.originalDocumentUrl = null;
         this.truncatedFiles = [];
         this.recoveredFiles = [];
+        this.currentPageUrl = null;
     }
 
     /**

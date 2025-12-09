@@ -12,9 +12,12 @@ export {
     type ExtractBundleUrlsResult,
     type SourceMapCheckResult,
     type BundleWithContent,
+    type PreFetchedBundle,
+    type FindAllSourceMapsOptions,
     type SourceMapSearchResult,
     extractBundleUrls,
     findSourceMapUrl,
+    findSourceMapUrlWithContent,
     findAllSourceMaps,
 } from './scraper.js';
 

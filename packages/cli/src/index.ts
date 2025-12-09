@@ -149,13 +149,12 @@ export async function runMain(options: CliOptions) {
     registry.register(mapSpinner);
 
     const { bundlesWithMaps, vendorBundles, bundlesWithoutMaps } =
-        await findAllSourceMaps(
-            bundles,
-            options.concurrency,
-            (completed, total) => {
+        await findAllSourceMaps(bundles, {
+            concurrency: options.concurrency,
+            onProgress: (completed, total) => {
                 mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
             },
-        );
+        });
 
     const hostname = new URL(options.url).hostname;
     let savedBundles: SavedBundle[] = [];

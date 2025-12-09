@@ -9,6 +9,14 @@ export interface ExtractOptions {
     includeNodeModules: boolean;
     concurrency: number;
     noCache: boolean;
+    /** Use browser crawling to discover bundles across multiple pages */
+    crawl?: boolean;
+    /** Maximum link depth to follow when crawling */
+    crawlMaxDepth?: number;
+    /** Maximum number of pages to visit when crawling */
+    crawlMaxPages?: number;
+    /** Run browser in headless mode (default: true) */
+    headless?: boolean;
 }
 
 export interface CliOptions {
@@ -347,6 +355,22 @@ export function parseArgs(): CliOptions {
             '5',
         )
         .option('--no-cache', 'Bypass cache, fetch fresh')
+        // Crawl options for extract command
+        .option(
+            '--no-crawl',
+            'Disable link crawling (only extract from entry page)',
+        )
+        .option(
+            '--crawl-max-depth <number>',
+            'Maximum link depth to follow when crawling',
+            '5',
+        )
+        .option(
+            '--crawl-max-pages <number>',
+            'Maximum number of pages to visit when crawling',
+            '100',
+        )
+        .option('--no-headless', 'Run browser in visible mode (not headless)')
         .action(async (url: string, opts: any) => {
             const { runExtract } = await import('./run-extract.js');
             await runExtract({
@@ -356,6 +380,11 @@ export function parseArgs(): CliOptions {
                 includeNodeModules: opts.includeNodeModules || false,
                 concurrency: parseInt(opts.concurrency, 10),
                 noCache: opts.cache === false,
+                // Crawl options
+                crawl: opts.crawl !== false,
+                crawlMaxDepth: parseInt(opts.crawlMaxDepth, 10),
+                crawlMaxPages: parseInt(opts.crawlMaxPages, 10),
+                headless: opts.headless !== false,
             });
         });
 
