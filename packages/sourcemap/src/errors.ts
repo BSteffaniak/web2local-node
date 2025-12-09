@@ -32,7 +32,6 @@ export enum SourceMapErrorCode {
     MISSING_SOURCES = 'MISSING_SOURCES',
     MISSING_MAPPINGS = 'MISSING_MAPPINGS',
     SOURCES_NOT_ARRAY = 'SOURCES_NOT_ARRAY',
-    SOURCES_CONTENT_LENGTH_MISMATCH = 'SOURCES_CONTENT_LENGTH_MISMATCH',
     INVALID_SOURCE_ROOT = 'INVALID_SOURCE_ROOT',
     INVALID_NAMES = 'INVALID_NAMES',
 
@@ -64,7 +63,7 @@ export class SourceMapError extends Error {
         public readonly cause?: Error,
         public readonly details?: Record<string, unknown>,
     ) {
-        super(message);
+        super(message, cause ? { cause } : undefined);
         Error.captureStackTrace?.(this, SourceMapError);
     }
 

@@ -42,22 +42,8 @@ export const INVALID_SOURCE_MAP_CONTENT_TYPES = ['text/html'] as const;
 export const ALLOW_MISSING_CONTENT_TYPE = true;
 
 // ============================================================================
-// COMMENT PATTERNS
+// DATA URI PATTERN
 // ============================================================================
-
-// Note: We construct these patterns dynamically to prevent build tools
-// from mistakenly parsing them as actual source map references
-const SOURCE_MAPPING_URL = 'source' + 'MappingURL';
-
-/** Pattern to find source mapping URL in JavaScript files */
-export const JS_SOURCE_MAP_COMMENT_PATTERN = new RegExp(
-    `\\/\\/[#@]\\s*${SOURCE_MAPPING_URL}=(\\S+)\\s*$`,
-);
-
-/** Pattern to find source mapping URL in CSS files */
-export const CSS_SOURCE_MAP_COMMENT_PATTERN = new RegExp(
-    `\\/\\*[#@]\\s*${SOURCE_MAPPING_URL}=(\\S+)\\s*\\*\\/\\s*$`,
-);
 
 /** Pattern to match inline base64 data URIs */
 export const DATA_URI_PATTERN = /^data:application\/json;base64,(.+)$/;

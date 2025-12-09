@@ -15,35 +15,12 @@ import type {
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 import {
     SOURCE_MAP_HEADERS,
-    JS_SOURCE_MAP_COMMENT_PATTERN,
-    CSS_SOURCE_MAP_COMMENT_PATTERN,
     VALID_SOURCE_MAP_CONTENT_TYPES,
     INVALID_SOURCE_MAP_CONTENT_TYPES,
     ALLOW_MISSING_CONTENT_TYPE,
 } from './constants.js';
 import { resolveSourceMapUrl, isDataUri } from './utils/url.js';
-
-// ============================================================================
-// INTERNAL HELPERS
-// ============================================================================
-
-/**
- * Creates an AbortSignal that combines a timeout with an optional user signal.
- * If both are provided, the signal aborts when either triggers.
- */
-function createSignalWithTimeout(
-    timeout?: number,
-    signal?: AbortSignal,
-): AbortSignal | undefined {
-    if (!timeout && !signal) return undefined;
-    if (!timeout) return signal;
-
-    const timeoutSignal = AbortSignal.timeout(timeout);
-    if (!signal) return timeoutSignal;
-
-    // Combine both signals - abort when either fires
-    return AbortSignal.any([signal, timeoutSignal]);
-}
+import { createSignalWithTimeout } from './utils/signal.js';
 
 // ============================================================================
 // HEADER DETECTION
@@ -66,40 +43,263 @@ export function findSourceMapInHeaders(headers: Headers): string | null {
 }
 
 // ============================================================================
-// COMMENT DETECTION
+// COMMENT DETECTION (ECMA-426 Spec Compliant)
+//
+// Per ECMA-426 section 11.1.2.1 (JavaScriptExtractSourceMapURL), the algorithm:
+//
+// 1. Scans the entire file line by line
+// 2. Tracks `lastURL` - updated whenever a sourceMappingURL is found in a comment
+// 3. RESETS `lastURL` to null whenever non-whitespace, non-comment code is found
+// 4. Returns `lastURL` at the end
+//
+// This means:
+// - Only sourceMappingURL comments in TRAILING POSITION are valid
+//   (i.e., only whitespace/comments may follow)
+// - If multiple valid URLs exist in trailing position, the LAST ONE wins
+// - URLs followed by code are invalidated (reset to null)
+//
+// Example: "//# sourceMappingURL=a.map\ncode();\n//# sourceMappingURL=b.map"
+//   → Returns "b.map" (first URL was reset by code, last one is in trailing position)
+//
+// Example: "//# sourceMappingURL=a.map\ncode();"
+//   → Returns null (URL was reset by code that followed)
+//
+// @see https://tc39.es/ecma426/#sec-javascriptextractsourcemapurl
 // ============================================================================
 
 /**
- * Finds source mapping URL in JavaScript content.
+ * Line terminators per ECMA-426 spec section 11.1.2.1
+ */
+const LINE_TERMINATORS = /\r\n|\n|\r|\u2028|\u2029/;
+
+/**
+ * Pattern to match sourceMappingURL directive content.
+ * Matches: [@#] sourceMappingURL=<url>
+ * Uses multiline flag to match within multi-line comment content.
+ */
+const SOURCE_MAPPING_URL_PATTERN = /[@#]\s*sourceMappingURL=(\S*?)\s*$/m;
+
+/**
+ * Matches a sourceMappingURL directive in a comment.
+ * For multi-line comments, searches the entire content for the pattern.
  *
- * Matches patterns like:
- * - //# source + MappingURL=bundle.js.map
- * - //@ source + MappingURL=bundle.js.map (legacy)
+ * @param comment - The comment content (without delimiters)
+ * @returns The URL if matched, null otherwise
+ */
+function matchSourceMapUrl(comment: string): string | null {
+    const match = comment.match(SOURCE_MAPPING_URL_PATTERN);
+    return match ? match[1] : null;
+}
+
+/**
+ * Extracts source map URL from JavaScript content following ECMA-426 spec.
  *
+ * Per ECMA-426 section 11.1.2.1, this implements the "without parsing" algorithm:
+ * - Scans for sourceMappingURL in single-line (//) and multi-line comments
+ * - Returns the LAST valid URL found in trailing comments
+ * - Resets when non-comment code is encountered (URL must be in trailing position)
+ * - Handles multi-line comments that span multiple lines
+ *
+ * NOTE: "Last URL wins" is SPEC-COMPLIANT behavior, not a bug. The spec uses
+ * a `lastURL` variable that gets updated on each match and reset on code.
+ * Only URLs in the final trailing comment section of the file are returned.
+ *
+ * @see https://tc39.es/ecma426/#sec-javascriptextractsourcemapurl
  * @param content - JavaScript file content
- * @returns Source map URL if found, null otherwise
+ * @returns Source map URL if found in valid trailing position, null otherwise
  */
 export function findSourceMapInJsComment(content: string): string | null {
-    const match = content.match(JS_SOURCE_MAP_COMMENT_PATTERN);
-    return match?.[1] || null;
+    const lines = content.split(LINE_TERMINATORS);
+
+    let lastURL: string | null = null;
+    let inMultiLineComment = false;
+    let multiLineCommentContent = '';
+
+    for (const line of lines) {
+        let position = 0;
+        const lineLength = line.length;
+
+        // If we're in a multi-line comment from previous line, continue it
+        if (inMultiLineComment) {
+            const closeIndex = line.indexOf('*/');
+            if (closeIndex !== -1) {
+                // End of multi-line comment
+                multiLineCommentContent += line.slice(0, closeIndex);
+                const url = matchSourceMapUrl(multiLineCommentContent);
+                if (url) {
+                    lastURL = url;
+                }
+                inMultiLineComment = false;
+                multiLineCommentContent = '';
+                position = closeIndex + 2;
+            } else {
+                // Comment continues to next line
+                multiLineCommentContent += line + '\n';
+                continue;
+            }
+        }
+
+        while (position < lineLength) {
+            const char = line[position];
+
+            // Check for comments starting with /
+            if (char === '/' && position + 1 < lineLength) {
+                const nextChar = line[position + 1];
+
+                if (nextChar === '/') {
+                    // Single-line comment: rest of line is comment
+                    const comment = line.slice(position + 2);
+                    const url = matchSourceMapUrl(comment);
+                    if (url) {
+                        lastURL = url;
+                    }
+                    // Move to end of line
+                    position = lineLength;
+                } else if (nextChar === '*') {
+                    // Multi-line comment
+                    const closeIndex = line.indexOf('*/', position + 2);
+                    if (closeIndex !== -1) {
+                        // Comment ends on same line
+                        const comment = line.slice(position + 2, closeIndex);
+                        const url = matchSourceMapUrl(comment);
+                        if (url) {
+                            lastURL = url;
+                        }
+                        position = closeIndex + 2;
+                    } else {
+                        // Comment continues to next line
+                        inMultiLineComment = true;
+                        multiLineCommentContent =
+                            line.slice(position + 2) + '\n';
+                        position = lineLength;
+                    }
+                } else {
+                    // Just a / character (e.g., division) - this is code
+                    lastURL = null;
+                    position++;
+                }
+            } else if (/\s/.test(char)) {
+                // Whitespace - skip
+                position++;
+            } else {
+                // Non-whitespace, non-comment code - reset lastURL per spec
+                lastURL = null;
+                position++;
+            }
+        }
+    }
+
+    // Handle unclosed multi-line comment at end of file
+    if (inMultiLineComment) {
+        // Per spec, unclosed comment is still checked
+        const url = matchSourceMapUrl(multiLineCommentContent);
+        if (url) {
+            lastURL = url;
+        }
+    }
+
+    return lastURL;
 }
 
 /**
- * Finds source mapping URL in CSS content.
+ * Extracts source map URL from CSS content following ECMA-426 spec.
  *
- * Matches patterns like:
- * - /*# source + MappingURL=styles.css.map *\/
+ * Per ECMA-426 section 11.1.2.2, CSS extraction is similar to JavaScript
+ * but only supports multi-line comments (/* ... *\/).
  *
+ * Returns the LAST valid URL found in trailing comments.
+ * Handles multi-line comments that span multiple lines.
+ *
+ * NOTE: "Last URL wins" is SPEC-COMPLIANT behavior, not a bug. The spec uses
+ * a `lastURL` variable that gets updated on each match and reset on code.
+ * Only URLs in the final trailing comment section of the file are returned.
+ *
+ * @see https://tc39.es/ecma426/#sec-cssextractsourcemapurl
  * @param content - CSS file content
- * @returns Source map URL if found, null otherwise
+ * @returns Source map URL if found in valid trailing position, null otherwise
  */
 export function findSourceMapInCssComment(content: string): string | null {
-    const match = content.match(CSS_SOURCE_MAP_COMMENT_PATTERN);
-    return match?.[1] || null;
+    const lines = content.split(LINE_TERMINATORS);
+
+    let lastURL: string | null = null;
+    let inMultiLineComment = false;
+    let multiLineCommentContent = '';
+
+    for (const line of lines) {
+        let position = 0;
+        const lineLength = line.length;
+
+        // If we're in a multi-line comment from previous line, continue it
+        if (inMultiLineComment) {
+            const closeIndex = line.indexOf('*/');
+            if (closeIndex !== -1) {
+                // End of multi-line comment
+                multiLineCommentContent += line.slice(0, closeIndex);
+                const url = matchSourceMapUrl(multiLineCommentContent);
+                if (url) {
+                    lastURL = url;
+                }
+                inMultiLineComment = false;
+                multiLineCommentContent = '';
+                position = closeIndex + 2;
+            } else {
+                // Comment continues to next line
+                multiLineCommentContent += line + '\n';
+                continue;
+            }
+        }
+
+        while (position < lineLength) {
+            const char = line[position];
+
+            // Check for multi-line comment start
+            if (
+                char === '/' &&
+                position + 1 < lineLength &&
+                line[position + 1] === '*'
+            ) {
+                const closeIndex = line.indexOf('*/', position + 2);
+                if (closeIndex !== -1) {
+                    // Comment ends on same line
+                    const comment = line.slice(position + 2, closeIndex);
+                    const url = matchSourceMapUrl(comment);
+                    if (url) {
+                        lastURL = url;
+                    }
+                    position = closeIndex + 2;
+                } else {
+                    // Comment continues to next line
+                    inMultiLineComment = true;
+                    multiLineCommentContent = line.slice(position + 2) + '\n';
+                    position = lineLength;
+                }
+            } else if (/\s/.test(char)) {
+                // Whitespace - skip
+                position++;
+            } else {
+                // Non-whitespace, non-comment code - reset lastURL per spec
+                lastURL = null;
+                position++;
+            }
+        }
+    }
+
+    // Handle unclosed multi-line comment at end of file
+    if (inMultiLineComment) {
+        const url = matchSourceMapUrl(multiLineCommentContent);
+        if (url) {
+            lastURL = url;
+        }
+    }
+
+    return lastURL;
 }
 
 /**
- * Finds source mapping URL in file content (auto-detects JS or CSS).
+ * Finds source mapping URL in file content.
+ *
+ * Uses the appropriate extraction method based on file type.
+ * Per ECMA-426 spec, returns the LAST valid URL in trailing comments.
  *
  * @param content - File content
  * @param type - File type hint ('js' or 'css'), or 'auto' to try both

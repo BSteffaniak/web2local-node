@@ -12,7 +12,6 @@ import type {
 } from '@web2local/types';
 import {
     SourceMapErrorCode,
-    SourceMapError,
     createParseError,
     createValidationError,
     createDataUriError,

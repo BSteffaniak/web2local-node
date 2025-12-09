@@ -23,6 +23,7 @@ import { isDataUri } from './utils/url.js';
 import { parseSourceMapAuto } from './parser.js';
 import { discoverSourceMap } from './discovery.js';
 import { extractSources } from './sources.js';
+import { createSignalWithTimeout } from './utils/signal.js';
 
 // ============================================================================
 // INTERNAL HELPERS
@@ -58,24 +59,6 @@ function createErrorResult(
         errors: [error],
         metadata: createEmptyMetadata(),
     };
-}
-
-/**
- * Creates an AbortSignal that combines a timeout with an optional user signal.
- * If both are provided, the signal aborts when either triggers.
- */
-function createSignalWithTimeout(
-    timeout?: number,
-    signal?: AbortSignal,
-): AbortSignal | undefined {
-    if (!timeout && !signal) return undefined;
-    if (!timeout) return signal;
-
-    const timeoutSignal = AbortSignal.timeout(timeout);
-    if (!signal) return timeoutSignal;
-
-    // Combine both signals - abort when either fires
-    return AbortSignal.any([signal, timeoutSignal]);
 }
 
 // ============================================================================
