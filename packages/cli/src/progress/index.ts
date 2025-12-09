@@ -6,6 +6,7 @@ export {
     ProgressDisplay,
     formatUrlForLog,
     type WorkerStatus,
+    type WorkerPhase,
     type WorkerState,
     type AggregateStats,
     type ProgressDisplayOptions,

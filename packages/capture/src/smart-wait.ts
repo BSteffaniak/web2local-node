@@ -10,6 +10,11 @@
 import type { Page } from 'playwright';
 
 /**
+ * Phase callback type for reporting progress during waiting
+ */
+export type WaitPhase = 'network-idle' | 'scrolling' | 'settling';
+
+/**
  * Options for smart page waiting
  */
 export interface SmartWaitOptions {
@@ -27,12 +32,14 @@ export interface SmartWaitOptions {
     scrollStep?: number;
     /** Maximum scroll attempts (default: 30) */
     maxScrolls?: number;
+    /** Callback when entering a new phase */
+    onPhase?: (phase: WaitPhase) => void;
 }
 
 /**
- * Default wait options
+ * Default wait options (excluding callback)
  */
-const DEFAULT_WAIT_OPTIONS: Required<SmartWaitOptions> = {
+const DEFAULT_WAIT_OPTIONS: Omit<Required<SmartWaitOptions>, 'onPhase'> = {
     networkIdleTimeout: 5000,
     networkIdleTime: 1000,
     scrollDelay: 50,
@@ -156,12 +163,15 @@ export async function smartWaitForPage(
     options: SmartWaitOptions = {},
 ): Promise<void> {
     const opts = { ...DEFAULT_WAIT_OPTIONS, ...options };
+    const { onPhase } = options;
 
     // Phase 1: Wait for initial network idle
+    onPhase?.('network-idle');
     await waitForNetworkIdleWithTimeout(page, opts.networkIdleTimeout);
 
     // Phase 2: Auto-scroll if enabled (triggers lazy loading)
     if (opts.autoScroll) {
+        onPhase?.('scrolling');
         await fastAutoScroll(page, {
             step: opts.scrollStep,
             delay: opts.scrollDelay,
@@ -171,6 +181,7 @@ export async function smartWaitForPage(
 
     // Phase 3: Wait for network to settle after scrolling
     // Use a shorter timeout for this phase
+    onPhase?.('settling');
     const postScrollTimeout = Math.min(opts.networkIdleTimeout / 2, 3000);
     await waitForNetworkIdleWithTimeout(page, postScrollTimeout);
 

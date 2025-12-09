@@ -197,10 +197,19 @@ export class CrawlWorker {
                 queue.complete(item.url);
                 this.pagesProcessed++;
 
-                onProgress?.(this.buildProgressEvent('completed', item));
+                // Include linksDiscovered in completed event
+                const linksDiscovered = (
+                    item as QueueItem & { linksDiscovered?: number }
+                ).linksDiscovered;
+                onProgress?.(
+                    this.buildProgressEvent('completed', item, {
+                        linksDiscovered,
+                    }),
+                );
 
                 this.verbose(`Completed: ${item.url}`, 'info', {
                     url: item.url,
+                    linksDiscovered,
                 });
             } catch (error) {
                 const errorStr = String(error);
@@ -305,15 +314,16 @@ export class CrawlWorker {
             }
         }
 
-        // Wait for the page to settle
-        onProgress?.(this.buildProgressEvent('waiting', item));
-
+        // Wait for the page to settle with phase callbacks
         await smartWaitForPage(page, {
             networkIdleTimeout,
             networkIdleTime,
             scrollDelay,
             pageSettleTime,
             autoScroll,
+            onPhase: (phase) => {
+                onProgress?.(this.buildProgressEvent(phase, item));
+            },
         });
 
         // Capture HTML document (only first page, only once)
@@ -326,25 +336,29 @@ export class CrawlWorker {
         }
 
         // Extract links for crawling
+        let linksDiscovered = 0;
         if (crawlEnabled && item.depth < maxDepth) {
             onProgress?.(this.buildProgressEvent('extracting-links', item));
 
             const links = await extractPageLinks(page, baseOrigin);
 
-            let addedCount = 0;
             for (const link of links) {
                 if (queue.add(link, item.depth + 1)) {
-                    addedCount++;
+                    linksDiscovered++;
                 }
             }
 
-            if (addedCount > 0) {
+            if (linksDiscovered > 0) {
                 this.verbose(
-                    `Discovered ${addedCount} new links from ${item.url}`,
+                    `Discovered ${linksDiscovered} new links from ${item.url}`,
                     'info',
-                    { url: item.url, linksDiscovered: addedCount },
+                    { url: item.url, linksDiscovered },
                 );
             }
         }
+
+        // Store linksDiscovered for the completed event
+        (item as QueueItem & { linksDiscovered?: number }).linksDiscovered =
+            linksDiscovered;
     }
 }

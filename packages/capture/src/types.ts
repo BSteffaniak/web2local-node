@@ -225,8 +225,9 @@ export interface PageProgressEvent {
     /** Current phase of page processing */
     phase:
         | 'navigating'
-        | 'waiting'
+        | 'network-idle'
         | 'scrolling'
+        | 'settling'
         | 'extracting-links'
         | 'capturing-html'
         | 'completed'

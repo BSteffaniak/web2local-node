@@ -2,15 +2,33 @@
  * Multi-line progress display for parallel capture operations
  *
  * Displays a box with aggregate stats and per-worker status,
- * with a scrolling log history below.
+ * with a scrolling log history below. Includes:
+ * - Progress bar per worker
+ * - Elapsed time tracking
+ * - Phase text
+ * - Adaptive layout based on terminal width
  */
 
 import chalk from 'chalk';
 import { terminal } from './terminal.js';
-import { renderBox, truncate } from './box-renderer.js';
+import { renderBox, truncate, visibleLength } from './box-renderer.js';
 
 /**
- * Worker status types
+ * Worker phase types - matches the capture module phases
+ */
+export type WorkerPhase =
+    | 'navigating'
+    | 'network-idle'
+    | 'scrolling'
+    | 'settling'
+    | 'extracting-links'
+    | 'capturing-html'
+    | 'completed'
+    | 'error'
+    | 'retrying';
+
+/**
+ * Worker status types (simplified for display)
  */
 export type WorkerStatus =
     | 'idle'
@@ -27,6 +45,8 @@ export type WorkerStatus =
 export interface WorkerState {
     status: WorkerStatus;
     url?: string;
+    phase?: WorkerPhase;
+    phaseStartTime?: number;
 }
 
 /**
@@ -70,6 +90,8 @@ export class ProgressDisplay {
     private baseOriginParsed: URL | null = null;
     private resizeHandler: (() => void) | null = null;
     private cleanupHandlers: (() => void)[] = [];
+    private renderInterval: NodeJS.Timeout | null = null;
+    private readonly RENDER_INTERVAL_MS = 100;
 
     constructor(options: ProgressDisplayOptions) {
         this.options = options;
@@ -77,7 +99,7 @@ export class ProgressDisplay {
         // Initialize workers to idle state
         this.workers = [];
         for (let i = 0; i < options.workerCount; i++) {
-            this.workers.push({ status: 'idle' });
+            this.workers.push({ status: 'idle', phaseStartTime: Date.now() });
         }
 
         // Initialize stats
@@ -132,6 +154,13 @@ export class ProgressDisplay {
             process.off('SIGTERM', cleanup);
         });
 
+        // Start render loop for elapsed time updates
+        this.renderInterval = setInterval(() => {
+            if (this.started) {
+                this.render();
+            }
+        }, this.RENDER_INTERVAL_MS);
+
         // Initial render
         this.render();
     }
@@ -145,6 +174,12 @@ export class ProgressDisplay {
                 console.log(finalMessage);
             }
             return;
+        }
+
+        // Stop render interval
+        if (this.renderInterval) {
+            clearInterval(this.renderInterval);
+            this.renderInterval = null;
         }
 
         if (!this.started) {
@@ -184,11 +219,18 @@ export class ProgressDisplay {
     }
 
     /**
+     * Get a worker's current state
+     */
+    getWorkerState(workerId: number): WorkerState | undefined {
+        return this.workers[workerId];
+    }
+
+    /**
      * Update aggregate stats
      */
     updateStats(stats: Partial<AggregateStats>): void {
         Object.assign(this.stats, stats);
-        this.render();
+        // Don't render here - the interval will handle it
     }
 
     /**
@@ -196,8 +238,20 @@ export class ProgressDisplay {
      */
     updateWorker(workerId: number, state: Partial<WorkerState>): void {
         if (workerId >= 0 && workerId < this.workers.length) {
-            Object.assign(this.workers[workerId], state);
-            this.render();
+            const current = this.workers[workerId];
+
+            // Auto-set phaseStartTime when phase changes
+            if (state.phase !== undefined && state.phase !== current.phase) {
+                state.phaseStartTime = Date.now();
+            }
+
+            // When going idle, reset start time for "idle for X seconds" display
+            if (state.status === 'idle' && current.status !== 'idle') {
+                state.phaseStartTime = Date.now();
+            }
+
+            Object.assign(current, state);
+            // Don't render here - the interval will handle it
         }
     }
 
@@ -231,11 +285,14 @@ export class ProgressDisplay {
         }
 
         const width = this.options.maxWidth ?? terminal.getWidth();
+        const innerWidth = width - 4; // Account for box borders
 
         const content = {
             title: 'Capture Progress',
             statsLine: this.buildStatsLine(),
-            workerLines: this.workers.map((w, i) => this.buildWorkerLine(i, w)),
+            workerLines: this.workers.map((w, i) =>
+                this.buildWorkerLine(i, w, innerWidth),
+            ),
         };
 
         const boxLines = renderBox(content, width);
@@ -298,15 +355,127 @@ export class ProgressDisplay {
     }
 
     /**
-     * Build a worker line
+     * Build a worker line with adaptive layout
      */
-    private buildWorkerLine(id: number, state: WorkerState): string {
+    private buildWorkerLine(
+        id: number,
+        state: WorkerState,
+        innerWidth: number,
+    ): string {
+        const prefix = `[${id + 1}] `;
         const indicator = this.getStatusIndicator(state.status);
-        const statusText = state.url
-            ? this.formatUrl(state.url)
-            : this.getStatusText(state.status);
+        const basePrefix = prefix + indicator + ' ';
+        const basePrefixLen = visibleLength(basePrefix);
 
-        return `[${id + 1}] ${indicator} ${statusText}`;
+        // Calculate available space
+        const available = innerWidth - basePrefixLen;
+
+        if (state.status === 'idle') {
+            const elapsed = this.formatElapsed(state.phaseStartTime);
+            const idleText = chalk.gray('Idle');
+            const padding = ' '.repeat(
+                Math.max(
+                    0,
+                    available - visibleLength(idleText) - elapsed.length,
+                ),
+            );
+            return basePrefix + idleText + padding + chalk.gray(elapsed);
+        }
+
+        // Active worker - build components
+        const url = state.url ? this.formatUrl(state.url) : '';
+        const elapsed = this.formatElapsed(state.phaseStartTime);
+        const progressBar = this.renderProgressBar(state.phase);
+        const phaseLabelFull = this.getPhaseLabel(state.phase, true);
+        const phaseLabelShort = this.getPhaseLabel(state.phase, false);
+
+        // Adaptive layout based on available space
+        return this.layoutWorkerLine(
+            basePrefix,
+            url,
+            phaseLabelFull,
+            phaseLabelShort,
+            progressBar,
+            elapsed,
+            available,
+        );
+    }
+
+    /**
+     * Layout worker line components adaptively based on available width
+     */
+    private layoutWorkerLine(
+        prefix: string,
+        url: string,
+        phaseLabelFull: string,
+        phaseLabelShort: string,
+        progressBar: string,
+        elapsed: string,
+        available: number,
+    ): string {
+        const elapsedLen = elapsed.length;
+        const progressLen = visibleLength(progressBar);
+        const phaseLabelFullLen = phaseLabelFull
+            ? visibleLength(phaseLabelFull) + 1
+            : 0; // +1 for space
+        const phaseLabelShortLen = phaseLabelShort
+            ? visibleLength(phaseLabelShort) + 1
+            : 0;
+
+        // Determine what fits
+        // Minimum: URL + elapsed
+        // Medium: URL + progress + elapsed
+        // Large: URL + short phase + progress + elapsed
+        // Full: URL + full phase + progress + elapsed
+
+        let includeProgress = false;
+        let phaseLabel = '';
+        let phaseLabelLen = 0;
+
+        let spaceForUrl = available - elapsedLen - 1; // -1 for minimum spacing
+
+        // Try to fit progress bar (needs ~12 chars)
+        if (spaceForUrl > 25) {
+            includeProgress = true;
+            spaceForUrl -= progressLen + 1;
+        }
+
+        // Try to fit phase label
+        if (spaceForUrl > 35 && phaseLabelShort) {
+            phaseLabel = phaseLabelShort;
+            phaseLabelLen = phaseLabelShortLen;
+            spaceForUrl -= phaseLabelLen;
+        }
+
+        if (spaceForUrl > 50 && phaseLabelFull) {
+            phaseLabel = phaseLabelFull;
+            phaseLabelLen = phaseLabelFullLen;
+            spaceForUrl += phaseLabelShortLen; // Add back short
+            spaceForUrl -= phaseLabelLen;
+        }
+
+        // Truncate URL to fit
+        const truncatedUrl = url
+            ? truncate(url, Math.max(10, spaceForUrl))
+            : '';
+        const urlLen = visibleLength(truncatedUrl);
+
+        // Calculate padding
+        let usedSpace = urlLen;
+        if (phaseLabel) usedSpace += phaseLabelLen;
+        if (includeProgress) usedSpace += progressLen + 1;
+        usedSpace += elapsedLen;
+
+        const paddingNeeded = Math.max(0, available - usedSpace);
+
+        // Build the line
+        let line = prefix + truncatedUrl;
+        line += ' '.repeat(paddingNeeded);
+        if (phaseLabel) line += ' ' + chalk.gray(phaseLabel);
+        if (includeProgress) line += ' ' + progressBar;
+        line += chalk.white(elapsed);
+
+        return line;
     }
 
     /**
@@ -333,26 +502,82 @@ export class ProgressDisplay {
     }
 
     /**
-     * Get the status text for display
+     * Render progress bar based on current phase
      */
-    private getStatusText(status: WorkerStatus): string {
-        switch (status) {
-            case 'idle':
-                return chalk.gray('Idle');
-            case 'waiting':
-                return chalk.yellow('Waiting...');
-            case 'extracting':
-                return chalk.yellow('Extracting links...');
-            case 'completed':
-                return chalk.green('Completed');
-            case 'error':
-                return chalk.red('Error');
-            case 'retrying':
-                return chalk.yellow('Retrying...');
+    private renderProgressBar(phase?: WorkerPhase, width: number = 10): string {
+        const progress = this.phaseToProgress(phase);
+        const filled = Math.round((progress / 100) * width);
+        const empty = width - filled;
+
+        return chalk.cyan('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
+    }
+
+    /**
+     * Map phase to progress percentage
+     */
+    private phaseToProgress(phase?: WorkerPhase): number {
+        switch (phase) {
             case 'navigating':
-                return chalk.cyan('Navigating...');
+                return 10;
+            case 'network-idle':
+                return 30;
+            case 'scrolling':
+                return 50;
+            case 'settling':
+                return 70;
+            case 'extracting-links':
+                return 85;
+            case 'capturing-html':
+                return 90;
+            case 'completed':
+                return 100;
+            case 'error':
+            case 'retrying':
+                return 0;
             default:
-                return '';
+                return 0;
+        }
+    }
+
+    /**
+     * Get phase label for display
+     */
+    private getPhaseLabel(phase?: WorkerPhase, full: boolean = false): string {
+        if (!phase) return '';
+
+        const labels: Record<WorkerPhase, [string, string]> = {
+            navigating: ['navigating', 'nav'],
+            'network-idle': ['waiting for network', 'network'],
+            scrolling: ['scrolling', 'scroll'],
+            settling: ['page settling', 'settle'],
+            'extracting-links': ['extracting links', 'links'],
+            'capturing-html': ['capturing html', 'html'],
+            completed: ['completed', 'done'],
+            error: ['error', 'error'],
+            retrying: ['retrying', 'retry'],
+        };
+
+        const [fullLabel, shortLabel] = labels[phase] || ['', ''];
+        const label = full ? fullLabel : shortLabel;
+        return label ? `[${label}]` : '';
+    }
+
+    /**
+     * Format elapsed time
+     */
+    private formatElapsed(startTime?: number): string {
+        if (!startTime) return '';
+
+        const elapsed = (Date.now() - startTime) / 1000;
+
+        if (elapsed < 10) {
+            return ` ${elapsed.toFixed(1)}s`;
+        } else if (elapsed < 60) {
+            return ` ${Math.round(elapsed)}s`;
+        } else {
+            const mins = Math.floor(elapsed / 60);
+            const secs = Math.round(elapsed % 60);
+            return ` ${mins}m${secs}s`;
         }
     }
 

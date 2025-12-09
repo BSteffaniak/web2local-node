@@ -15,6 +15,7 @@ import {
     ProgressDisplay,
     formatUrlForLog,
     type WorkerStatus,
+    type WorkerPhase,
 } from './progress/index.js';
 
 import {
@@ -503,11 +504,12 @@ async function extractWithCrawl(
                             error,
                         } = event;
 
-                        // Map phase to worker status
+                        // Map phase to worker status (simplified display status)
                         const statusMap: Record<string, WorkerStatus> = {
                             navigating: 'navigating',
-                            waiting: 'waiting',
+                            'network-idle': 'waiting',
                             scrolling: 'waiting',
+                            settling: 'waiting',
                             'extracting-links': 'extracting',
                             'capturing-html': 'waiting',
                             completed: 'idle',
@@ -515,10 +517,11 @@ async function extractWithCrawl(
                             retrying: 'retrying',
                         };
 
-                        // Update worker state
+                        // Update worker state with both status and phase
                         progress.updateWorker(workerId, {
                             status: statusMap[phase] || 'idle',
-                            url: phase === 'navigating' ? url : undefined,
+                            phase: phase as WorkerPhase,
+                            url,
                         });
 
                         // Update aggregate stats
