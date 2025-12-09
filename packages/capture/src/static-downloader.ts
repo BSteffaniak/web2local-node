@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import { minimatch } from 'minimatch';
 import type {
     AssetCaptureEvent,
+    RequestActivityEvent,
     CapturedAsset,
     CaptureVerboseEvent,
     ResourceType,
@@ -89,8 +90,10 @@ export interface StaticCaptureOptions {
     captureMediaSources: boolean;
     /** Verbose logging */
     verbose: boolean;
-    /** Structured progress callback */
+    /** Structured progress callback for asset capture */
     onCapture?: (event: AssetCaptureEvent) => void;
+    /** Structured progress callback for request activity (in-flight requests) */
+    onRequestActivity?: (event: RequestActivityEvent) => void;
     /** Structured verbose log callback */
     onVerbose?: (event: CaptureVerboseEvent) => void;
 
@@ -402,6 +405,15 @@ export class StaticCapturer {
     private pendingResponsiveUrls: Set<string> = new Set();
     /** Current page URL being crawled (for onAssetCaptured callback) */
     private currentPageUrl: string | null = null;
+    /** Map of Page to workerId for request tracking */
+    private pageToWorkerId: WeakMap<Page, number> = new WeakMap();
+    /** In-flight requests per worker */
+    private activeRequestsByWorker: Map<number, Set<string>> = new Map();
+    /** Most recent request URL per worker */
+    private currentRequestByWorker: Map<
+        number,
+        { url: string; size?: number }
+    > = new Map();
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -422,6 +434,80 @@ export class StaticCapturer {
      */
     getCurrentPageUrl(): string | null {
         return this.currentPageUrl;
+    }
+
+    /**
+     * Track the start of a request for a worker.
+     * Updates active request count and emits activity event.
+     */
+    private trackRequestStart(
+        url: string,
+        workerId: number,
+        contentLength?: number,
+    ): void {
+        // Add to active requests for this worker
+        let activeSet = this.activeRequestsByWorker.get(workerId);
+        if (!activeSet) {
+            activeSet = new Set();
+            this.activeRequestsByWorker.set(workerId, activeSet);
+        }
+        activeSet.add(url);
+
+        // Update current request for this worker
+        this.currentRequestByWorker.set(workerId, {
+            url,
+            size: contentLength,
+        });
+
+        // Emit activity event
+        this.emitRequestActivity(workerId);
+    }
+
+    /**
+     * Track the completion of a request for a worker.
+     * Updates active request count and emits activity event.
+     */
+    private trackRequestEnd(url: string, workerId: number): void {
+        const activeSet = this.activeRequestsByWorker.get(workerId);
+        if (activeSet) {
+            activeSet.delete(url);
+
+            // If this was the current request, clear it or set to another active one
+            const current = this.currentRequestByWorker.get(workerId);
+            if (current?.url === url) {
+                // Find another active request to show, or clear
+                const remaining = Array.from(activeSet);
+                if (remaining.length > 0) {
+                    this.currentRequestByWorker.set(workerId, {
+                        url: remaining[remaining.length - 1],
+                    });
+                } else {
+                    this.currentRequestByWorker.delete(workerId);
+                }
+            }
+        }
+
+        // Emit activity event
+        this.emitRequestActivity(workerId);
+    }
+
+    /**
+     * Emit a request activity event for a worker.
+     */
+    private emitRequestActivity(workerId: number): void {
+        if (!this.options.onRequestActivity) return;
+
+        const activeSet = this.activeRequestsByWorker.get(workerId);
+        const activeRequests = activeSet?.size ?? 0;
+        const current = this.currentRequestByWorker.get(workerId);
+
+        this.options.onRequestActivity({
+            type: 'request-activity',
+            workerId,
+            activeRequests,
+            currentUrl: current?.url,
+            currentSize: current?.size,
+        });
     }
 
     /**
@@ -480,13 +566,30 @@ export class StaticCapturer {
     /**
      * Attach capturer to a page using response events.
      * Must be called before navigation to enable route interception.
+     *
+     * @param page - Playwright page instance
+     * @param entrypointUrl - The initial URL being captured
+     * @param workerId - Optional worker ID for request activity tracking
      */
-    async attach(page: Page, entrypointUrl: string): Promise<void> {
+    async attach(
+        page: Page,
+        entrypointUrl: string,
+        workerId?: number,
+    ): Promise<void> {
         this.entrypointUrl = entrypointUrl;
         this.baseOrigin = new URL(entrypointUrl).origin;
 
+        // Store the workerId for this page (for request activity tracking)
+        if (workerId !== undefined) {
+            this.pageToWorkerId.set(page, workerId);
+            // Initialize tracking structures for this worker
+            if (!this.activeRequestsByWorker.has(workerId)) {
+                this.activeRequestsByWorker.set(workerId, new Set());
+            }
+        }
+
         this.log(
-            `[StaticCapturer] Attaching to page, entrypoint: ${entrypointUrl}`,
+            `[StaticCapturer] Attaching to page, entrypoint: ${entrypointUrl}, workerId: ${workerId}`,
         );
         this.log(`[StaticCapturer] Initial base origin: ${this.baseOrigin}`);
         this.log(
@@ -547,6 +650,23 @@ export class StaticCapturer {
                     this.baseOrigin = newOrigin;
                 }
             }
+        });
+
+        // Track request starts for activity display
+        page.on('request', (request) => {
+            const wid = this.pageToWorkerId.get(page);
+            if (wid === undefined) return;
+
+            const resourceType = request.resourceType() as ResourceType;
+            const url = request.url();
+
+            // Only track static resource types
+            if (!STATIC_RESOURCE_TYPES.has(resourceType)) return;
+            if (url.startsWith('data:')) return;
+
+            // Get content-length from response headers when available
+            // (request headers don't have this, but we track start anyway)
+            this.trackRequestStart(url, wid, undefined);
         });
 
         page.on('response', async (response) => {
@@ -693,14 +813,24 @@ export class StaticCapturer {
             // Mark as downloading to prevent duplicates
             this.downloadedUrls.add(url);
 
+            // Get workerId for this page for tracking
+            const wid = this.pageToWorkerId.get(page);
+
             // Capture asynchronously
             const capturePromise = this.captureAsset(
                 response,
                 url,
                 resourceType,
+                wid,
             );
             this.pendingCaptures.set(url, capturePromise);
-            capturePromise.finally(() => this.pendingCaptures.delete(url));
+            capturePromise.finally(() => {
+                this.pendingCaptures.delete(url);
+                // Track request completion
+                if (wid !== undefined) {
+                    this.trackRequestEnd(url, wid);
+                }
+            });
         });
 
         this.log(`[StaticCapturer] Response handler attached`);
@@ -713,6 +843,7 @@ export class StaticCapturer {
         response: Response,
         url: string,
         resourceType: ResourceType,
+        workerId?: number,
     ): Promise<void> {
         try {
             const headers = response.headers();
@@ -852,6 +983,7 @@ export class StaticCapturer {
                 this.assets.push(asset);
                 this.options.onCapture?.({
                     type: 'asset-capture',
+                    workerId,
                     url,
                     localPath,
                     contentType,
@@ -882,6 +1014,7 @@ export class StaticCapturer {
             this.assets.push(asset);
             this.options.onCapture?.({
                 type: 'asset-capture',
+                workerId,
                 url,
                 localPath,
                 contentType,

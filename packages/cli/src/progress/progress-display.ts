@@ -47,6 +47,15 @@ export interface WorkerState {
     url?: string;
     phase?: WorkerPhase;
     phaseStartTime?: number;
+    /** Number of in-flight requests */
+    activeRequests?: number;
+    /** Current asset being processed */
+    currentAsset?: {
+        /** Full path of the asset */
+        path: string;
+        /** Size in bytes (if known) */
+        size?: number;
+    };
 }
 
 /**
@@ -290,8 +299,8 @@ export class ProgressDisplay {
         const content = {
             title: 'Capture Progress',
             statsLine: this.buildStatsLine(),
-            workerLines: this.workers.map((w, i) =>
-                this.buildWorkerLine(i, w, innerWidth),
+            workerLines: this.workers.flatMap((w, i) =>
+                this.buildWorkerLines(i, w, innerWidth),
             ),
         };
 
@@ -355,13 +364,14 @@ export class ProgressDisplay {
     }
 
     /**
-     * Build a worker line with adaptive layout
+     * Build worker lines (main line + asset activity line)
+     * Returns an array of 1-2 strings
      */
-    private buildWorkerLine(
+    private buildWorkerLines(
         id: number,
         state: WorkerState,
         innerWidth: number,
-    ): string {
+    ): string[] {
         const prefix = `[${id + 1}] `;
         const indicator = this.getStatusIndicator(state.status);
         const basePrefix = prefix + indicator + ' ';
@@ -370,6 +380,8 @@ export class ProgressDisplay {
         // Calculate available space
         const available = innerWidth - basePrefixLen;
 
+        // Build the main worker line
+        let mainLine: string;
         if (state.status === 'idle') {
             const elapsed = this.formatElapsed(state.phaseStartTime);
             const idleText = chalk.gray('Idle');
@@ -379,26 +391,96 @@ export class ProgressDisplay {
                     available - visibleLength(idleText) - elapsed.length,
                 ),
             );
-            return basePrefix + idleText + padding + chalk.gray(elapsed);
+            mainLine = basePrefix + idleText + padding + chalk.gray(elapsed);
+        } else {
+            // Active worker - build components
+            const url = state.url ? this.formatUrl(state.url) : '';
+            const elapsed = this.formatElapsed(state.phaseStartTime);
+            const progressBar = this.renderProgressBar(state.phase);
+            const phaseLabelFull = this.getPhaseLabel(state.phase, true);
+            const phaseLabelShort = this.getPhaseLabel(state.phase, false);
+
+            // Adaptive layout based on available space
+            mainLine = this.layoutWorkerLine(
+                basePrefix,
+                url,
+                phaseLabelFull,
+                phaseLabelShort,
+                progressBar,
+                elapsed,
+                available,
+            );
         }
 
-        // Active worker - build components
-        const url = state.url ? this.formatUrl(state.url) : '';
-        const elapsed = this.formatElapsed(state.phaseStartTime);
-        const progressBar = this.renderProgressBar(state.phase);
-        const phaseLabelFull = this.getPhaseLabel(state.phase, true);
-        const phaseLabelShort = this.getPhaseLabel(state.phase, false);
+        // Build the asset activity line (second line)
+        const assetLine = this.buildAssetLine(state, innerWidth);
 
-        // Adaptive layout based on available space
-        return this.layoutWorkerLine(
-            basePrefix,
-            url,
-            phaseLabelFull,
-            phaseLabelShort,
-            progressBar,
-            elapsed,
-            available,
+        return [mainLine, assetLine];
+    }
+
+    /**
+     * Build the asset activity line showing current request info
+     */
+    private buildAssetLine(state: WorkerState, innerWidth: number): string {
+        const indent = '    '; // 4 spaces to align under worker line
+        const arrow = chalk.gray('↳ ');
+        const prefixLen = indent.length + 2; // arrow is 2 visible chars
+        const available = innerWidth - prefixLen;
+
+        // If idle or no activity info, show empty/idle
+        if (
+            state.status === 'idle' ||
+            (state.activeRequests === undefined && !state.currentAsset)
+        ) {
+            return indent + arrow + chalk.gray('');
+        }
+
+        // Build the activity text
+        const reqCount = state.activeRequests ?? 0;
+        const reqText =
+            reqCount > 0
+                ? chalk.yellow(`${reqCount} req${reqCount !== 1 ? 's' : ''}`)
+                : chalk.gray('idle');
+
+        if (!state.currentAsset) {
+            return indent + arrow + reqText;
+        }
+
+        // Format the asset path (truncate from left if needed)
+        const { path, size } = state.currentAsset;
+        const sizeStr = size ? ` (${this.formatBytes(size)})` : '';
+        const separator = reqCount > 0 ? chalk.gray(' | ') : '';
+
+        // Calculate how much space we have for the path
+        const fixedLen =
+            visibleLength(reqText) +
+            visibleLength(separator) +
+            visibleLength(sizeStr);
+        const pathSpace = available - fixedLen - 1;
+
+        let displayPath = path;
+        if (pathSpace > 0 && path.length > pathSpace) {
+            // Truncate from the left with ellipsis
+            displayPath = '...' + path.slice(-(pathSpace - 3));
+        }
+
+        return (
+            indent +
+            arrow +
+            reqText +
+            separator +
+            chalk.cyan(displayPath) +
+            chalk.gray(sizeStr)
         );
+    }
+
+    /**
+     * Format bytes to human readable
+     */
+    private formatBytes(bytes: number): string {
+        if (bytes < 1024) return `${bytes}B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
     }
 
     /**

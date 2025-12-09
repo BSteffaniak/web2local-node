@@ -979,6 +979,26 @@ export async function runMain(options: CliOptions) {
                             break;
                         }
 
+                        case 'request-activity': {
+                            // Update worker with current request activity
+                            const {
+                                workerId,
+                                activeRequests,
+                                currentUrl,
+                                currentSize,
+                            } = event;
+                            progress.updateWorker(workerId, {
+                                activeRequests,
+                                currentAsset: currentUrl
+                                    ? {
+                                          path: new URL(currentUrl).pathname,
+                                          size: currentSize,
+                                      }
+                                    : undefined,
+                            });
+                            break;
+                        }
+
                         case 'lifecycle':
                             // Lifecycle events don't need special handling with the new display
                             break;

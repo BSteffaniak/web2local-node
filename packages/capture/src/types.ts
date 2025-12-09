@@ -275,6 +275,8 @@ export interface ApiCaptureEvent {
  */
 export interface AssetCaptureEvent {
     type: 'asset-capture';
+    /** Worker ID that captured this asset (0-indexed) */
+    workerId?: number;
     /** Original URL of the asset */
     url: string;
     /** Local path where asset was saved */
@@ -285,6 +287,21 @@ export interface AssetCaptureEvent {
     size: number;
     /** Compressed size in bytes (if available) */
     compressedSize?: number;
+}
+
+/**
+ * Progress event for request activity tracking (in-flight requests per worker)
+ */
+export interface RequestActivityEvent {
+    type: 'request-activity';
+    /** Worker ID (0-indexed) */
+    workerId: number;
+    /** Number of currently in-flight requests */
+    activeRequests: number;
+    /** URL of the current/most recent request (if any) */
+    currentUrl?: string;
+    /** Size of current request in bytes (from Content-Length, if known) */
+    currentSize?: number;
 }
 
 /**
@@ -315,6 +332,7 @@ export type CaptureProgressEvent =
     | PageProgressEvent
     | ApiCaptureEvent
     | AssetCaptureEvent
+    | RequestActivityEvent
     | CaptureLifecycleEvent;
 
 /**

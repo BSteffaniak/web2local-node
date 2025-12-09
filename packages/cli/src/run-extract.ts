@@ -562,6 +562,26 @@ async function extractWithCrawl(
                         break;
                     }
 
+                    case 'request-activity': {
+                        // Update worker with current request activity
+                        const {
+                            workerId,
+                            activeRequests,
+                            currentUrl,
+                            currentSize,
+                        } = event;
+                        progress.updateWorker(workerId, {
+                            activeRequests,
+                            currentAsset: currentUrl
+                                ? {
+                                      path: new URL(currentUrl).pathname,
+                                      size: currentSize,
+                                  }
+                                : undefined,
+                        });
+                        break;
+                    }
+
                     case 'lifecycle':
                     case 'api-capture':
                         // Not relevant for extract

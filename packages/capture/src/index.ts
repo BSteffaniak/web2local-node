@@ -166,6 +166,9 @@ export async function captureWebsite(
         onCapture: (event) => {
             opts.onProgress?.(event);
         },
+        onRequestActivity: (event) => {
+            opts.onProgress?.(event);
+        },
         onVerbose: opts.onVerbose,
     });
 
@@ -206,7 +209,8 @@ export async function captureWebsite(
             // Attach interceptors - they handle concurrent events from all pages
             apiInterceptor.attach(page);
             if (opts.captureStatic) {
-                await staticCapturer.attach(page, opts.url);
+                // Pass workerId for request activity tracking
+                await staticCapturer.attach(page, opts.url, i);
             }
 
             pages.push(page);
