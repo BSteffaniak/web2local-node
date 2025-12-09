@@ -218,17 +218,23 @@ export function getBundleName(bundleUrl: string): string {
     const url = new URL(bundleUrl);
     const pathParts = url.pathname.split('/').filter(Boolean);
 
-    // Try to get a meaningful name from the path
-    // e.g., /navigation/index-C4LR0b0Z.js -> navigation
+    // Get filename without extension
+    const filename = pathParts[pathParts.length - 1] || 'bundle';
+    const filenameWithoutExt = filename
+        .replace(/\.js\.map$/, '')
+        .replace(/\.css\.map$/, '')
+        .replace(/\.js$/, '')
+        .replace(/\.css$/, '');
+
+    // Combine parent directory with filename for uniqueness
+    // e.g., /navigation/index-C4LR0b0Z.js -> navigation/index-C4LR0b0Z
     if (pathParts.length > 1) {
-        return pathParts[pathParts.length - 2];
+        const parentDir = pathParts[pathParts.length - 2];
+        return `${parentDir}/${filenameWithoutExt}`;
     }
 
-    // Fallback to filename without hash
-    const filename = pathParts[pathParts.length - 1] || 'bundle';
-    return filename
-        .replace(/[-_.][a-zA-Z0-9]{6,}\.js$/, '')
-        .replace(/\.js$/, '');
+    // Fallback to just filename
+    return filenameWithoutExt;
 }
 
 /**
