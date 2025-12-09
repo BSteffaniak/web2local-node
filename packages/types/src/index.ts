@@ -96,6 +96,8 @@ export interface ExtractSourceMapOptions {
     readonly timeout?: number;
     /** Custom fetch headers */
     readonly headers?: Record<string, string>;
+    /** AbortSignal for cancellation support */
+    readonly signal?: AbortSignal;
 }
 
 /**
@@ -112,6 +114,8 @@ export interface DiscoverSourceMapOptions {
     readonly timeout?: number;
     /** Custom fetch headers */
     readonly headers?: Record<string, string>;
+    /** AbortSignal for cancellation support */
+    readonly signal?: AbortSignal;
 }
 
 /**

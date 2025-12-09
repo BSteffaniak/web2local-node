@@ -198,3 +198,58 @@ export function createNetworkError(error: Error, url: string): SourceMapError {
 
     return new SourceMapError(code, error.message, url, error);
 }
+
+/**
+ * Create an error for source map size limit exceeded
+ */
+export function createSizeError(
+    actualSize: number,
+    maxSize: number,
+    url?: string,
+): SourceMapError {
+    return new SourceMapError(
+        SourceMapErrorCode.SOURCE_MAP_TOO_LARGE,
+        `Source map exceeds maximum size (${actualSize} > ${maxSize})`,
+        url,
+        undefined,
+        { actualSize, maxSize },
+    );
+}
+
+/**
+ * Create an error for when no source map is found
+ */
+export function createDiscoveryError(
+    message: string,
+    url: string,
+): SourceMapError {
+    return new SourceMapError(
+        SourceMapErrorCode.NO_SOURCE_MAP_FOUND,
+        message,
+        url,
+    );
+}
+
+/**
+ * Create an error for no extractable sources
+ */
+export function createContentError(
+    code: SourceMapErrorCode,
+    message: string,
+    url?: string,
+): SourceMapError {
+    return new SourceMapError(code, message, url);
+}
+
+/**
+ * Create an error for data URI issues
+ */
+export function createDataUriError(
+    code:
+        | SourceMapErrorCode.INVALID_DATA_URI
+        | SourceMapErrorCode.INVALID_BASE64,
+    message: string,
+    url?: string,
+): SourceMapError {
+    return new SourceMapError(code, message, url);
+}

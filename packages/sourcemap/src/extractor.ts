@@ -12,8 +12,9 @@ import type {
     SourceMapMetadata,
     ExtractSourceMapOptions,
 } from '@web2local/types';
-import { SourceMapError, SourceMapErrorCode } from './errors.js';
-import { normalizeSourcePath, shouldIncludeSource } from './utils.js';
+import { SourceMapErrorCode, createContentError } from './errors.js';
+import { normalizeSourcePath } from './utils/path.js';
+import { shouldIncludeSource } from './utils/filter.js';
 
 // ============================================================================
 // EXTRACTION
@@ -58,7 +59,7 @@ export function extractSources(
     // Validate sourcesContent exists
     if (!sourceMap.sourcesContent || sourceMap.sourcesContent.length === 0) {
         errors.push(
-            new SourceMapError(
+            createContentError(
                 SourceMapErrorCode.NO_EXTRACTABLE_SOURCES,
                 'Source map has no sourcesContent array',
                 sourceMapUrl,

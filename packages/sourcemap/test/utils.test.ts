@@ -1,12 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { normalizeSourcePath, getCleanFilename } from '../src/utils/path.js';
 import {
-    normalizeSourcePath,
     resolveSourceMapUrl,
-    shouldIncludeSource,
     isDataUri,
     decodeDataUri,
-    getCleanFilename,
-} from '../src/utils.js';
+} from '../src/utils/url.js';
+import { shouldIncludeSource } from '../src/utils/filter.js';
 
 describe('normalizeSourcePath', () => {
     describe('webpack:// protocol', () => {

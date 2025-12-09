@@ -7,13 +7,13 @@
 
 import type { SourceMapV3, SourceMapValidationResult } from '@web2local/types';
 import {
-    SourceMapError,
     SourceMapErrorCode,
     createParseError,
     createValidationError,
+    createDataUriError,
 } from './errors.js';
 import { SUPPORTED_SOURCE_MAP_VERSION } from './constants.js';
-import { decodeDataUri, isDataUri } from './utils.js';
+import { decodeDataUri, isDataUri } from './utils/url.js';
 
 // ============================================================================
 // RAW SOURCE MAP TYPE (before validation)
@@ -33,6 +33,40 @@ interface RawSourceMap {
 // ============================================================================
 // VALIDATION
 // ============================================================================
+
+/**
+ * Determines the most appropriate error code based on validation errors.
+ * Returns the first matching error code in priority order.
+ *
+ * @internal Exported for use by streaming.ts
+ */
+export function getValidationErrorCode(
+    errors: readonly string[],
+): SourceMapErrorCode {
+    const errorText = errors.join(' ').toLowerCase();
+
+    if (errorText.includes('missing') && errorText.includes('version')) {
+        return SourceMapErrorCode.MISSING_VERSION;
+    }
+    if (errorText.includes('invalid version')) {
+        return SourceMapErrorCode.INVALID_VERSION;
+    }
+    if (errorText.includes('missing') && errorText.includes('sources')) {
+        return SourceMapErrorCode.MISSING_SOURCES;
+    }
+    if (
+        errorText.includes('sources') &&
+        (errorText.includes('array') || errorText.includes('must be'))
+    ) {
+        return SourceMapErrorCode.SOURCES_NOT_ARRAY;
+    }
+    if (errorText.includes('missing') && errorText.includes('mappings')) {
+        return SourceMapErrorCode.MISSING_MAPPINGS;
+    }
+
+    // Default to INVALID_VERSION for general validation failures
+    return SourceMapErrorCode.INVALID_VERSION;
+}
 
 /**
  * Validates a raw parsed object against the Source Map V3 specification.
@@ -149,8 +183,9 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
     // Validate structure
     const validation = validateSourceMap(parsed);
     if (!validation.valid) {
+        const errorCode = getValidationErrorCode(validation.errors);
         throw createValidationError(
-            SourceMapErrorCode.INVALID_VERSION, // Use first relevant error code
+            errorCode,
             `Invalid source map: ${validation.errors.join('; ')}`,
             url,
             { errors: validation.errors, warnings: validation.warnings },
@@ -174,7 +209,7 @@ export function parseInlineSourceMap(
     url?: string,
 ): SourceMapV3 {
     if (!isDataUri(dataUri)) {
-        throw new SourceMapError(
+        throw createDataUriError(
             SourceMapErrorCode.INVALID_DATA_URI,
             'Not a valid data URI',
             url,
@@ -183,7 +218,7 @@ export function parseInlineSourceMap(
 
     const decoded = decodeDataUri(dataUri);
     if (decoded === null) {
-        throw new SourceMapError(
+        throw createDataUriError(
             SourceMapErrorCode.INVALID_BASE64,
             'Failed to decode base64 content from data URI',
             url,

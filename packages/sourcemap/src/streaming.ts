@@ -8,12 +8,17 @@
  * parseSourceMap() function instead.
  */
 
-import type { SourceMapV3, SourceMapValidationResult } from '@web2local/types';
-import { SourceMapError, SourceMapErrorCode } from './errors.js';
+import type { SourceMapV3 } from '@web2local/types';
 import {
+    createSizeError,
+    createParseError,
+    createValidationError,
+} from './errors.js';
+import {
+    DEFAULT_MAX_SOURCE_MAP_SIZE,
     STREAMING_THRESHOLD,
-    SUPPORTED_SOURCE_MAP_VERSION,
 } from './constants.js';
+import { validateSourceMap, getValidationErrorCode } from './parser.js';
 
 // ============================================================================
 // TYPES
@@ -60,7 +65,7 @@ export async function parseSourceMapStreaming(
     stream: ReadableStream<Uint8Array>,
     options?: StreamingParseOptions,
 ): Promise<StreamingParseResult> {
-    const { maxSize = 100 * 1024 * 1024, onProgress } = options ?? {};
+    const { maxSize = DEFAULT_MAX_SOURCE_MAP_SIZE, onProgress } = options ?? {};
 
     const startTime = performance.now();
     const reader = stream.getReader();
@@ -80,13 +85,7 @@ export async function parseSourceMapStreaming(
 
             // Check size limit
             if (bytesRead > maxSize) {
-                throw new SourceMapError(
-                    SourceMapErrorCode.SOURCE_MAP_TOO_LARGE,
-                    `Source map exceeds maximum size (${bytesRead} > ${maxSize})`,
-                    undefined,
-                    undefined,
-                    { bytesRead, maxSize },
-                );
+                throw createSizeError(bytesRead, maxSize);
             }
 
             // Decode chunk and collect
@@ -132,7 +131,7 @@ export async function parseSourceMapFromResponse(
     options?: StreamingParseOptions,
 ): Promise<StreamingParseResult> {
     const {
-        maxSize = 100 * 1024 * 1024,
+        maxSize = DEFAULT_MAX_SOURCE_MAP_SIZE,
         streamingThreshold = STREAMING_THRESHOLD,
         onProgress,
     } = options ?? {};
@@ -144,13 +143,7 @@ export async function parseSourceMapFromResponse(
     const estimatedSize = contentLength ? parseInt(contentLength, 10) : null;
 
     if (estimatedSize && estimatedSize > maxSize) {
-        throw new SourceMapError(
-            SourceMapErrorCode.SOURCE_MAP_TOO_LARGE,
-            `Source map exceeds maximum size (${estimatedSize} > ${maxSize})`,
-            response.url,
-            undefined,
-            { estimatedSize, maxSize },
-        );
+        throw createSizeError(estimatedSize, maxSize, response.url);
     }
 
     // Decide whether to use streaming based on size
@@ -199,7 +192,8 @@ export function shouldUseStreaming(
 // ============================================================================
 
 /**
- * Parse JSON and validate as SourceMapV3
+ * Parse JSON and validate as SourceMapV3.
+ * Uses the same validation logic as parseSourceMap from parser.ts.
  */
 function parseAndValidate(content: string): SourceMapV3 {
     let parsed: unknown;
@@ -207,56 +201,24 @@ function parseAndValidate(content: string): SourceMapV3 {
     try {
         parsed = JSON.parse(content);
     } catch (e) {
-        throw new SourceMapError(
-            SourceMapErrorCode.INVALID_JSON,
+        throw createParseError(
             `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
+            'unknown',
+            content.slice(0, 500),
         );
     }
 
-    const validation = validateBasic(parsed);
+    // Use the canonical validation function from parser.ts
+    const validation = validateSourceMap(parsed);
     if (!validation.valid) {
-        throw new SourceMapError(
-            SourceMapErrorCode.INVALID_VERSION,
+        const errorCode = getValidationErrorCode(validation.errors);
+        throw createValidationError(
+            errorCode,
             `Invalid source map: ${validation.errors.join('; ')}`,
             undefined,
-            undefined,
-            { errors: validation.errors },
+            { errors: validation.errors, warnings: validation.warnings },
         );
     }
 
     return parsed as SourceMapV3;
-}
-
-/**
- * Basic validation for streaming context (lighter than full validation)
- */
-function validateBasic(raw: unknown): SourceMapValidationResult {
-    const errors: string[] = [];
-    const warnings: string[] = [];
-
-    if (typeof raw !== 'object' || raw === null) {
-        return {
-            valid: false,
-            errors: ['Source map must be an object'],
-            warnings: [],
-        };
-    }
-
-    const obj = raw as Record<string, unknown>;
-
-    if (obj.version !== SUPPORTED_SOURCE_MAP_VERSION) {
-        errors.push(
-            `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
-        );
-    }
-
-    if (!Array.isArray(obj.sources)) {
-        errors.push('Field "sources" must be an array');
-    }
-
-    if (typeof obj.mappings !== 'string') {
-        errors.push('Field "mappings" must be a string');
-    }
-
-    return { valid: errors.length === 0, errors, warnings };
 }

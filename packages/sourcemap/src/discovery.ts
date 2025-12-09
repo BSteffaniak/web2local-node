@@ -20,7 +20,7 @@ import {
     VALID_SOURCE_MAP_CONTENT_TYPES,
     INVALID_SOURCE_MAP_CONTENT_TYPES,
 } from './constants.js';
-import { resolveSourceMapUrl, isDataUri } from './utils.js';
+import { resolveSourceMapUrl, isDataUri } from './utils/url.js';
 
 // ============================================================================
 // HEADER DETECTION
@@ -154,6 +154,7 @@ export async function probeSourceMapUrl(
                 ...BROWSER_HEADERS,
                 ...options?.headers,
             },
+            signal: options?.signal,
         });
 
         if (!response.ok) {
@@ -197,12 +198,14 @@ export async function discoverSourceMap(
         skipCommentCheck = false,
         skipProbe = false,
         headers = {},
+        signal,
     } = options ?? {};
 
     try {
         // Fetch the bundle
         const response = await robustFetch(bundleUrl, {
             headers: { ...BROWSER_HEADERS, ...headers },
+            signal,
         });
 
         if (!response.ok) {
