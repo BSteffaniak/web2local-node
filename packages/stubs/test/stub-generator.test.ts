@@ -13,7 +13,7 @@ import { test, expect, describe, beforeEach, afterEach } from 'vitest';
 import { mkdir, writeFile, rm, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { parseSync } from '@swc/core';
+
 import {
     extractExports,
     generateIndexFile,
@@ -2487,29 +2487,6 @@ describe('fixDuplicateExports', () => {
 
     afterEach(async () => {
         await rm(tempDir, { recursive: true, force: true });
-    });
-
-    test('SWC parses exports correctly', () => {
-        const code = `export type { Foo } from './types';
-export { Foo } from './foo';
-`;
-        const ast = parseSync(code, { syntax: 'typescript', tsx: true });
-
-        // Should have 2 export statements
-        expect(ast.body.length).toBe(2);
-        expect(ast.body[0].type).toBe('ExportNamedDeclaration');
-        expect(ast.body[1].type).toBe('ExportNamedDeclaration');
-
-        // Check first export (type export)
-        const first = ast.body[0] as any;
-        expect(first.typeOnly).toBe(true);
-        expect(first.specifiers.length).toBe(1);
-        expect(first.specifiers[0].type).toBe('ExportSpecifier');
-
-        // Check second export (value export)
-        const second = ast.body[1] as any;
-        expect(second.typeOnly).toBeFalsy();
-        expect(second.specifiers.length).toBe(1);
     });
 
     test('should remove duplicate exports when same name appears as type and value', async () => {
