@@ -8,6 +8,7 @@ import {
     parseImageSetUrls,
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
+    extractAllUrlsFromCss,
     passesFilter,
     passesFilterEarly,
 } from '@web2local/capture';
@@ -457,6 +458,174 @@ describe('extractResponsiveUrlsFromCss', () => {
         `;
         const urls = extractResponsiveUrlsFromCss(css, cssUrl);
         expect(urls).toContain('https://cdn.example.com/img/photo.jpg');
+    });
+});
+
+// ============================================================================
+// extractAllUrlsFromCss Tests
+// ============================================================================
+
+describe('extractAllUrlsFromCss', () => {
+    const cssUrl = 'https://example.com/css/styles.css';
+
+    it('extracts basic url() references', () => {
+        const css = `
+            .hero {
+                background-image: url("/img/hero.jpg");
+            }
+        `;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://example.com/img/hero.jpg');
+    });
+
+    it('extracts url() with double quotes', () => {
+        const css = `.bg { background: url("https://cdn.example.com/bg.png"); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://cdn.example.com/bg.png');
+    });
+
+    it('extracts url() with single quotes', () => {
+        const css = `.bg { background: url('https://cdn.example.com/bg.png'); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://cdn.example.com/bg.png');
+    });
+
+    it('extracts url() without quotes', () => {
+        const css = `.bg { background: url(https://cdn.example.com/bg.png); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://cdn.example.com/bg.png');
+    });
+
+    it('extracts @import url() references', () => {
+        const css = `@import url("https://fonts.googleapis.com/css?family=Roboto");`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain(
+            'https://fonts.googleapis.com/css?family=Roboto',
+        );
+    });
+
+    it('extracts @import with direct string', () => {
+        const css = `@import "https://cdn.example.com/reset.css";`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://cdn.example.com/reset.css');
+    });
+
+    it('extracts multiple url() references', () => {
+        const css = `
+            .hero { background: url("/img/hero.jpg"); }
+            .logo { background: url("/img/logo.png"); }
+            @font-face { src: url("/fonts/custom.woff2"); }
+        `;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://example.com/img/hero.jpg');
+        expect(urls).toContain('https://example.com/img/logo.png');
+        expect(urls).toContain('https://example.com/fonts/custom.woff2');
+    });
+
+    it('resolves relative URLs against CSS file URL', () => {
+        const css = `.bg { background: url("../images/bg.png"); }`;
+        const urls = extractAllUrlsFromCss(
+            css,
+            'https://example.com/assets/css/style.css',
+        );
+        expect(urls).toContain('https://example.com/assets/images/bg.png');
+    });
+
+    it('skips data: URLs', () => {
+        const css = `.icon { background: url("data:image/svg+xml,<svg></svg>"); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toEqual([]);
+    });
+
+    it('skips blob: URLs', () => {
+        const css = `.icon { background: url("blob:https://example.com/abc"); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toEqual([]);
+    });
+
+    it('skips fragment-only URLs', () => {
+        const css = `.icon { filter: url("#blur"); }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toEqual([]);
+    });
+
+    it('deduplicates URLs', () => {
+        const css = `
+            .a { background: url("/img/same.png"); }
+            .b { background: url("/img/same.png"); }
+        `;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls.length).toBe(1);
+    });
+
+    it('extracts @font-face src URLs', () => {
+        const css = `
+            @font-face {
+                font-family: 'CustomFont';
+                src: url('/fonts/custom.woff2') format('woff2'),
+                     url('/fonts/custom.woff') format('woff');
+            }
+        `;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://example.com/fonts/custom.woff2');
+        expect(urls).toContain('https://example.com/fonts/custom.woff');
+    });
+
+    it('extracts cursor URLs', () => {
+        const css = `.custom { cursor: url("/cursors/pointer.cur"), auto; }`;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://example.com/cursors/pointer.cur');
+    });
+
+    it('handles CSS with mixed @import and url()', () => {
+        const css = `
+            @import url("base.css");
+            .hero { background: url("hero.jpg"); }
+        `;
+        const urls = extractAllUrlsFromCss(css, cssUrl);
+        expect(urls).toContain('https://example.com/css/base.css');
+        expect(urls).toContain('https://example.com/css/hero.jpg');
+    });
+});
+
+// ============================================================================
+// extractResponsiveUrlsFromHtml Tests - Extended for inline styles
+// ============================================================================
+
+describe('extractResponsiveUrlsFromHtml - inline styles', () => {
+    const baseUrl = 'https://example.com';
+
+    it('extracts url() from inline style attributes', () => {
+        const html = `<div style="background-image: url(https://cdn.example.com/bg.jpg)"></div>`;
+        const urls = extractResponsiveUrlsFromHtml(html, baseUrl);
+        expect(urls).toContain('https://cdn.example.com/bg.jpg');
+    });
+
+    it('extracts url() from style blocks', () => {
+        const html = `
+            <style>
+                .hero { background: url("/img/hero.jpg"); }
+            </style>
+        `;
+        const urls = extractResponsiveUrlsFromHtml(html, baseUrl);
+        expect(urls).toContain('https://example.com/img/hero.jpg');
+    });
+
+    it('extracts @import from style blocks', () => {
+        const html = `
+            <style>
+                @import url("/css/base.css");
+            </style>
+        `;
+        const urls = extractResponsiveUrlsFromHtml(html, baseUrl);
+        expect(urls).toContain('https://example.com/css/base.css');
+    });
+
+    it('extracts multiple url() from inline style', () => {
+        const html = `<div style="background: url(/img/a.png), url(/img/b.png)"></div>`;
+        const urls = extractResponsiveUrlsFromHtml(html, baseUrl);
+        expect(urls).toContain('https://example.com/img/a.png');
+        expect(urls).toContain('https://example.com/img/b.png');
     });
 });
 

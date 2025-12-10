@@ -44,9 +44,18 @@ export {
     parseImageSetUrls,
     extractResponsiveUrlsFromHtml,
     extractResponsiveUrlsFromCss,
+    extractAllUrlsFromCss,
     passesFilter,
     passesFilterEarly,
 } from './static-downloader.js';
+export {
+    buildUrlMap,
+    rewriteHtml,
+    rewriteCss,
+    rewriteAllCssUrls,
+    rewriteCssImports,
+    type AssetMapping,
+} from './url-rewriter.js';
 export {
     extractUrlPattern,
     groupUrlsByPattern,
@@ -161,6 +170,9 @@ export async function captureWebsite(
             opts.onProgress?.(event);
         },
         onDuplicateSkipped: (event) => {
+            opts.onProgress?.(event);
+        },
+        onFlushProgress: (event) => {
             opts.onProgress?.(event);
         },
         onVerbose: opts.onVerbose,
@@ -363,6 +375,7 @@ export async function captureWebsite(
 
     const captureTimeMs = Date.now() - startTime;
     const totalBytes = assets.reduce((sum, a) => sum + a.size, 0);
+    const staticStats = staticCapturer.getStats();
 
     return {
         fixtures,
@@ -373,6 +386,7 @@ export async function captureWebsite(
             staticAssetsCaptured: assets.length,
             totalBytesDownloaded: totalBytes,
             captureTimeMs,
+            truncatedFiles: staticStats.truncatedFiles,
             crawlStats,
         },
     };

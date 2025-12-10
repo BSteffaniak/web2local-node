@@ -924,12 +924,24 @@ export async function runMain(options: CliOptions) {
                     logApiCaptures: true,
                     trackApiCaptures: true,
                 }),
-                onVerbose: options.verbose
-                    ? createVerboseHandler(progress)
-                    : undefined,
+                // Always create verbose handler - it filters based on verboseMode
+                // This ensures warnings/errors always appear in the TUI logs
+                onVerbose: createVerboseHandler(progress, options.verbose),
             });
 
             progress.stop();
+
+            // Show truncation warning if any files were truncated
+            if (
+                captureResult.stats.truncatedFiles &&
+                captureResult.stats.truncatedFiles > 0
+            ) {
+                console.log(
+                    chalk.yellow(
+                        `⚠ ${captureResult.stats.truncatedFiles} file(s) were truncated during download`,
+                    ),
+                );
+            }
 
             // Generate summary
             const summary = generateCaptureSummary(

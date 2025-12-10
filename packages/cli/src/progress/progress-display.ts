@@ -30,6 +30,13 @@ const TUI_CHROME_LINES = 4; // top border + stats + separator after stats + bott
 const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
 
 /**
+ * Fixed height for flush progress section.
+ * This accommodates: 3 completed phases (1 line each) + current phase (1 line) + current URL (1 line) + completion message (1 line)
+ * Using a fixed height prevents layout jumps when transitioning between phases.
+ */
+const FLUSH_SECTION_HEIGHT = 6;
+
+/**
  * Worker phase types - matches the capture module phases
  */
 export type WorkerPhase =
@@ -123,6 +130,23 @@ export class ProgressDisplay {
     private flushingCount: number = 0;
     private flushingStartTime: number | null = null;
 
+    // Flush progress state for granular progress display
+    private flushPhase:
+        | 'pending-captures'
+        | 'fetching-css-assets'
+        | 'rewriting-urls'
+        | 'complete'
+        | null = null;
+    private flushCompleted: number = 0;
+    private flushTotal: number = 0;
+    private flushFailed: number = 0;
+    private flushCurrentItem: string | null = null;
+    private flushTotalTimeMs: number | null = null;
+    /** Per-phase start times for elapsed tracking */
+    private flushPhaseStartTime: number | null = null;
+    /** Completed phases for showing checkmarks */
+    private flushCompletedPhases: Set<string> = new Set();
+
     /** Total height of the TUI box in lines */
     private tuiHeight: number = 0;
     /** Row where the TUI starts (1-indexed) */
@@ -214,14 +238,19 @@ export class ProgressDisplay {
 
     /**
      * Calculate layout dimensions based on terminal size
-     * Layout: stats at top, workers in middle, logs at bottom
+     * Layout: stats at top, workers/flush progress in middle, logs at bottom
      */
     private calculateLayout(): void {
         const termHeight = terminal.getHeight();
 
-        // Fixed height for non-log parts of TUI
-        const workersHeight = this.options.workerCount * LINES_PER_WORKER;
-        const fixedHeight = TUI_CHROME_LINES + workersHeight;
+        // Determine content section height based on mode
+        // Use flush mode if we have a flushing count or are in a flush phase
+        const isFlushMode = this.flushingCount > 0 || this.flushPhase !== null;
+        const contentHeight = isFlushMode
+            ? FLUSH_SECTION_HEIGHT
+            : this.options.workerCount * LINES_PER_WORKER;
+
+        const fixedHeight = TUI_CHROME_LINES + contentHeight;
 
         // Recent logs get remaining space (0 if terminal too small)
         this.recentLogsHeight = Math.max(
@@ -239,6 +268,16 @@ export class ProgressDisplay {
 
         // TUI starts at row 1 (takes over terminal)
         this.tuiStartRow = 1;
+    }
+
+    /**
+     * Clear TUI area and recalculate layout.
+     * Called when switching between worker mode and flush mode to prevent stale content.
+     */
+    private recalculateAndClear(): void {
+        if (!this.started || !this.isInteractive()) return;
+        this.clearTuiArea();
+        this.calculateLayout();
     }
 
     /**
@@ -454,11 +493,84 @@ export class ProgressDisplay {
      * @param count Number of pending assets being flushed (0 to clear)
      */
     setFlushing(count: number): void {
+        const wasInFlushMode = this.flushingCount > 0;
+        const willBeInFlushMode = count > 0;
+
         this.flushingCount = count;
         if (count > 0 && !this.flushingStartTime) {
             this.flushingStartTime = Date.now();
         } else if (count === 0) {
             this.flushingStartTime = null;
+        }
+
+        // Recalculate layout when entering or exiting flush mode
+        // This clears the TUI area and adjusts height for the new mode
+        if (wasInFlushMode !== willBeInFlushMode) {
+            this.recalculateAndClear();
+        }
+    }
+
+    /**
+     * Set the flush progress state for granular progress display
+     * @param phase Current flush phase
+     * @param completed Number of items completed
+     * @param total Total number of items
+     * @param failed Number of failed items (optional)
+     * @param currentItem Current item being processed (optional)
+     * @param totalTimeMs Total elapsed time (only for 'complete' phase)
+     */
+    setFlushProgress(
+        phase:
+            | 'pending-captures'
+            | 'fetching-css-assets'
+            | 'rewriting-urls'
+            | 'complete',
+        completed: number,
+        total: number,
+        failed?: number,
+        currentItem?: string,
+        totalTimeMs?: number,
+    ): void {
+        // Track phase transitions for checkmarks
+        if (this.flushPhase && phase !== this.flushPhase) {
+            // Previous phase completed, mark it
+            this.flushCompletedPhases.add(this.flushPhase);
+        }
+
+        // Start timer for new phase
+        if (phase !== this.flushPhase && phase !== 'complete') {
+            this.flushPhaseStartTime = Date.now();
+        }
+
+        this.flushPhase = phase;
+        this.flushCompleted = completed;
+        this.flushTotal = total;
+        this.flushFailed = failed ?? 0;
+        this.flushCurrentItem = currentItem ?? null;
+        this.flushTotalTimeMs = totalTimeMs ?? null;
+
+        // When complete, reset flush state for next run
+        if (phase === 'complete') {
+            // Add final phase to completed set
+            this.flushCompletedPhases.add('rewriting-urls');
+            // Clear flushing count to signal completion
+            this.flushingCount = 0;
+            this.flushingStartTime = null;
+
+            // Reset all flush state so next flush starts fresh
+            // Use a microtask to allow the completion message to render first
+            queueMicrotask(() => {
+                this.flushPhase = null;
+                this.flushCompleted = 0;
+                this.flushTotal = 0;
+                this.flushFailed = 0;
+                this.flushCurrentItem = null;
+                this.flushTotalTimeMs = null;
+                this.flushPhaseStartTime = null;
+                this.flushCompletedPhases.clear();
+                // Recalculate layout to switch back to worker mode height
+                this.recalculateAndClear();
+            });
         }
     }
 
@@ -561,21 +673,143 @@ export class ProgressDisplay {
     }
 
     /**
-     * Build lines for the flushing state
+     * Build lines for the flushing state with granular progress
      */
     private buildFlushingLines(innerWidth: number): string[] {
-        const indicator = chalk.yellow('◐');
-        const elapsed = this.formatElapsed(this.flushingStartTime ?? undefined);
-        const message = `Flushing ${chalk.bold(this.flushingCount)} pending asset downloads...`;
-        const messageLen = visibleLength(message);
-        const padding = ' '.repeat(
-            Math.max(0, innerWidth - messageLen - elapsed.length - 4),
-        );
+        const lines: string[] = [];
 
-        return [
-            `    ${indicator} ${message}${padding}${chalk.gray(elapsed)}`,
-            '', // Empty second line to maintain visual consistency
-        ];
+        // If we have granular flush progress, show detailed view
+        if (this.flushPhase) {
+            // Phase definitions with labels
+            const phases = [
+                {
+                    id: 'pending-captures',
+                    label: 'Completing pending downloads',
+                },
+                {
+                    id: 'fetching-css-assets',
+                    label: 'Fetching CSS-referenced assets',
+                },
+                { id: 'rewriting-urls', label: 'Rewriting asset URLs' },
+            ];
+
+            for (const phase of phases) {
+                const isCompleted = this.flushCompletedPhases.has(phase.id);
+                const isCurrent = this.flushPhase === phase.id;
+
+                if (isCompleted) {
+                    // Show completed phase with checkmark
+                    const indicator = chalk.green('✓');
+                    const label = chalk.gray(phase.label);
+                    lines.push(`    ${indicator} ${label}`);
+                } else if (isCurrent) {
+                    // Show current phase with progress bar
+                    const indicator = chalk.yellow('◐');
+                    const elapsed = this.formatElapsed(
+                        this.flushPhaseStartTime ?? undefined,
+                    );
+
+                    // Build progress bar
+                    const progressBar = this.renderFlushProgressBar(
+                        this.flushCompleted,
+                        this.flushTotal,
+                        20,
+                    );
+
+                    // Build progress text: "34/85 (3 failed)"
+                    let progressText = `${this.flushCompleted}/${this.flushTotal}`;
+                    if (this.flushFailed > 0) {
+                        progressText += chalk.red(
+                            ` (${this.flushFailed} failed)`,
+                        );
+                    }
+
+                    const label = phase.label;
+                    const mainPart = `${indicator} ${label}... ${progressBar} ${progressText}`;
+                    const mainLen = visibleLength(mainPart);
+                    const padding = ' '.repeat(
+                        Math.max(0, innerWidth - mainLen - elapsed.length - 4),
+                    );
+
+                    lines.push(
+                        `    ${mainPart}${padding}${chalk.gray(elapsed)}`,
+                    );
+
+                    // Show current item on second line if available
+                    if (this.flushCurrentItem) {
+                        const arrow = chalk.gray('↳');
+                        const maxUrlLen = innerWidth - 8;
+                        let displayUrl = this.flushCurrentItem;
+                        if (displayUrl.length > maxUrlLen) {
+                            displayUrl =
+                                '...' + displayUrl.slice(-(maxUrlLen - 3));
+                        }
+                        lines.push(`      ${arrow} ${chalk.cyan(displayUrl)}`);
+                    } else {
+                        lines.push(''); // Empty line for spacing
+                    }
+                }
+                // Skip pending phases (don't show them at all)
+            }
+
+            // If complete, show total time
+            if (this.flushPhase === 'complete' && this.flushTotalTimeMs) {
+                const totalSecs = (this.flushTotalTimeMs / 1000).toFixed(1);
+                lines.push(
+                    `    ${chalk.green('✓')} ${chalk.gray(`Flush complete in ${totalSecs}s`)}`,
+                );
+            }
+        } else {
+            // Legacy fallback: simple flushing message
+            const indicator = chalk.yellow('◐');
+            const elapsed = this.formatElapsed(
+                this.flushingStartTime ?? undefined,
+            );
+            const message = `Flushing ${chalk.bold(this.flushingCount)} pending asset downloads...`;
+            const messageLen = visibleLength(message);
+            const padding = ' '.repeat(
+                Math.max(0, innerWidth - messageLen - elapsed.length - 4),
+            );
+
+            lines.push(
+                `    ${indicator} ${message}${padding}${chalk.gray(elapsed)}`,
+            );
+            lines.push(''); // Empty second line to maintain visual consistency
+        }
+
+        // Pad to fixed height to prevent layout jumps during flush phases
+        while (lines.length < FLUSH_SECTION_HEIGHT) {
+            lines.push('');
+        }
+
+        return lines;
+    }
+
+    /**
+     * Render a progress bar for flush phases
+     * @param completed Number of items completed
+     * @param total Total number of items
+     * @param width Width of the progress bar in characters
+     */
+    private renderFlushProgressBar(
+        completed: number,
+        total: number,
+        width: number = 20,
+    ): string {
+        if (total === 0) {
+            return chalk.gray('░'.repeat(width));
+        }
+
+        const progress = Math.min(1, completed / total);
+        const filled = Math.round(progress * width);
+        const empty = width - filled;
+
+        return (
+            chalk.cyan('[') +
+            chalk.cyan('█'.repeat(filled)) +
+            chalk.gray('░'.repeat(empty)) +
+            chalk.cyan(']')
+        );
     }
 
     /**

@@ -496,9 +496,9 @@ async function extractWithCrawl(
                 logApiCaptures: false,
                 trackApiCaptures: false,
             }),
-            onVerbose: options.verbose
-                ? createVerboseHandler(progress)
-                : undefined,
+            // Always create verbose handler - it filters based on verboseMode
+            // This ensures warnings/errors always appear in the TUI logs
+            onVerbose: createVerboseHandler(progress, options.verbose),
         });
 
         progress.stop();

@@ -208,6 +208,18 @@ export function createCaptureProgressHandler(
                 }
                 break;
             }
+
+            case 'flush-progress': {
+                progress.setFlushProgress(
+                    event.phase,
+                    event.completed,
+                    event.total,
+                    event.failed,
+                    event.currentItem,
+                    event.totalTimeMs,
+                );
+                break;
+            }
         }
     };
 }
@@ -216,16 +228,45 @@ export function createCaptureProgressHandler(
  * Create an onVerbose handler for captureWebsite()
  *
  * @param progress - The progress display instance
+ * @param verboseMode - If true, show all log levels; if false, only show warn/error
  * @returns A function that handles verbose log events
  */
 export function createVerboseHandler(
     progress: ProgressDisplay,
-): (event: { workerId?: number; source: string; message: string }) => void {
+    verboseMode: boolean = true,
+): (event: {
+    workerId?: number;
+    source: string;
+    message: string;
+    level?: 'debug' | 'info' | 'warn' | 'error';
+}) => void {
     return (event) => {
-        const prefix =
-            event.workerId !== undefined
-                ? `[Worker ${event.workerId}]`
-                : `[${event.source}]`;
+        const level = event.level ?? 'debug';
+
+        // Always show warnings and errors; only show debug/info if verbose mode
+        if (!verboseMode && level !== 'warn' && level !== 'error') {
+            return;
+        }
+
+        // Build prefix with indicator inside brackets for warnings/errors
+        let prefix: string;
+        if (level === 'warn') {
+            prefix =
+                event.workerId !== undefined
+                    ? `[${chalk.yellow('⚠')} Worker ${event.workerId}]`
+                    : `[${chalk.yellow('⚠')} ${event.source}]`;
+        } else if (level === 'error') {
+            prefix =
+                event.workerId !== undefined
+                    ? `[${chalk.red('✗')} Worker ${event.workerId}]`
+                    : `[${chalk.red('✗')} ${event.source}]`;
+        } else {
+            prefix =
+                event.workerId !== undefined
+                    ? `[Worker ${event.workerId}]`
+                    : `[${event.source}]`;
+        }
+
         progress.log(`${prefix} ${event.message}`);
     };
 }

@@ -318,6 +318,30 @@ export interface DuplicateSkippedEvent {
 }
 
 /**
+ * Progress event emitted during the flush phase.
+ * Provides granular progress for pending captures, CSS asset fetching, and URL rewriting.
+ */
+export interface FlushProgressEvent {
+    type: 'flush-progress';
+    /** Current phase of the flush operation */
+    phase:
+        | 'pending-captures'
+        | 'fetching-css-assets'
+        | 'rewriting-urls'
+        | 'complete';
+    /** Number of items completed in current phase */
+    completed: number;
+    /** Total number of items in current phase */
+    total: number;
+    /** Number of failed items (for fetching phase) */
+    failed?: number;
+    /** URL or path of the current item being processed */
+    currentItem?: string;
+    /** Total elapsed time in ms (for 'complete' phase) */
+    totalTimeMs?: number;
+}
+
+/**
  * Progress event for capture lifecycle
  */
 export interface CaptureLifecycleEvent {
@@ -351,7 +375,8 @@ export type CaptureProgressEvent =
     | AssetCaptureEvent
     | RequestActivityEvent
     | DuplicateSkippedEvent
-    | CaptureLifecycleEvent;
+    | CaptureLifecycleEvent
+    | FlushProgressEvent;
 
 /**
  * Structured progress callback for capture operations
@@ -398,6 +423,8 @@ export interface CaptureResult {
         staticAssetsCaptured: number;
         totalBytesDownloaded: number;
         captureTimeMs: number;
+        /** Number of files that were truncated during download */
+        truncatedFiles?: number;
         /** Crawl statistics (only present if crawling was enabled) */
         crawlStats?: CrawlStats;
     };

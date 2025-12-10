@@ -5,14 +5,16 @@
  */
 
 import type { Page, Response } from 'playwright';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, writeFile, readFile } from 'fs/promises';
 import { dirname, join, extname } from 'path';
 import { createHash } from 'crypto';
 import { minimatch } from 'minimatch';
+import { buildUrlMap, rewriteHtml, rewriteAllCssUrls } from './url-rewriter.js';
 import type {
     AssetCaptureEvent,
     RequestActivityEvent,
     DuplicateSkippedEvent,
+    FlushProgressEvent,
     CapturedAsset,
     CaptureVerboseEvent,
     ResourceType,
@@ -23,12 +25,25 @@ import type {
 import { robustFetch, FetchError } from '@web2local/http';
 
 /**
+ * 1x1 transparent PNG placeholder for failed fetches (68 bytes).
+ * Used when an asset referenced in CSS cannot be fetched.
+ */
+const PLACEHOLDER_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+);
+
+/**
  * Direct HTTP fetch with proper streaming support and content verification.
  * Used as a fallback when Playwright's response.body() returns truncated data.
  * Uses robustFetch for automatic retry on transient errors.
+ *
+ * @param url - URL to fetch
+ * @param onWarning - Optional callback for warning messages (truncation, fetch failures)
  */
 async function fetchWithContentVerification(
     url: string,
+    onWarning?: (message: string) => void,
 ): Promise<Buffer | null> {
     try {
         const response = await robustFetch(url, {
@@ -53,16 +68,24 @@ async function fetchWithContentVerification(
         );
         if (contentLength > 0 && buffer.length !== contentLength) {
             // Truncated data - log warning but still return what we got
-            console.warn(
-                `Warning: Truncated response for ${url} (got ${buffer.length} bytes, expected ${contentLength})`,
-            );
+            const msg = `Truncated response for ${url} (got ${buffer.length} bytes, expected ${contentLength})`;
+            if (onWarning) {
+                onWarning(msg);
+            } else {
+                console.warn(msg);
+            }
         }
 
         return buffer;
     } catch (error) {
         // FetchError already has good error details
         if (error instanceof FetchError) {
-            console.warn(`Failed to fetch ${url}: ${error.message}`);
+            const msg = `Failed to fetch ${url}: ${error.message}`;
+            if (onWarning) {
+                onWarning(msg);
+            } else {
+                console.warn(msg);
+            }
         }
         return null;
     }
@@ -122,6 +145,12 @@ export interface StaticCaptureOptions {
      * Useful when only using onAssetCaptured callback to collect assets.
      */
     skipAssetWrite?: boolean;
+
+    /**
+     * Callback for flush progress events.
+     * Provides granular progress during pending captures, CSS asset fetching, and URL rewriting.
+     */
+    onFlushProgress?: (event: FlushProgressEvent) => void;
 }
 
 const DEFAULT_OPTIONS: StaticCaptureOptions = {
@@ -278,19 +307,15 @@ export function passesFilterEarly(
 }
 
 /**
- * Extract the base domain from a host (removes www. prefix)
- */
-function getBaseDomain(host: string): string {
-    return host.replace(/^www\./, '');
-}
-
-/**
- * Generate a local path for a URL
+ * Generate a local path for a URL.
+ *
+ * Same-origin resources keep their original pathname.
+ * All cross-origin resources (including CDN subdomains) go to _external/
+ * with a hash-based filename to ensure uniqueness.
  */
 function urlToLocalPath(url: string, baseUrl: string): string {
     const urlObj = new URL(url);
     const baseUrlObj = new URL(baseUrl);
-    const baseDomain = getBaseDomain(baseUrlObj.host);
 
     // For same-origin resources, use the pathname directly
     if (urlObj.origin === baseUrlObj.origin) {
@@ -310,30 +335,33 @@ function urlToLocalPath(url: string, baseUrl: string): string {
         return path.replace(/^\//, '');
     }
 
-    // For CDN/static subdomains of the same domain, save to _cdn/ directory
-    const urlHost = urlObj.host;
-    if (
-        urlHost === `cdn.${baseDomain}` ||
-        urlHost === `static.${baseDomain}` ||
-        urlHost === `assets.${baseDomain}` ||
-        urlHost === `images.${baseDomain}` ||
-        urlHost === `media.${baseDomain}`
-    ) {
-        // Extract subdomain prefix (cdn, static, etc.)
-        const subdomain = urlHost.split('.')[0];
-        const path = urlObj.pathname;
+    // For ALL cross-origin resources (including CDN subdomains), use a hash-based filename in _external/
+    // Include the full URL (with query string) in the hash for uniqueness
+    const fullUrl = url;
+    const hash = createHash('md5').update(fullUrl).digest('hex').slice(0, 12);
 
-        // Remove leading slash and prefix with _subdomain/
-        return `_${subdomain}${path}`;
+    // Get the filename from the pathname
+    const pathParts = urlObj.pathname.split('/');
+    const rawFilename = pathParts[pathParts.length - 1] || 'file';
+
+    // Sanitize the filename (remove unsafe characters)
+    const safeName = rawFilename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    // Get extension from the pathname (ignoring query string)
+    const ext = extname(urlObj.pathname);
+
+    // If the filename already has an extension, use as-is
+    // Otherwise append the extension if we found one
+    let finalFilename: string;
+    if (extname(safeName)) {
+        finalFilename = `${hash}_${safeName}`;
+    } else if (ext) {
+        finalFilename = `${hash}_${safeName}${ext}`;
+    } else {
+        finalFilename = `${hash}_${safeName}`;
     }
 
-    // For cross-origin resources, use a hash-based filename in _external/
-    const hash = createHash('md5').update(url).digest('hex').slice(0, 12);
-    const ext = extname(urlObj.pathname) || '.bin';
-    const filename = urlObj.pathname.split('/').pop() || 'file';
-    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-
-    return `_external/${hash}_${safeName}${ext ? '' : ext}`;
+    return `_external/${finalFilename}`;
 }
 
 /**
@@ -374,6 +402,82 @@ function getContentType(response: Response, url: string): string {
     };
 
     return mimeTypes[ext] || 'application/octet-stream';
+}
+
+/**
+ * Guess the content type from a URL's extension.
+ * Used when we need to guess content type before fetching.
+ */
+function getContentTypeFromExtension(url: string): string {
+    try {
+        const ext = extname(new URL(url).pathname).toLowerCase();
+        const mimeTypes: Record<string, string> = {
+            '.html': 'text/html',
+            '.htm': 'text/html',
+            '.css': 'text/css',
+            '.js': 'application/javascript',
+            '.mjs': 'application/javascript',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.webp': 'image/webp',
+            '.avif': 'image/avif',
+            '.ico': 'image/x-icon',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+            '.ttf': 'font/ttf',
+            '.eot': 'application/vnd.ms-fontobject',
+            '.otf': 'font/otf',
+            '.mp4': 'video/mp4',
+            '.webm': 'video/webm',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav',
+            '.ogg': 'audio/ogg',
+        };
+        return mimeTypes[ext] || 'application/octet-stream';
+    } catch {
+        return 'application/octet-stream';
+    }
+}
+
+/**
+ * Guess the resource type from a URL's extension.
+ * Used when applying filters to CSS-referenced assets before fetching.
+ */
+function guessResourceType(url: string): ResourceType {
+    try {
+        const ext = extname(new URL(url).pathname).toLowerCase();
+
+        const imageExts = [
+            '.png',
+            '.jpg',
+            '.jpeg',
+            '.gif',
+            '.webp',
+            '.svg',
+            '.ico',
+            '.avif',
+            '.bmp',
+            '.tiff',
+        ];
+        const fontExts = ['.woff', '.woff2', '.ttf', '.otf', '.eot'];
+        const styleExts = ['.css'];
+        const scriptExts = ['.js', '.mjs'];
+        const mediaExts = ['.mp4', '.webm', '.mp3', '.wav', '.ogg', '.m4a'];
+
+        if (imageExts.includes(ext)) return 'image';
+        if (fontExts.includes(ext)) return 'font';
+        if (styleExts.includes(ext)) return 'stylesheet';
+        if (scriptExts.includes(ext)) return 'script';
+        if (mediaExts.includes(ext)) return 'media';
+
+        return 'other';
+    } catch {
+        return 'other';
+    }
 }
 
 /**
@@ -421,6 +525,8 @@ export class StaticCapturer {
     > = new Map();
     /** Duplicate requests count per worker (reset on each new page) */
     private duplicateRequestsByWorker: Map<number, number> = new Map();
+    /** Count of assets that failed to fetch during flush (used placeholders) */
+    private flushFailedCount: number = 0;
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -563,7 +669,8 @@ export class StaticCapturer {
     }
 
     /**
-     * Log a verbose message - uses onVerbose callback if provided, otherwise console.log
+     * Log a verbose message - uses onVerbose callback if provided, otherwise console.log.
+     * Only emits if verbose mode is enabled.
      */
     private log(
         message: string,
@@ -582,6 +689,24 @@ export class StaticCapturer {
             });
         } else {
             console.log(message);
+        }
+    }
+
+    /**
+     * Log a warning message - always emitted regardless of verbose flag.
+     * These are important issues like truncated downloads that users should see.
+     */
+    private logWarning(message: string, data?: Record<string, unknown>): void {
+        if (this.options.onVerbose) {
+            this.options.onVerbose({
+                type: 'verbose',
+                level: 'warn',
+                source: 'static-capturer',
+                message,
+                data,
+            });
+        } else {
+            console.warn(message);
         }
     }
 
@@ -959,7 +1084,10 @@ export class StaticCapturer {
                 );
 
                 // Try to recover with direct HTTP fetch
-                const recoveredBody = await fetchWithContentVerification(url);
+                const recoveredBody = await fetchWithContentVerification(
+                    url,
+                    (msg) => this.logWarning(msg),
+                );
                 if (recoveredBody && recoveredBody.length === contentLength) {
                     this.log(
                         `[Static] Successfully recovered ${url} via direct fetch (${recoveredBody.length} bytes)`,
@@ -1077,20 +1205,18 @@ export class StaticCapturer {
 
             this.log(`[Static] Saved: ${localPath} (${body.length} bytes)`);
 
-            // If this is a CSS file, extract image-set() URLs for later fetching
+            // If this is a CSS file, extract ALL URL references for later fetching
+            // This includes url(), @import, and image-set() references
             if (contentType.includes('css') || url.endsWith('.css')) {
                 try {
                     const cssContent = body.toString('utf-8');
-                    const imageSetUrls = extractResponsiveUrlsFromCss(
-                        cssContent,
-                        url,
-                    );
-                    if (imageSetUrls.length > 0) {
+                    const allCssUrls = extractAllUrlsFromCss(cssContent, url);
+                    if (allCssUrls.length > 0) {
                         this.log(
-                            `[Static] Found ${imageSetUrls.length} image-set URLs in CSS: ${url}`,
+                            `[Static] Found ${allCssUrls.length} URLs in CSS: ${url}`,
                         );
-                        for (const imageUrl of imageSetUrls) {
-                            this.pendingResponsiveUrls.add(imageUrl);
+                        for (const cssUrl of allCssUrls) {
+                            this.pendingResponsiveUrls.add(cssUrl);
                         }
                     }
                 } catch (cssError) {
@@ -1141,9 +1267,9 @@ export class StaticCapturer {
             html = await page.content();
         }
 
-        // Rewrite URLs in the HTML to point to local paths
+        // Note: URL rewriting is done in flush() after all assets are captured
+        // to ensure we have the complete URL mapping
         const baseUrl = this.baseOrigin || this.entrypointUrl || url;
-        html = this.rewriteDocumentUrls(html, baseUrl);
 
         const body = Buffer.from(html, 'utf-8');
 
@@ -1176,64 +1302,20 @@ export class StaticCapturer {
             `[Static] Saved document: ${localPath} (${body.length} bytes)`,
         );
 
-        // Extract and fetch responsive image URLs that browser may not have loaded
+        // Extract responsive image URLs that browser may not have loaded
         // (e.g., srcset variants for different viewport sizes)
+        // These will be fetched during flush() for better progress tracking
         const responsiveUrls = extractResponsiveUrlsFromHtml(html, baseUrl);
         if (responsiveUrls.length > 0) {
             this.log(
-                `[Static] Found ${responsiveUrls.length} responsive URLs in HTML`,
+                `[Static] Found ${responsiveUrls.length} responsive URLs in HTML, queuing for fetch`,
             );
-            await this.fetchAdditionalAssets(responsiveUrls);
+            for (const url of responsiveUrls) {
+                this.pendingResponsiveUrls.add(url);
+            }
         }
 
         return asset;
-    }
-
-    /**
-     * Rewrite URLs in HTML content to use local paths.
-     * This converts absolute URLs matching the site's origin to relative paths,
-     * and rewrites CDN subdomain URLs to use the _cdn/ prefix.
-     */
-    private rewriteDocumentUrls(html: string, baseUrl: string): string {
-        const baseUrlObj = new URL(baseUrl);
-        const baseDomain = getBaseDomain(baseUrlObj.host);
-        const origin = baseUrlObj.origin;
-
-        this.log(
-            `[Static] Rewriting URLs for origin: ${origin}, base domain: ${baseDomain}`,
-        );
-
-        let result = html;
-        let rewriteCount = 0;
-
-        // Rewrite full URLs matching the base origin to relative paths
-        // e.g., https://www.bob.com/foo/bar -> /foo/bar
-        const originPattern = new RegExp(
-            `https?://(www\\.)?${escapeRegex(baseDomain)}(/[^"'\\s<>]*)`,
-            'g',
-        );
-        result = result.replace(originPattern, (match, _www, path) => {
-            rewriteCount++;
-            return path || '/';
-        });
-
-        // Rewrite CDN subdomain URLs to use _cdn/ prefix
-        // e.g., https://cdn.bob.com/public/images/foo.jpg -> /_cdn/public/images/foo.jpg
-        const cdnSubdomains = ['cdn', 'static', 'assets', 'images', 'media'];
-        for (const subdomain of cdnSubdomains) {
-            const cdnPattern = new RegExp(
-                `https?://${subdomain}\\.${escapeRegex(baseDomain)}(/[^"'\\s<>]*)`,
-                'g',
-            );
-            result = result.replace(cdnPattern, (match, path) => {
-                rewriteCount++;
-                return `/_${subdomain}${path || '/'}`;
-            });
-        }
-
-        this.log(`[Static] Rewrote ${rewriteCount} URLs in document`);
-
-        return result;
     }
 
     /**
@@ -1245,25 +1327,172 @@ export class StaticCapturer {
 
     /**
      * Wait for all pending captures to complete, then fetch any
-     * responsive URLs discovered in CSS files.
+     * responsive URLs discovered in CSS files, and finally rewrite
+     * all URLs in HTML and CSS files to point to local copies.
+     *
+     * Emits granular progress events via onFlushProgress callback.
      */
     async flush(): Promise<void> {
-        const pending = Array.from(this.pendingCaptures.values());
-        if (pending.length > 0) {
+        const flushStartTime = Date.now();
+        this.flushFailedCount = 0;
+
+        // Phase 1: Wait for pending captures with progress
+        const pending = Array.from(this.pendingCaptures.entries());
+        const pendingTotal = pending.length;
+
+        if (pendingTotal > 0) {
             this.log(
-                `[StaticCapturer] Waiting for ${pending.length} pending captures...`,
+                `[StaticCapturer] Waiting for ${pendingTotal} pending captures...`,
             );
-            await Promise.all(pending);
+
+            let pendingCompleted = 0;
+            await Promise.all(
+                pending.map(async ([url, promise]) => {
+                    await promise;
+                    pendingCompleted++;
+                    this.options.onFlushProgress?.({
+                        type: 'flush-progress',
+                        phase: 'pending-captures',
+                        completed: pendingCompleted,
+                        total: pendingTotal,
+                        currentItem: url,
+                    });
+                }),
+            );
         }
 
-        // Fetch any responsive URLs discovered in CSS files
+        // Phase 2: Fetch responsive URLs discovered in CSS/HTML files
         if (this.pendingResponsiveUrls.size > 0) {
             const urls = Array.from(this.pendingResponsiveUrls);
             this.log(
-                `[StaticCapturer] Fetching ${urls.length} responsive URLs from CSS...`,
+                `[StaticCapturer] Fetching ${urls.length} URLs from CSS/HTML...`,
             );
-            await this.fetchAdditionalAssets(urls);
+            await this.fetchAdditionalAssetsWithProgress(urls);
             this.pendingResponsiveUrls.clear();
+        }
+
+        // Phase 3: Rewrite URLs in HTML and CSS files
+        // Skip if we're not writing assets to disk
+        if (!this.options.skipAssetWrite) {
+            await this.rewriteAssetUrlsWithProgress();
+        }
+
+        // Emit completion event with total time
+        const totalTimeMs = Date.now() - flushStartTime;
+        this.options.onFlushProgress?.({
+            type: 'flush-progress',
+            phase: 'complete',
+            completed: 0,
+            total: 0,
+            totalTimeMs,
+        });
+    }
+
+    /**
+     * Rewrite URLs in all captured HTML and CSS files to point to local copies.
+     * This is called after all assets have been captured to ensure we have
+     * the complete URL mapping.
+     *
+     * Emits progress events via onFlushProgress callback.
+     */
+    private async rewriteAssetUrlsWithProgress(): Promise<void> {
+        if (this.assets.length === 0) {
+            return;
+        }
+
+        const baseUrl = this.baseOrigin || this.entrypointUrl || '';
+        if (!baseUrl) {
+            this.log(
+                '[StaticCapturer] No base URL available, skipping URL rewriting',
+            );
+            return;
+        }
+
+        // Build URL map from all captured assets
+        const urlMap = buildUrlMap(this.assets, baseUrl);
+        this.log(
+            `[StaticCapturer] Built URL map with ${urlMap.size} entries for rewriting`,
+        );
+
+        // Find all HTML and CSS files that need rewriting
+        const htmlAssets = this.assets.filter(
+            (a) =>
+                a.contentType.includes('html') ||
+                a.localPath.endsWith('.html') ||
+                a.localPath.endsWith('.htm'),
+        );
+        const cssAssets = this.assets.filter(
+            (a) =>
+                a.contentType.includes('css') || a.localPath.endsWith('.css'),
+        );
+
+        const total = htmlAssets.length + cssAssets.length;
+        let completed = 0;
+
+        this.log(
+            `[StaticCapturer] Rewriting URLs in ${htmlAssets.length} HTML and ${cssAssets.length} CSS files`,
+        );
+
+        // Rewrite HTML files
+        for (const asset of htmlAssets) {
+            try {
+                const fullPath = join(this.options.outputDir, asset.localPath);
+                const content = await readFile(fullPath, 'utf-8');
+
+                const rewritten = rewriteHtml(content, urlMap, asset.url);
+
+                if (rewritten !== content) {
+                    await writeFile(fullPath, rewritten, 'utf-8');
+                    this.log(
+                        `[StaticCapturer] Rewrote URLs in HTML: ${asset.localPath}`,
+                    );
+                }
+            } catch (error) {
+                this.log(
+                    `[StaticCapturer] Error rewriting HTML ${asset.localPath}: ${error}`,
+                    'error',
+                );
+            }
+
+            completed++;
+            this.options.onFlushProgress?.({
+                type: 'flush-progress',
+                phase: 'rewriting-urls',
+                completed,
+                total,
+                currentItem: asset.localPath,
+            });
+        }
+
+        // Rewrite CSS files
+        for (const asset of cssAssets) {
+            try {
+                const fullPath = join(this.options.outputDir, asset.localPath);
+                const content = await readFile(fullPath, 'utf-8');
+
+                const rewritten = rewriteAllCssUrls(content, urlMap, asset.url);
+
+                if (rewritten !== content) {
+                    await writeFile(fullPath, rewritten, 'utf-8');
+                    this.log(
+                        `[StaticCapturer] Rewrote URLs in CSS: ${asset.localPath}`,
+                    );
+                }
+            } catch (error) {
+                this.log(
+                    `[StaticCapturer] Error rewriting CSS ${asset.localPath}: ${error}`,
+                    'error',
+                );
+            }
+
+            completed++;
+            this.options.onFlushProgress?.({
+                type: 'flush-progress',
+                phase: 'rewriting-urls',
+                completed,
+                total,
+                currentItem: asset.localPath,
+            });
         }
     }
 
@@ -1352,12 +1581,19 @@ export class StaticCapturer {
 
     /**
      * Fetch additional assets that were discovered but not loaded by the browser.
-     * This is used to capture responsive image variants from srcset/image-set
-     * that the browser didn't load based on viewport size.
+     * This is used to capture assets referenced in CSS (url(), @import) and HTML
+     * (srcset, inline styles) that the browser didn't load.
+     *
+     * All URLs are eligible for fetching (including cross-origin), but the same
+     * staticFilter is applied to respect user filtering preferences.
+     *
+     * Emits progress events via onFlushProgress callback.
      *
      * @param urls - Array of absolute URLs to fetch
      */
-    async fetchAdditionalAssets(urls: string[]): Promise<void> {
+    private async fetchAdditionalAssetsWithProgress(
+        urls: string[],
+    ): Promise<void> {
         // Filter out URLs already downloaded
         const newUrls = urls.filter((url) => !this.downloadedUrls.has(url));
 
@@ -1366,10 +1602,9 @@ export class StaticCapturer {
         }
 
         this.log(
-            `[Static] Fetching ${newUrls.length} additional responsive assets...`,
+            `[Static] Fetching ${newUrls.length} additional assets from CSS/HTML...`,
         );
 
-        // Filter to only same-origin or recognized CDN subdomains
         const baseUrl = this.baseOrigin || this.entrypointUrl;
         if (!baseUrl) {
             this.log(
@@ -1378,64 +1613,81 @@ export class StaticCapturer {
             return;
         }
 
-        const baseUrlObj = new URL(baseUrl);
-        const baseDomain = baseUrlObj.host.replace(/^www\./, '');
-
+        // Apply the same staticFilter that's used for other assets
         const eligibleUrls = newUrls.filter((url) => {
             try {
-                const urlObj = new URL(url);
-
-                // Same origin
-                if (urlObj.origin === baseUrlObj.origin) {
-                    return true;
-                }
-
-                // CDN subdomains
-                const urlHost = urlObj.host;
-                const cdnSubdomains = [
-                    'cdn',
-                    'static',
-                    'assets',
-                    'images',
-                    'media',
-                ];
-                for (const subdomain of cdnSubdomains) {
-                    if (urlHost === `${subdomain}.${baseDomain}`) {
-                        return true;
+                // Apply staticFilter if set
+                if (this.options.staticFilter) {
+                    const resourceType = guessResourceType(url);
+                    const contentType = getContentTypeFromExtension(url);
+                    if (
+                        !passesFilter(
+                            url,
+                            contentType,
+                            resourceType,
+                            this.options.staticFilter,
+                        )
+                    ) {
+                        this.log(
+                            `[Static] Skipping ${url} (does not pass filter)`,
+                        );
+                        return false;
                     }
                 }
-
-                return false;
+                return true;
             } catch {
                 return false;
             }
         });
 
         if (eligibleUrls.length === 0) {
-            this.log('[Static] No eligible URLs to fetch (all cross-origin)');
+            this.log('[Static] No eligible URLs to fetch after filtering');
             return;
         }
 
         this.log(
-            `[Static] ${eligibleUrls.length} URLs are same-origin or CDN, fetching...`,
+            `[Static] ${eligibleUrls.length} URLs pass filter, fetching...`,
         );
+
+        const total = eligibleUrls.length;
+        let completed = 0;
 
         // Fetch in batches to avoid overwhelming the server
         const BATCH_SIZE = 5;
         for (let i = 0; i < eligibleUrls.length; i += BATCH_SIZE) {
             const batch = eligibleUrls.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map((url) => this.fetchSingleAsset(url)));
+            await Promise.all(
+                batch.map(async (url) => {
+                    const success =
+                        await this.fetchSingleAssetWithTracking(url);
+                    if (!success) {
+                        this.flushFailedCount++;
+                    }
+                    completed++;
+                    this.options.onFlushProgress?.({
+                        type: 'flush-progress',
+                        phase: 'fetching-css-assets',
+                        completed,
+                        total,
+                        failed: this.flushFailedCount,
+                        currentItem: url,
+                    });
+                }),
+            );
         }
     }
 
     /**
      * Fetch and save a single asset by URL.
-     * Used for fetching responsive image variants that weren't loaded by the browser.
+     * Used for fetching assets referenced in CSS/HTML that weren't loaded by the browser.
+     * If fetching fails, a placeholder is saved so the URL can still be rewritten.
+     *
+     * @returns true if the asset was fetched successfully, false if a placeholder was used
      */
-    private async fetchSingleAsset(url: string): Promise<void> {
+    private async fetchSingleAssetWithTracking(url: string): Promise<boolean> {
         // Skip if already downloaded (double-check)
         if (this.downloadedUrls.has(url)) {
-            return;
+            return true;
         }
 
         // Check if this is a media file and if we should skip it
@@ -1443,78 +1695,90 @@ export class StaticCapturer {
             this.log(
                 `[Static] Skipping media source (captureMediaSources=false): ${url}`,
             );
-            return;
+            return true; // Not a failure, just skipped
         }
 
         // Mark as downloading to prevent duplicates
         this.downloadedUrls.add(url);
 
+        let body: Buffer | null = null;
+        let usedPlaceholder = false;
+
         try {
-            const body = await fetchWithContentVerification(url);
-
-            if (!body) {
-                this.log(`[Static] Failed to fetch: ${url}`);
-                return;
-            }
-
-            // Check file size
-            if (body.length > this.options.maxFileSize) {
-                this.log(
-                    `[Static] Skipping large file: ${url} (${body.length} bytes)`,
-                );
-                return;
-            }
-
-            // Generate local path
-            const baseUrl = this.baseOrigin || this.entrypointUrl || url;
-            const localPath = urlToLocalPath(url, baseUrl);
-            const fullPath = join(this.options.outputDir, localPath);
-
-            // Create directory and write file
-            await mkdir(dirname(fullPath), { recursive: true });
-            await writeFile(fullPath, body);
-
-            // Guess content type from extension
-            const ext = extname(new URL(url).pathname).toLowerCase();
-            const mimeTypes: Record<string, string> = {
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.gif': 'image/gif',
-                '.svg': 'image/svg+xml',
-                '.webp': 'image/webp',
-                '.ico': 'image/x-icon',
-                '.mp4': 'video/mp4',
-                '.webm': 'video/webm',
-                '.mp3': 'audio/mpeg',
-                '.wav': 'audio/wav',
-                '.ogg': 'audio/ogg',
-            };
-            const contentType = mimeTypes[ext] || 'application/octet-stream';
-
-            const asset: CapturedAsset = {
-                url,
-                localPath,
-                contentType,
-                size: body.length,
-                isEntrypoint: false,
-            };
-
-            this.assets.push(asset);
-            this.options.onCapture?.({
-                type: 'asset-capture',
-                url,
-                localPath,
-                contentType,
-                size: body.length,
-            });
-
-            this.log(
-                `[Static] Fetched responsive asset: ${localPath} (${body.length} bytes)`,
+            body = await fetchWithContentVerification(url, (msg) =>
+                this.logWarning(msg),
             );
         } catch (error) {
-            this.log(`[Static] Error fetching ${url}: ${error}`, 'error');
+            this.log(
+                `[Static] Error fetching ${url}: ${error}, using placeholder`,
+                'warn',
+            );
         }
+
+        // If fetch failed, use placeholder
+        if (!body) {
+            this.log(
+                `[Static] Failed to fetch ${url}, using placeholder`,
+                'warn',
+            );
+            body = PLACEHOLDER_PNG;
+            usedPlaceholder = true;
+        }
+
+        // Check file size (skip if too large, but not for placeholders)
+        if (!usedPlaceholder && body.length > this.options.maxFileSize) {
+            this.log(
+                `[Static] Skipping large file: ${url} (${body.length} bytes)`,
+            );
+            return true; // Not a failure, just skipped
+        }
+
+        // Generate local path
+        const baseUrl = this.baseOrigin || this.entrypointUrl || url;
+        const localPath = urlToLocalPath(url, baseUrl);
+        const fullPath = join(this.options.outputDir, localPath);
+
+        // Create directory and write file
+        try {
+            await mkdir(dirname(fullPath), { recursive: true });
+            await writeFile(fullPath, body);
+        } catch (writeError) {
+            this.log(
+                `[Static] Error writing ${localPath}: ${writeError}`,
+                'error',
+            );
+            return false;
+        }
+
+        // Guess content type from extension
+        const contentType = getContentTypeFromExtension(url);
+
+        const asset: CapturedAsset = {
+            url,
+            localPath,
+            contentType,
+            size: body.length,
+            isEntrypoint: false,
+        };
+
+        this.assets.push(asset);
+        this.options.onCapture?.({
+            type: 'asset-capture',
+            url,
+            localPath,
+            contentType,
+            size: body.length,
+        });
+
+        if (usedPlaceholder) {
+            this.log(`[Static] Saved placeholder for: ${localPath}`, 'warn');
+            return false; // Used placeholder = failure
+        }
+
+        this.log(
+            `[Static] Fetched CSS/HTML asset: ${localPath} (${body.length} bytes)`,
+        );
+        return true;
     }
 }
 
@@ -1696,7 +1960,8 @@ export function parseImageSetUrls(imageSet: string): string[] {
  * - <img srcset="...">
  * - <source srcset="..."> (in <picture> elements)
  * - <source src="..."> (in <video> and <audio> elements)
- * - <style> tags containing image-set()
+ * - <style> tags containing url(), @import, image-set()
+ * - Inline style attributes containing url()
  *
  * @param html - The HTML content to parse
  * @param baseUrl - Base URL for resolving relative URLs
@@ -1738,12 +2003,24 @@ export function extractResponsiveUrlsFromHtml(
         }
     }
 
-    // Extract image-set() from inline <style> tags
+    // Extract ALL URLs from inline <style> tags (not just image-set)
     const stylePattern = /<style[^>]*>([\s\S]*?)<\/style>/gi;
 
     while ((match = stylePattern.exec(html)) !== null) {
         const styleContent = match[1];
-        const cssUrls = extractResponsiveUrlsFromCss(styleContent, baseUrl);
+        const cssUrls = extractAllUrlsFromCss(styleContent, baseUrl);
+        for (const url of cssUrls) {
+            urls.add(url);
+        }
+    }
+
+    // Extract url() from inline style attributes
+    const inlineStylePattern =
+        /style\s*=\s*["']([^"']*url\([^)]+\)[^"']*)["']/gi;
+
+    while ((match = inlineStylePattern.exec(html)) !== null) {
+        const styleValue = match[1];
+        const cssUrls = extractAllUrlsFromCss(styleValue, baseUrl);
         for (const url of cssUrls) {
             urls.add(url);
         }
@@ -1775,6 +2052,58 @@ export function extractResponsiveUrlsFromCss(
         const imageSetContent = match[0]; // Include the function name for parseImageSetUrls
         const imageSetUrls = parseImageSetUrls(imageSetContent);
         for (const url of imageSetUrls) {
+            const absoluteUrl = resolveUrl(url, cssUrl);
+            if (absoluteUrl) {
+                urls.add(absoluteUrl);
+            }
+        }
+    }
+
+    return Array.from(urls);
+}
+
+/**
+ * Extract ALL URLs from CSS content.
+ * This includes:
+ * - All url() references (backgrounds, fonts, cursors, etc.)
+ * - All @import url() and @import "..." references
+ * - All image-set() references
+ *
+ * @param css - The CSS content to parse
+ * @param cssUrl - URL of the CSS file (for resolving relative URLs)
+ * @returns Array of absolute URLs
+ */
+export function extractAllUrlsFromCss(css: string, cssUrl: string): string[] {
+    const urls: Set<string> = new Set();
+
+    // 1. Extract all url() references
+    const urlPattern = /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi;
+    let match;
+
+    while ((match = urlPattern.exec(css)) !== null) {
+        const url = match[2];
+        // Skip data:, blob:, and fragment-only URLs
+        if (
+            url &&
+            !url.startsWith('data:') &&
+            !url.startsWith('blob:') &&
+            !url.startsWith('#')
+        ) {
+            const absoluteUrl = resolveUrl(url, cssUrl);
+            if (absoluteUrl) {
+                urls.add(absoluteUrl);
+            }
+        }
+    }
+
+    // 2. Extract @import references
+    // Matches: @import url("path"), @import url('path'), @import "path", @import 'path'
+    const importPattern =
+        /@import\s+(?:url\(\s*(['"]?)([^'")]+)\1\s*\)|(['"])([^'"]+)\3)/gi;
+
+    while ((match = importPattern.exec(css)) !== null) {
+        const url = match[2] || match[4];
+        if (url && !url.startsWith('data:')) {
             const absoluteUrl = resolveUrl(url, cssUrl);
             if (absoluteUrl) {
                 urls.add(absoluteUrl);

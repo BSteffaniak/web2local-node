@@ -28,6 +28,7 @@
         "@web2local/manifest": "0.0.1",
         "@web2local/types": "0.0.1",
         "minimatch": "^10.0.1",
+        "node-html-parser": "^7.0.1",
         "playwright": "1.54.1"
     },
     "devDependencies": {
