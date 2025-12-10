@@ -308,12 +308,12 @@ export async function captureWebsite(
     // Build crawl stats
     const crawlStats: CrawlStats | undefined = crawlEnabled
         ? {
-            pagesVisited: queueStats.pagesVisited,
-            pagesSkipped: queueStats.pagesSkipped,
-            linksDiscovered: queueStats.linksDiscovered,
-            maxDepthReached: queueStats.maxDepthReached,
-            maxPagesReached: queueStats.maxPagesReached,
-        }
+              pagesVisited: queueStats.pagesVisited,
+              pagesSkipped: queueStats.pagesSkipped,
+              linksDiscovered: queueStats.linksDiscovered,
+              maxDepthReached: queueStats.maxDepthReached,
+              maxPagesReached: queueStats.maxPagesReached,
+          }
         : undefined;
 
     opts.onProgress?.({

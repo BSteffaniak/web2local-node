@@ -344,10 +344,14 @@ export class CrawlWorker {
             },
         });
 
-        // Capture HTML document (only first page, only once)
-        if (isFirstPage && captureStatic && !this.sharedState.htmlCaptured) {
-            this.sharedState.htmlCaptured = true;
-            this.htmlCaptured = true;
+        // Capture HTML document for every crawled page
+        // Each page needs its own HTML file so the mock server can serve the correct content
+        if (captureStatic) {
+            // Track if this worker captured HTML (for stats)
+            if (!this.sharedState.htmlCaptured) {
+                this.sharedState.htmlCaptured = true;
+                this.htmlCaptured = true;
+            }
 
             onProgress?.(this.buildProgressEvent('capturing-html', item));
             await staticCapturer.captureDocument(page);

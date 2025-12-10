@@ -433,11 +433,11 @@ export async function runMain(options: CliOptions) {
 
             reconstructSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
-                (reconstructResult.filesSkipped > 0
-                    ? chalk.gray(
-                        ` (${reconstructResult.filesSkipped} skipped)`,
-                    )
-                    : ''),
+                    (reconstructResult.filesSkipped > 0
+                        ? chalk.gray(
+                              ` (${reconstructResult.filesSkipped} skipped)`,
+                          )
+                        : ''),
             );
 
             if (reconstructResult.errors.length > 0 && options.verbose) {
@@ -528,8 +528,8 @@ export async function runMain(options: CliOptions) {
                     {
                         onProgress: options.verbose
                             ? (file) => {
-                                depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
-                            }
+                                  depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
+                              }
                             : undefined,
                         onVersionProgress: (stage, packageName, result) => {
                             switch (stage) {
@@ -1017,10 +1017,10 @@ export async function runMain(options: CliOptions) {
                     const color = status.startsWith('2')
                         ? chalk.green
                         : status.startsWith('4')
-                            ? chalk.yellow
-                            : status.startsWith('5')
-                                ? chalk.red
-                                : chalk.gray;
+                          ? chalk.yellow
+                          : status.startsWith('5')
+                            ? chalk.red
+                            : chalk.gray;
                     return color(`${status}: ${count}`);
                 })
                 .join(', ');
@@ -1075,9 +1075,9 @@ export async function runMain(options: CliOptions) {
                                 {
                                     onProgress: options.verbose
                                         ? (msg) =>
-                                            console.log(
-                                                chalk.gray(`    ${msg}`),
-                                            )
+                                              console.log(
+                                                  chalk.gray(`    ${msg}`),
+                                              )
                                         : undefined,
                                 },
                             );

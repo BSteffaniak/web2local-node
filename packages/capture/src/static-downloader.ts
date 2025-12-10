@@ -492,10 +492,8 @@ export class StaticCapturer {
     private options: StaticCaptureOptions;
     private entrypointUrl: string | null = null;
     private baseOrigin: string | null = null;
-    /** Original HTML response from the network (before JS execution) */
-    private originalDocumentHtml: string | null = null;
-    /** URL of the original document */
-    private originalDocumentUrl: string | null = null;
+    /** Original HTML responses from the network (before JS execution), keyed by URL */
+    private originalDocumentHtmlByUrl: Map<string, string> = new Map();
     /** Track truncated files that couldn't be recovered */
     private truncatedFiles: Array<{
         url: string;
@@ -929,14 +927,16 @@ export class StaticCapturer {
                     return;
                 }
 
-                // Only capture if we haven't already captured the main document
-                // (avoid overwriting with redirect responses)
-                if (this.originalDocumentHtml === null) {
+                // Capture the original HTML for this URL if we haven't already
+                // (avoid overwriting with redirect responses for the same URL)
+                if (!this.originalDocumentHtmlByUrl.has(responseUrl)) {
                     // Capture the original HTML from the network response
                     try {
                         const body = await response.body();
-                        this.originalDocumentHtml = body.toString('utf-8');
-                        this.originalDocumentUrl = responseUrl;
+                        this.originalDocumentHtmlByUrl.set(
+                            responseUrl,
+                            body.toString('utf-8'),
+                        );
                         this.log(
                             `[Static] Captured original document HTML: ${responseUrl} (${body.length} bytes)`,
                         );
@@ -947,7 +947,7 @@ export class StaticCapturer {
                     }
                 } else {
                     this.log(
-                        `[Static] Skipping duplicate main document: ${responseUrl}`,
+                        `[Static] Skipping duplicate document: ${responseUrl}`,
                     );
                 }
                 return;
@@ -1247,22 +1247,25 @@ export class StaticCapturer {
 
         let html: string;
 
+        // Look up the original HTML for this specific URL
+        const originalHtml = this.originalDocumentHtmlByUrl.get(url);
+
         if (this.options.captureRenderedHtml) {
             // Capture the rendered DOM (after JS execution)
             // Use this for SPAs where the initial HTML is empty/minimal
             this.log(`[Static] Using rendered HTML (after JS execution)`);
             html = await page.content();
-        } else if (this.originalDocumentHtml) {
+        } else if (originalHtml) {
             // Use the original HTML response (before JS execution)
             // This ensures event handlers get properly attached when JS runs
             this.log(
-                `[Static] Using original HTML (before JS execution, ${this.originalDocumentHtml.length} bytes)`,
+                `[Static] Using original HTML (before JS execution, ${originalHtml.length} bytes)`,
             );
-            html = this.originalDocumentHtml;
+            html = originalHtml;
         } else {
             // Fallback to rendered HTML if original wasn't captured
             this.log(
-                `[Static] Original HTML not available, falling back to rendered HTML`,
+                `[Static] Original HTML not available for ${url}, falling back to rendered HTML`,
             );
             html = await page.content();
         }
@@ -1572,8 +1575,7 @@ export class StaticCapturer {
         this.pendingResponsiveUrls.clear();
         this.entrypointUrl = null;
         this.baseOrigin = null;
-        this.originalDocumentHtml = null;
-        this.originalDocumentUrl = null;
+        this.originalDocumentHtmlByUrl.clear();
         this.truncatedFiles = [];
         this.recoveredFiles = [];
         this.currentPageUrl = null;
