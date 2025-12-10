@@ -16,13 +16,14 @@ import {
     listCapturedSites,
 } from './server/loader.js';
 import type { ServerOptions } from './types.js';
+import { VERSION } from '@web2local/utils';
 
 const program = new Command();
 
 program
     .name('web2local serve')
     .description('Serve captured API fixtures and static assets')
-    .version('1.0.0');
+    .version(VERSION);
 
 /**
  * Serve command - start the mock server
@@ -168,12 +169,12 @@ program
                     method === 'GET'
                         ? pc.green
                         : method === 'POST'
-                          ? pc.yellow
-                          : method === 'PUT'
-                            ? pc.blue
-                            : method === 'DELETE'
-                              ? pc.red
-                              : pc.gray;
+                            ? pc.yellow
+                            : method === 'PUT'
+                                ? pc.blue
+                                : method === 'DELETE'
+                                    ? pc.red
+                                    : pc.gray;
 
                 console.log(`  ${methodColor(pc.bold(method))}`);
                 for (const fixture of fixtures) {

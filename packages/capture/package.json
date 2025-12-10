@@ -1,6 +1,6 @@
 {
     "name": "@web2local/capture",
-    "version": "0.0.1",
+    "version": "0.0.1-alpha.1",
     "description": "Browser automation and asset capture for web2local",
     "type": "module",
     "main": "./dist/index.js",
@@ -24,9 +24,9 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/http": "0.0.1",
-        "@web2local/manifest": "0.0.1",
-        "@web2local/types": "0.0.1",
+        "@web2local/http": "0.0.1-alpha.1",
+        "@web2local/manifest": "0.0.1-alpha.1",
+        "@web2local/types": "0.0.1-alpha.1",
         "minimatch": "^10.0.1",
         "node-html-parser": "^7.0.1",
         "playwright": "1.54.1"

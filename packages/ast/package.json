@@ -1,6 +1,6 @@
 {
     "name": "@web2local/ast",
-    "version": "0.0.1",
+    "version": "0.0.1-alpha.1",
     "description": "AST parsing and analysis utilities for web2local",
     "type": "module",
     "main": "./dist/index.js",

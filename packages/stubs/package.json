@@ -1,6 +1,6 @@
 {
     "name": "@web2local/stubs",
-    "version": "0.0.1",
+    "version": "0.0.1-alpha.1",
     "description": "Stub file generation for web2local",
     "type": "module",
     "main": "./dist/index.js",
@@ -26,11 +26,11 @@
     "license": "MIT",
     "dependencies": {
         "@swc/core": "^1.15.3",
-        "@web2local/analyzer": "0.0.1",
-        "@web2local/ast": "0.0.1",
-        "@web2local/http": "0.0.1",
-        "@web2local/sourcemap": "0.0.1",
-        "@web2local/utils": "0.0.1",
+        "@web2local/analyzer": "0.0.1-alpha.1",
+        "@web2local/ast": "0.0.1-alpha.1",
+        "@web2local/http": "0.0.1-alpha.1",
+        "@web2local/sourcemap": "0.0.1-alpha.1",
+        "@web2local/utils": "0.0.1-alpha.1",
         "postcss": "^8.5.6",
         "postcss-scss": "^4.0.9"
     },

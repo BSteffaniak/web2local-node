@@ -1,6 +1,6 @@
 {
     "name": "@web2local/rebuild",
-    "version": "0.0.1",
+    "version": "0.0.1-alpha.1",
     "description": "Build system and config generation for web2local",
     "type": "module",
     "main": "./dist/index.js",
@@ -24,10 +24,10 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/analyzer": "0.0.1",
-        "@web2local/stubs": "0.0.1",
-        "@web2local/types": "0.0.1",
-        "@web2local/utils": "0.0.1",
+        "@web2local/analyzer": "0.0.1-alpha.1",
+        "@web2local/stubs": "0.0.1-alpha.1",
+        "@web2local/types": "0.0.1-alpha.1",
+        "@web2local/utils": "0.0.1-alpha.1",
         "vite": "^5.4.0"
     },
     "devDependencies": {

@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { ServerOptions } from '@web2local/server';
+import { VERSION } from '@web2local/utils';
 import { runMain } from './index.js';
 
 export interface ExtractOptions {
@@ -153,9 +154,9 @@ export function parseArgs(): CliOptions {
         .enablePositionalOptions()
         .description(
             'Extract and reconstruct original source code from publicly available source maps. ' +
-                'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
+            'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
         )
-        .version('1.0.0')
+        .version(VERSION)
         .argument('<url>', 'URL of the website to extract source maps from')
         .option('-o, --output <dir>', 'Output directory', './output')
         .option('-v, --verbose', 'Enable verbose logging', false)

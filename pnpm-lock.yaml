@@ -69,19 +69,19 @@ importers:
         specifier: ^1.15.3
         version: 1.15.3
       '@web2local/ast':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../ast
       '@web2local/cache':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../cache
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
       '@web2local/utils':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../utils
     devDependencies:
       '@swc/types':
@@ -113,10 +113,10 @@ importers:
   packages/cache:
     dependencies:
       '@web2local/ast':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../ast
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
     devDependencies:
       '@types/node':
@@ -129,13 +129,13 @@ importers:
   packages/capture:
     dependencies:
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/manifest':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../manifest
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
       minimatch:
         specifier: ^10.0.1
@@ -160,41 +160,44 @@ importers:
   packages/cli:
     dependencies:
       '@web2local/analyzer':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../analyzer
       '@web2local/ast':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../ast
       '@web2local/cache':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../cache
       '@web2local/capture':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../capture
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/manifest':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../manifest
       '@web2local/rebuild':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../rebuild
       '@web2local/scraper':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../scraper
       '@web2local/server':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../server
       '@web2local/sourcemap':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../sourcemap
       '@web2local/stubs':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../stubs
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
+      '@web2local/utils':
+        specifier: 0.0.1-alpha.1
+        version: link:../utils
       chalk:
         specifier: ^5.3.0
         version: 5.6.2
@@ -227,10 +230,10 @@ importers:
   packages/manifest:
     dependencies:
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
     devDependencies:
       '@types/node':
@@ -243,16 +246,16 @@ importers:
   packages/rebuild:
     dependencies:
       '@web2local/analyzer':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../analyzer
       '@web2local/stubs':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../stubs
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
       '@web2local/utils':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../utils
       vite:
         specifier: ^5.4.0
@@ -268,19 +271,19 @@ importers:
   packages/scraper:
     dependencies:
       '@web2local/cache':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../cache
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/sourcemap':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../sourcemap
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
       '@web2local/utils':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../utils
       node-html-parser:
         specifier: ^7.0.1
@@ -299,8 +302,11 @@ importers:
         specifier: ^1.19.6
         version: 1.19.7(hono@4.10.7)
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
+      '@web2local/utils':
+        specifier: 0.0.1-alpha.1
+        version: link:../utils
       commander:
         specifier: ^14.0.2
         version: 14.0.2
@@ -324,10 +330,10 @@ importers:
   packages/sourcemap:
     dependencies:
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/types':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../types
     devDependencies:
       '@types/node':
@@ -343,19 +349,19 @@ importers:
         specifier: ^1.15.3
         version: 1.15.3
       '@web2local/analyzer':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../analyzer
       '@web2local/ast':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../ast
       '@web2local/http':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../http
       '@web2local/sourcemap':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../sourcemap
       '@web2local/utils':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../utils
       postcss:
         specifier: ^8.5.6
@@ -411,7 +417,7 @@ importers:
         specifier: ^20.10.0
         version: 20.19.26
       '@web2local/cli':
-        specifier: 0.0.1
+        specifier: 0.0.1-alpha.1
         version: link:../cli
       tsdown:
         specifier: ^0.17.1
