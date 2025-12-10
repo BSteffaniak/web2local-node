@@ -7,6 +7,7 @@ import {
     createCaptureProgressHandler,
     createVerboseHandler,
 } from './progress/index.js';
+import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
 
 /**
  * CLI options for server-related commands
@@ -111,6 +112,13 @@ export async function runMain(options: CliOptions) {
         disabled: options.noCache || options.forceRefresh,
     });
 
+    // Extract hostname from URL and resolve output directory
+    const hostname = new URL(options.url).hostname;
+    const outputDir = resolveOutputDir(options.output, hostname);
+
+    // Check if output directory exists and handle overwrite logic
+    await checkOutputDirectory(outputDir, options.overwrite);
+
     console.log(chalk.bold.cyan('\n  web2local'));
     console.log(chalk.gray('  ' + '─'.repeat(12)));
     console.log();
@@ -184,7 +192,6 @@ export async function runMain(options: CliOptions) {
             },
         });
 
-    const hostname = new URL(options.url).hostname;
     let savedBundles: SavedBundle[] = [];
 
     if (bundlesWithMaps.length === 0) {
@@ -221,8 +228,7 @@ export async function runMain(options: CliOptions) {
 
         try {
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: options.output,
-                siteHostname: hostname,
+                outputDir,
             });
             savedBundles = result.saved;
 
@@ -403,10 +409,9 @@ export async function runMain(options: CliOptions) {
         try {
             // Reconstruct the files on disk
             const reconstructResult = await reconstructSources(files, {
-                outputDir: options.output,
+                outputDir,
                 includeNodeModules: options.includeNodeModules,
                 internalPackages,
-                siteHostname: hostname,
                 bundleName,
             });
 
@@ -428,11 +433,11 @@ export async function runMain(options: CliOptions) {
 
             reconstructSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files written` +
-                    (reconstructResult.filesSkipped > 0
-                        ? chalk.gray(
-                              ` (${reconstructResult.filesSkipped} skipped)`,
-                          )
-                        : ''),
+                (reconstructResult.filesSkipped > 0
+                    ? chalk.gray(
+                        ` (${reconstructResult.filesSkipped} skipped)`,
+                    )
+                    : ''),
             );
 
             if (reconstructResult.errors.length > 0 && options.verbose) {
@@ -455,8 +460,7 @@ export async function runMain(options: CliOptions) {
 
         try {
             const stubResult = await generateBundleStubs({
-                outputDir: options.output,
-                siteHostname: hostname,
+                outputDir,
                 savedBundles,
                 extractedBundles: bundleExtractions.map((e) => ({
                     bundleName: e.bundleName,
@@ -484,7 +488,7 @@ export async function runMain(options: CliOptions) {
     // Step 4: Write manifest
     if (manifestBundles.length > 0) {
         try {
-            await writeManifest(options.output, options.url, manifestBundles);
+            await writeManifest(outputDir, options.url, manifestBundles);
         } catch (error) {
             console.log(chalk.yellow(`\nFailed to write manifest: ${error}`));
         }
@@ -512,8 +516,8 @@ export async function runMain(options: CliOptions) {
         registry.register(depSpinner);
 
         try {
-            const sourceDir = join(options.output, hostname);
-            const manifestPath = join(options.output, 'manifest.json');
+            const sourceDir = outputDir;
+            const manifestPath = join(outputDir, 'manifest.json');
             const projectName = `${hostname}-reconstructed`;
 
             const { packageJson, tsconfig, stats } =
@@ -524,8 +528,8 @@ export async function runMain(options: CliOptions) {
                     {
                         onProgress: options.verbose
                             ? (file) => {
-                                  depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
-                              }
+                                depSpinner.text = `Scanning imports: ${file.split('/').slice(-2).join('/')}`;
+                            }
                             : undefined,
                         onVersionProgress: (stage, packageName, result) => {
                             switch (stage) {
@@ -839,7 +843,7 @@ export async function runMain(options: CliOptions) {
         );
     }
     console.log(
-        `    ${chalk.blue('→')} Output directory: ${chalk.cyan(options.output)}`,
+        `    ${chalk.blue('→')} Output directory: ${chalk.cyan(outputDir)}`,
     );
 
     if (!options.includeNodeModules && totalFilesSkipped > 0) {
@@ -891,7 +895,7 @@ export async function runMain(options: CliOptions) {
         try {
             const captureResult = await captureWebsite({
                 url: options.url,
-                outputDir: options.output,
+                outputDir,
                 apiFilter: options.apiFilter,
                 captureStatic: options.captureStatic,
                 captureRenderedHtml: options.captureRenderedHtml,
@@ -1013,10 +1017,10 @@ export async function runMain(options: CliOptions) {
                     const color = status.startsWith('2')
                         ? chalk.green
                         : status.startsWith('4')
-                          ? chalk.yellow
-                          : status.startsWith('5')
-                            ? chalk.red
-                            : chalk.gray;
+                            ? chalk.yellow
+                            : status.startsWith('5')
+                                ? chalk.red
+                                : chalk.gray;
                     return color(`${status}: ${count}`);
                 })
                 .join(', ');
@@ -1030,7 +1034,7 @@ export async function runMain(options: CliOptions) {
                 `    ${chalk.blue('→')} Capture time: ${(captureResult.stats.captureTimeMs / 1000).toFixed(1)}s`,
             );
             console.log(
-                `    ${chalk.blue('→')} Server manifest: ${chalk.cyan(join(options.output, hostname, '_server', 'manifest.json'))}`,
+                `    ${chalk.blue('→')} Server manifest: ${chalk.cyan(join(outputDir, '_server', 'manifest.json'))}`,
             );
 
             // Update CSS stubs with captured bundle content
@@ -1043,12 +1047,7 @@ export async function runMain(options: CliOptions) {
 
                 if (cssAssets.length > 0) {
                     const capturedCssBundles: CapturedCssBundle[] = [];
-                    const staticDir = join(
-                        options.output,
-                        hostname,
-                        '_server',
-                        'static',
-                    );
+                    const staticDir = join(outputDir, '_server', 'static');
 
                     for (const asset of cssAssets) {
                         try {
@@ -1068,7 +1067,7 @@ export async function runMain(options: CliOptions) {
                     }
 
                     if (capturedCssBundles.length > 0) {
-                        const sourceDir = join(options.output, hostname);
+                        const sourceDir = outputDir;
                         const cssStubResult =
                             await updateCssStubsWithCapturedBundles(
                                 sourceDir,
@@ -1076,9 +1075,9 @@ export async function runMain(options: CliOptions) {
                                 {
                                     onProgress: options.verbose
                                         ? (msg) =>
-                                              console.log(
-                                                  chalk.gray(`    ${msg}`),
-                                              )
+                                            console.log(
+                                                chalk.gray(`    ${msg}`),
+                                            )
                                         : undefined,
                                 },
                             );
@@ -1147,11 +1146,7 @@ export async function runMain(options: CliOptions) {
                     '  Tip: Use `web2local serve` to serve the captured API fixtures',
                 ),
             );
-            console.log(
-                chalk.gray(
-                    `  Example: web2local serve ${join(options.output, hostname)}`,
-                ),
-            );
+            console.log(chalk.gray(`  Example: web2local serve ${outputDir}`));
         } catch (error) {
             progress.stop();
             console.log(chalk.red(`✗ API capture failed: ${error}`));
@@ -1161,7 +1156,7 @@ export async function runMain(options: CliOptions) {
 
         // Generate SCSS variable stubs for captured static assets
         // This handles SCSS files that reference undefined variables
-        const captureSourceDir = join(options.output, hostname);
+        const captureSourceDir = outputDir;
         const serverStaticDir = join(captureSourceDir, '_server', 'static');
         const scssVarResult = await generateScssVariableStubs(serverStaticDir, {
             onProgress: options.verbose
@@ -1178,7 +1173,7 @@ export async function runMain(options: CliOptions) {
     // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
     // This ensures bundles loaded via dynamic imports during API capture are available for rebuild
     if (!options.noCapture && !options.noRebuild) {
-        const sourceDir = join(options.output, hostname);
+        const sourceDir = outputDir;
         const syncSpinner = ora({
             text: 'Syncing dynamically loaded bundles...',
             color: 'cyan',
@@ -1306,7 +1301,7 @@ export async function runMain(options: CliOptions) {
 
     // Step 7: Rebuild (enabled by default, skip with --no-rebuild)
     if (!options.noRebuild) {
-        const sourceDir = join(options.output, hostname);
+        const sourceDir = outputDir;
 
         console.log(chalk.bold('\nRebuilding from source:'));
         console.log();
@@ -1378,12 +1373,8 @@ export async function runMain(options: CliOptions) {
             console.log('\nStarting mock server...');
 
             const { runServer } = await import('@web2local/server');
-            const { join } = await import('path');
 
-            const serverOptions = getServerOptions(
-                options,
-                join(options.output, hostname),
-            );
+            const serverOptions = getServerOptions(options, outputDir);
 
             await runServer(serverOptions);
         } else {

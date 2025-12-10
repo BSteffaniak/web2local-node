@@ -120,8 +120,7 @@ export async function captureWebsite(
     const urlObj = new URL(opts.url);
     const hostname = urlObj.hostname;
     const baseOrigin = urlObj.origin;
-    const siteOutputDir = join(opts.outputDir, hostname);
-    const staticOutputDir = join(siteOutputDir, '_server', 'static');
+    const staticOutputDir = join(opts.outputDir, '_server', 'static');
 
     // Crawl settings
     const crawlEnabled = opts.crawl ?? true;
@@ -309,12 +308,12 @@ export async function captureWebsite(
     // Build crawl stats
     const crawlStats: CrawlStats | undefined = crawlEnabled
         ? {
-              pagesVisited: queueStats.pagesVisited,
-              pagesSkipped: queueStats.pagesSkipped,
-              linksDiscovered: queueStats.linksDiscovered,
-              maxDepthReached: queueStats.maxDepthReached,
-              maxPagesReached: queueStats.maxPagesReached,
-          }
+            pagesVisited: queueStats.pagesVisited,
+            pagesSkipped: queueStats.pagesSkipped,
+            linksDiscovered: queueStats.linksDiscovered,
+            maxDepthReached: queueStats.maxDepthReached,
+            maxPagesReached: queueStats.maxPagesReached,
+        }
         : undefined;
 
     opts.onProgress?.({
@@ -348,7 +347,7 @@ export async function captureWebsite(
                 {
                     name: hostname,
                     sourceUrl: opts.url,
-                    outputDir: siteOutputDir,
+                    outputDir: opts.outputDir,
                     defaultPort: 3000,
                     cors: true,
                     delay: {

@@ -16,6 +16,7 @@ import {
     createCaptureProgressHandler,
     createVerboseHandler,
 } from './progress/index.js';
+import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
 
 import {
     extractBundleUrls,
@@ -91,7 +92,10 @@ async function extractFromSourceMapUrl(
     registry: SpinnerRegistry,
 ): Promise<void> {
     const hostname = getHostname(options.url);
-    const outputDir = join(options.output, hostname);
+    const outputDir = resolveOutputDir(options.output, hostname);
+
+    // Check if output directory exists
+    await checkOutputDirectory(outputDir, options.overwrite);
 
     const spinner = ora({
         text: `Extracting from ${chalk.cyan(options.url)}...`,
@@ -211,7 +215,10 @@ async function extractFromPageUrl(
     registry: SpinnerRegistry,
 ): Promise<void> {
     const hostname = getHostname(options.url);
-    const outputDir = join(options.output, hostname);
+    const outputDir = resolveOutputDir(options.output, hostname);
+
+    // Check if output directory exists
+    await checkOutputDirectory(outputDir, options.overwrite);
 
     console.log(chalk.bold.cyan('\n  web2local extract'));
     console.log(chalk.gray('  ' + '─'.repeat(18)));
@@ -340,9 +347,8 @@ async function extractFromPageUrl(
 
             // Reconstruct files on disk
             const reconstructResult = await reconstructSources(result.sources, {
-                outputDir: options.output,
+                outputDir,
                 includeNodeModules: options.includeNodeModules,
-                siteHostname: hostname,
                 bundleName,
             });
 
@@ -436,7 +442,10 @@ async function extractWithCrawl(
     type CapturedAssetInfo = import('@web2local/capture').CapturedAssetInfo;
 
     const hostname = getHostname(options.url);
-    const outputDir = join(options.output, hostname);
+    const outputDir = resolveOutputDir(options.output, hostname);
+
+    // Check if output directory exists
+    await checkOutputDirectory(outputDir, options.overwrite);
 
     console.log(chalk.bold.cyan('\n  web2local extract'));
     console.log(chalk.gray('  ' + '─'.repeat(25)));
@@ -462,7 +471,7 @@ async function extractWithCrawl(
         // Use captureWebsite with a filter for JS/CSS only and skipAssetWrite
         const result = await captureWebsite({
             url: options.url,
-            outputDir: options.output,
+            outputDir,
             apiFilter: [], // Don't capture API calls
             captureStatic: true,
             headless: options.headless ?? true,
@@ -646,9 +655,8 @@ async function extractWithCrawl(
                 const reconstructResult = await reconstructSources(
                     result.sources,
                     {
-                        outputDir: options.output,
+                        outputDir,
                         includeNodeModules: options.includeNodeModules,
-                        siteHostname: hostname,
                         bundleName,
                     },
                 );

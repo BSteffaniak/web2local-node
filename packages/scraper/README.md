@@ -24,9 +24,8 @@ const sourceMaps = await findAllSourceMaps(bundles);
 
 // Reconstruct source files to disk
 const result = await reconstructSources(sourceMaps, {
-    outputDir: './output',
+    outputDir: './output/example.com',
     includeNodeModules: false,
-    siteHostname: 'example.com',
 });
 
 console.log(`Wrote ${result.filesWritten} files`);
@@ -60,9 +59,8 @@ Extracts source files from source maps and writes them to disk with proper direc
 
 ```typescript
 const result = await reconstructSources(sourceMaps, {
-    outputDir: './output',
+    outputDir: './output/example.com',
     includeNodeModules: false,
-    siteHostname: 'example.com',
     bundleName: 'main',
 });
 ```

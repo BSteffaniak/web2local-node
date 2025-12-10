@@ -102,8 +102,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -157,8 +156,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -192,8 +190,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -225,8 +222,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -274,8 +270,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -304,8 +299,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'navigation' }],
             });
@@ -328,8 +322,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'app' }],
             });
@@ -346,8 +339,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'ui' }],
             });
@@ -366,8 +358,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'components' }],
             });
@@ -384,8 +375,7 @@ describe('generateBundleStubs', () => {
             });
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'empty-bundle' }],
             });
@@ -403,8 +393,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [
                     { bundleName: 'custom', entryPoint: 'custom-entry.ts' },
@@ -450,8 +439,7 @@ describe('generateBundleStubs', () => {
             ];
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [{ bundleName: 'app' }],
             });
@@ -488,8 +476,7 @@ describe('generateBundleStubs', () => {
             ];
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [{ bundleName: 'lib' }],
             });
@@ -515,8 +502,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/app.js',
@@ -544,8 +530,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/app.js',
@@ -569,8 +554,7 @@ describe('generateBundleStubs', () => {
 
         test('should handle empty savedBundles and extractedBundles', async () => {
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [],
             });
@@ -588,8 +572,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/app.js',
@@ -623,8 +606,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/deep/nested/bundle.js',
@@ -657,8 +639,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/app.js',
@@ -688,8 +669,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [],
                 extractedBundles: [{ bundleName: 'lib' }],
             });
@@ -716,8 +696,7 @@ describe('generateBundleStubs', () => {
             expect(await fileExists(srcDir)).toBe(false);
 
             await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles: [
                     {
                         url: 'https://example.com/app.js',
@@ -737,7 +716,7 @@ describe('generateBundleStubs', () => {
             expect(await fileExists(srcDir)).toBe(true);
         });
 
-        test('should handle hostname with special characters', async () => {
+        test('should handle hostname with special characters in outputDir', async () => {
             await createFile(
                 tempDir,
                 'my-site.example.com/_bundles/app.js',
@@ -745,8 +724,7 @@ describe('generateBundleStubs', () => {
             );
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'my-site.example.com',
+                outputDir: join(tempDir, 'my-site.example.com'),
                 savedBundles: [
                     {
                         url: 'https://my-site.example.com/app.js',
@@ -789,8 +767,7 @@ describe('generateBundleStubs', () => {
             }
 
             const result = await generateBundleStubs({
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
                 savedBundles,
                 extractedBundles: [],
             });
@@ -835,8 +812,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(1);
@@ -859,8 +835,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved[0].localPath).toContain('js');
@@ -880,8 +855,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved[0].localPath).toContain('_bundles');
@@ -906,8 +880,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved[0].size).toBe(content.length);
@@ -932,8 +905,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved.find((b) => b.url.endsWith('.js'))?.type).toBe(
@@ -956,8 +928,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved[0].url).toBe('https://example.com/app.js');
@@ -975,8 +946,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved[0].localPath).toContain(tempDir);
@@ -1010,8 +980,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             // Should still be in saved array but didn't actually write
@@ -1041,8 +1010,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             const savedContent = await readFile(
@@ -1084,8 +1052,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(3);
@@ -1111,8 +1078,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(2);
@@ -1132,7 +1098,6 @@ describe('saveBundles', () => {
         test('should handle empty bundles array', async () => {
             const result = await saveBundles([], {
                 outputDir: tempDir,
-                siteHostname: 'example.com',
             });
 
             expect(result.saved).toHaveLength(0);
@@ -1151,8 +1116,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(1);
@@ -1171,8 +1135,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(1);
@@ -1191,8 +1154,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(1);
@@ -1213,8 +1175,7 @@ describe('saveBundles', () => {
             ];
 
             const result = await saveBundles(bundlesWithoutMaps, {
-                outputDir: tempDir,
-                siteHostname: 'example.com',
+                outputDir: join(tempDir, 'example.com'),
             });
 
             expect(result.saved).toHaveLength(1);

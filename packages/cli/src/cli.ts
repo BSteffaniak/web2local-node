@@ -22,7 +22,10 @@ function normalizeUrl(url: string): string {
 
 export interface ExtractOptions {
     url: string;
-    output: string;
+    /** Output directory. If not specified, defaults to ./output/<hostname> */
+    output?: string;
+    /** Clear existing output directory without prompting */
+    overwrite: boolean;
     verbose: boolean;
     includeNodeModules: boolean;
     concurrency: number;
@@ -39,7 +42,10 @@ export interface ExtractOptions {
 
 export interface CliOptions {
     url: string;
-    output: string;
+    /** Output directory. If not specified, defaults to ./output/<hostname> */
+    output?: string;
+    /** Clear existing output directory without prompting */
+    overwrite: boolean;
     verbose: boolean;
     includeNodeModules: boolean;
     concurrency: number;
@@ -114,7 +120,8 @@ interface ServeCliOptions {
  * CLI options for extract command
  */
 interface ExtractCliOptions {
-    output: string;
+    output?: string;
+    overwrite?: boolean;
     verbose?: boolean;
     includeNodeModules?: boolean;
     concurrency: string;
@@ -175,7 +182,15 @@ export function parseArgs(): CliOptions {
         )
         .version(VERSION)
         .argument('<url>', 'URL of the website to extract source maps from')
-        .option('-o, --output <dir>', 'Output directory', './output')
+        .option(
+            '-o, --output <dir>',
+            'Output directory (default: ./output/<hostname>)',
+        )
+        .option(
+            '--overwrite',
+            'Clear existing output directory without prompting',
+            false,
+        )
         .option('-v, --verbose', 'Enable verbose logging', false)
         .option(
             '-n, --include-node-modules',
@@ -353,6 +368,7 @@ export function parseArgs(): CliOptions {
             const fullOptions: CliOptions = {
                 url: normalizedUrl,
                 output: options.output,
+                overwrite: options.overwrite || false,
                 verbose: options.verbose || false,
                 includeNodeModules: options.includeNodeModules || false,
                 concurrency: parseInt(options.concurrency, 10),
@@ -454,7 +470,15 @@ export function parseArgs(): CliOptions {
             '<url>',
             'URL of a page to find bundles, or a direct source map URL',
         )
-        .option('-o, --output <dir>', 'Output directory', './output')
+        .option(
+            '-o, --output <dir>',
+            'Output directory (default: ./output/<hostname>)',
+        )
+        .option(
+            '--overwrite',
+            'Clear existing output directory without prompting',
+            false,
+        )
         .option('-v, --verbose', 'Enable verbose logging', false)
         .option(
             '-n, --include-node-modules',
@@ -488,6 +512,7 @@ export function parseArgs(): CliOptions {
             await runExtract({
                 url: normalizeUrl(url),
                 output: opts.output,
+                overwrite: opts.overwrite || false,
                 verbose: opts.verbose || false,
                 includeNodeModules: opts.includeNodeModules || false,
                 concurrency: parseInt(opts.concurrency, 10),
@@ -508,6 +533,7 @@ export function parseArgs(): CliOptions {
     return {
         url,
         output: options.output,
+        overwrite: options.overwrite || false,
         verbose: options.verbose || false,
         includeNodeModules: options.includeNodeModules || false,
         concurrency: parseInt(options.concurrency, 10),

@@ -47,15 +47,18 @@ web2local <url> [options]
 
 Runs the full pipeline: extract sources, analyze dependencies, capture API calls, and rebuild.
 
-| Option                  | Default    | Description             |
-| ----------------------- | ---------- | ----------------------- |
-| `-o, --output <dir>`    | `./output` | Output directory        |
-| `-v, --verbose`         | `false`    | Enable verbose logging  |
-| `--no-capture`          | —          | Skip API/asset capture  |
-| `--no-rebuild`          | —          | Skip build step         |
-| `--no-crawl`            | —          | Only process entry page |
-| `--crawl-max-pages <n>` | `100`      | Max pages to crawl      |
-| `--serve`               | `false`    | Start mock server after |
+| Option                  | Default               | Description                                                              |
+| ----------------------- | --------------------- | ------------------------------------------------------------------------ |
+| `-o, --output <dir>`    | `./output/<hostname>` | Output directory (explicit path used exactly, default includes hostname) |
+| `--overwrite`           | `false`               | Overwrite output directory without prompting                             |
+| `-v, --verbose`         | `false`               | Enable verbose logging                                                   |
+| `--no-capture`          | —                     | Skip API/asset capture                                                   |
+| `--no-rebuild`          | —                     | Skip build step                                                          |
+| `--no-crawl`            | —                     | Only process entry page                                                  |
+| `--crawl-max-pages <n>` | `100`                 | Max pages to crawl                                                       |
+| `--serve`               | `false`               | Start mock server after                                                  |
+
+When `--output` is not specified, the default is `./output/<hostname>`. When specified explicitly, the exact path is used (no hostname appended). If the output directory exists, you'll be prompted to confirm overwriting unless `--overwrite` is passed.
 
 ### Commands
 

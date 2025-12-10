@@ -7,11 +7,11 @@ import { shouldIncludeSource } from '@web2local/sourcemap';
 import type { BundleWithContent } from './scraper.js';
 
 export interface ReconstructionOptions {
+    /** The full output directory path (e.g., ./output/example.com) */
     outputDir: string;
     includeNodeModules: boolean;
     /** Internal packages (not on npm) that should always be extracted from node_modules */
     internalPackages?: Set<string>;
-    siteHostname: string;
     bundleName: string;
 }
 
@@ -84,11 +84,7 @@ export async function reconstructSources(
         filesSkipped: 0,
         filesUnchanged: 0,
         errors: [],
-        outputPath: join(
-            options.outputDir,
-            options.siteHostname,
-            options.bundleName,
-        ),
+        outputPath: join(options.outputDir, options.bundleName),
     };
 
     for (const file of files) {
@@ -254,17 +250,13 @@ export interface SavedBundle {
 export async function saveBundles(
     bundlesWithoutMaps: BundleWithContent[],
     options: {
+        /** The full output directory path (e.g., ./output/example.com) */
         outputDir: string;
-        siteHostname: string;
     },
 ): Promise<{ saved: SavedBundle[]; errors: string[] }> {
     const saved: SavedBundle[] = [];
     const errors: string[] = [];
-    const bundlesDir = join(
-        options.outputDir,
-        options.siteHostname,
-        '_bundles',
-    );
+    const bundlesDir = join(options.outputDir, '_bundles');
 
     for (const { bundle, content } of bundlesWithoutMaps) {
         try {
@@ -309,8 +301,8 @@ export async function saveBundles(
  * Options for generating bundle stub entry point
  */
 export interface BundleStubOptions {
+    /** The full output directory path (e.g., ./output/example.com) */
     outputDir: string;
-    siteHostname: string;
     /** Bundles saved to _bundles/ (no source maps available) */
     savedBundles: SavedBundle[];
     /** Bundles that were extracted from source maps (to include re-exports) */
@@ -377,7 +369,7 @@ export async function generateBundleStubs(
         errors: [],
     };
 
-    const siteDir = join(options.outputDir, options.siteHostname);
+    const siteDir = options.outputDir;
     const srcDir = join(siteDir, 'src');
     const entryPointPath = join(srcDir, 'index.ts');
 
