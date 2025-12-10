@@ -169,12 +169,12 @@ program
                     method === 'GET'
                         ? pc.green
                         : method === 'POST'
-                            ? pc.yellow
-                            : method === 'PUT'
-                                ? pc.blue
-                                : method === 'DELETE'
-                                    ? pc.red
-                                    : pc.gray;
+                          ? pc.yellow
+                          : method === 'PUT'
+                            ? pc.blue
+                            : method === 'DELETE'
+                              ? pc.red
+                              : pc.gray;
 
                 console.log(`  ${methodColor(pc.bold(method))}`);
                 for (const fixture of fixtures) {

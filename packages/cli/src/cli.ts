@@ -3,6 +3,23 @@ import type { ServerOptions } from '@web2local/server';
 import { VERSION } from '@web2local/utils';
 import { runMain } from './index.js';
 
+/**
+ * Normalize a URL by adding https:// if no protocol is specified.
+ * This allows users to pass URLs like "example.com" without the protocol.
+ */
+function normalizeUrl(url: string): string {
+    // Don't modify if it already has a protocol or is a data URL
+    if (
+        url.startsWith('http://') ||
+        url.startsWith('https://') ||
+        url.startsWith('data:')
+    ) {
+        return url;
+    }
+    // Add https:// by default
+    return `https://${url}`;
+}
+
 export interface ExtractOptions {
     url: string;
     output: string;
@@ -154,7 +171,7 @@ export function parseArgs(): CliOptions {
         .enablePositionalOptions()
         .description(
             'Extract and reconstruct original source code from publicly available source maps. ' +
-            'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
+                'By default, this will extract sources, generate package.json, capture API calls, and run a full rebuild.',
         )
         .version(VERSION)
         .argument('<url>', 'URL of the website to extract source maps from')
@@ -333,8 +350,9 @@ export function parseArgs(): CliOptions {
             '10',
         )
         .action(async (url, options) => {
+            const normalizedUrl = normalizeUrl(url);
             const fullOptions: CliOptions = {
-                url,
+                url: normalizedUrl,
                 output: options.output,
                 verbose: options.verbose || false,
                 includeNodeModules: options.includeNodeModules || false,
@@ -469,7 +487,7 @@ export function parseArgs(): CliOptions {
         .action(async (url: string, opts: ExtractCliOptions) => {
             const { runExtract } = await import('./run-extract.js');
             await runExtract({
-                url,
+                url: normalizeUrl(url),
                 output: opts.output,
                 verbose: opts.verbose || false,
                 includeNodeModules: opts.includeNodeModules || false,
