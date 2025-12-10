@@ -196,6 +196,7 @@ export async function captureWebsite(
         htmlCaptured: false,
         finalUrl: null,
         firstPageHandled: false,
+        resolvedBaseOrigin: null,
     };
 
     try {

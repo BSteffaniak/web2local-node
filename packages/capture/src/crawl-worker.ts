@@ -94,6 +94,8 @@ export interface SharedCrawlState {
     finalUrl: string | null;
     /** Lock for first page handling */
     firstPageHandled: boolean;
+    /** The resolved base origin after any redirects (for same-origin link filtering) */
+    resolvedBaseOrigin: string | null;
 }
 
 /**
@@ -117,7 +119,7 @@ export class CrawlWorker {
         private workerId: number,
         private options: CrawlWorkerOptions,
         private sharedState: SharedCrawlState,
-    ) {}
+    ) { }
 
     /**
      * Build a PageProgressEvent with current queue state
@@ -301,6 +303,17 @@ export class CrawlWorker {
             const finalUrl = page.url();
             this.sharedState.finalUrl = finalUrl;
 
+            // Update resolved base origin for link filtering
+            // This ensures links are filtered against the actual destination origin,
+            // not the original URL's origin (important for redirects like bob.com -> www.robert.com)
+            try {
+                const finalOrigin = new URL(finalUrl).origin;
+                this.sharedState.resolvedBaseOrigin = finalOrigin;
+            } catch {
+                // If URL parsing fails, fall back to original baseOrigin
+                this.sharedState.resolvedBaseOrigin = baseOrigin;
+            }
+
             // Handle redirects
             if (finalUrl !== item.url) {
                 this.verbose(`Redirected to ${finalUrl}`, 'info', {
@@ -345,7 +358,12 @@ export class CrawlWorker {
         if (crawlEnabled && item.depth < maxDepth) {
             onProgress?.(this.buildProgressEvent('extracting-links', item));
 
-            const links = await extractPageLinks(page, baseOrigin);
+            // Use resolved base origin (after redirects) for same-origin filtering
+            // This ensures links are properly discovered when the initial URL redirects
+            // (e.g., bob.com -> www.robert.com)
+            const effectiveBaseOrigin =
+                this.sharedState.resolvedBaseOrigin || baseOrigin;
+            const links = await extractPageLinks(page, effectiveBaseOrigin);
 
             for (const link of links) {
                 if (queue.add(link, item.depth + 1)) {
