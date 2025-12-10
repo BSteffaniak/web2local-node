@@ -75,6 +75,45 @@ export type SourceMapErrorCode =
     (typeof SourceMapErrorCode)[keyof typeof SourceMapErrorCode];
 
 // ============================================================================
+// RESULT TYPE - Functional error handling
+// ============================================================================
+
+/**
+ * A discriminated union for operations that can fail.
+ * Use instead of throwing exceptions or returning Error objects as values.
+ *
+ * @example
+ * function divide(a: number, b: number): Result<number, string> {
+ *     if (b === 0) return Err('Division by zero');
+ *     return Ok(a / b);
+ * }
+ *
+ * const result = divide(10, 2);
+ * if (result.ok) {
+ *     console.log(result.value); // 5
+ * } else {
+ *     console.error(result.error);
+ * }
+ */
+export type Result<T, E = string> =
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E };
+
+/**
+ * Create a successful result
+ */
+export function Ok<T>(value: T): Result<T, never> {
+    return { ok: true, value };
+}
+
+/**
+ * Create a failed result
+ */
+export function Err<E>(error: E): Result<never, E> {
+    return { ok: false, error };
+}
+
+// ============================================================================
 // SOURCE MAP TYPES
 // ============================================================================
 
@@ -132,43 +171,8 @@ export interface IndexMapV3 {
 export type SourceMap = SourceMapV3 | IndexMapV3;
 
 // ============================================================================
-// RESULT TYPE - Functional error handling
+// SOURCE MAP EXTRACTION TYPES
 // ============================================================================
-
-/**
- * A discriminated union for operations that can fail.
- * Use instead of throwing exceptions or returning Error objects as values.
- *
- * @example
- * function divide(a: number, b: number): Result<number, string> {
- *     if (b === 0) return Err('Division by zero');
- *     return Ok(a / b);
- * }
- *
- * const result = divide(10, 2);
- * if (result.ok) {
- *     console.log(result.value); // 5
- * } else {
- *     console.error(result.error);
- * }
- */
-export type Result<T, E = string> =
-    | { readonly ok: true; readonly value: T }
-    | { readonly ok: false; readonly error: E };
-
-/**
- * Create a successful result
- */
-export function Ok<T>(value: T): Result<T, never> {
-    return { ok: true, value };
-}
-
-/**
- * Create a failed result
- */
-export function Err<E>(error: E): Result<never, E> {
-    return { ok: false, error };
-}
 
 /**
  * A source file extracted from a source map
@@ -201,7 +205,10 @@ export interface SourceMapExtractionResult {
     readonly bundleUrl: string;
     readonly sourceMapUrl: string;
     readonly sources: readonly ExtractedSource[];
+    /** Fatal errors that prevented extraction */
     readonly errors: readonly Error[];
+    /** Non-fatal warnings (e.g., sourcesContent length mismatch) */
+    readonly warnings?: readonly string[];
     readonly metadata: SourceMapMetadata;
 }
 
@@ -283,105 +290,42 @@ export interface SourceMapValidationResult {
 }
 
 // ============================================================================
-// LEGACY TYPES (for backwards compatibility)
+// DEPENDENCY ANALYSIS TYPES
 // ============================================================================
 
 /**
- * Information about a JavaScript/CSS bundle
+ * Version confidence level for detected dependencies
  */
-export interface BundleInfo {
-    /** The URL of the bundle */
-    url: string;
-    /** The type of bundle */
-    type: 'script' | 'stylesheet';
-    /** The URL of the source map, if available */
-    sourceMapUrl?: string;
-}
+export type VersionConfidence =
+    | 'exact'
+    | 'high'
+    | 'medium'
+    | 'low'
+    | 'unverified';
 
 /**
- * Result of extracting sources from a source map
+ * Source of version information
  */
-export interface SourceMapResult {
-    /** The URL of the bundle this source map belongs to */
-    bundleUrl: string;
-    /** The URL of the source map */
-    sourceMapUrl: string;
-    /** The extracted source files */
-    files: ExtractedSource[];
-    /** Any errors encountered during extraction */
-    errors: string[];
-}
+export type VersionSource =
+    | 'package.json'
+    | 'banner'
+    | 'lockfile-path'
+    | 'version-constant'
+    | 'sourcemap-path'
+    | 'fingerprint'
+    | 'fingerprint-minified'
+    | 'custom-build'
+    | 'peer-dep'
+    | 'npm-latest';
 
 /**
- * Options for reconstruction
- */
-export interface ReconstructionOptions {
-    /** The output directory */
-    outputDir: string;
-    /** Whether to include node_modules */
-    includeNodeModules: boolean;
-    /** Internal packages that should always be extracted */
-    internalPackages?: Set<string>;
-    /** The hostname of the site being extracted */
-    siteHostname: string;
-    /** The name of the bundle being extracted */
-    bundleName: string;
-}
-
-/**
- * Result of reconstructing sources
- */
-export interface ReconstructionResult {
-    /** Number of files written */
-    filesWritten: number;
-    /** Number of files skipped */
-    filesSkipped: number;
-    /** Number of files unchanged */
-    filesUnchanged: number;
-    /** Any errors encountered */
-    errors: string[];
-    /** The output path */
-    outputPath: string;
-}
-
-/**
- * Information about a detected alias
- */
-export interface AliasInfo {
-    /** The alias pattern (e.g., '@components') */
-    pattern: string;
-    /** The target path (e.g., './src/components') */
-    target: string;
-}
-
-/**
- * Progress callback type
- */
-export type ProgressCallback = (message: string) => void;
-
-/**
- * Verbose logging callback type
- */
-export type VerboseCallback = (message: string) => void;
-
-/**
- * Information about a dependency
+ * Information about a detected dependency
  */
 export interface DependencyInfo {
     name: string;
     version: string | null;
-    confidence?: 'exact' | 'high' | 'medium' | 'low' | 'unverified';
-    versionSource?:
-        | 'package.json'
-        | 'banner'
-        | 'lockfile-path'
-        | 'version-constant'
-        | 'sourcemap-path'
-        | 'fingerprint'
-        | 'fingerprint-minified'
-        | 'custom-build'
-        | 'peer-dep'
-        | 'npm-latest';
+    confidence?: VersionConfidence;
+    versionSource?: VersionSource;
     importedFrom: string[];
     isPrivate?: boolean;
 }
@@ -413,32 +357,7 @@ export interface DetectedProjectConfig {
 }
 
 /**
- * Mapping of alias to the actual path
- */
-export interface AliasPathMapping {
-    alias: string;
-    actualPackage: string;
-    relativePath: string;
-}
-
-/**
- * Workspace package mapping
- */
-export interface WorkspacePackageMapping {
-    name: string;
-    relativePath: string;
-}
-
-/**
- * Subpath mapping
- */
-export interface SubpathMapping {
-    specifier: string;
-    relativePath: string;
-}
-
-/**
- * Alias map
+ * Alias map for path resolution
  */
 export interface AliasMap {
     aliases: Map<string, string>;
@@ -446,7 +365,7 @@ export interface AliasMap {
 }
 
 /**
- * Inferred alias
+ * Inferred alias with confidence level
  */
 export interface InferredAlias {
     alias: string;
@@ -454,6 +373,10 @@ export interface InferredAlias {
     evidence: string[];
     confidence: 'high' | 'medium' | 'low';
 }
+
+// ============================================================================
+// API CAPTURE TYPES
+// ============================================================================
 
 /**
  * HTTP methods supported for API capture

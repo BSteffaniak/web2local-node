@@ -1,19 +1,20 @@
 /**
  * Type definitions for web2local serve
- * These mirror the types from the capture tool
  */
 
-/**
- * HTTP methods
- */
-export type HttpMethod =
-    | 'GET'
-    | 'POST'
-    | 'PUT'
-    | 'DELETE'
-    | 'PATCH'
-    | 'HEAD'
-    | 'OPTIONS';
+import type { ApiFixture } from '@web2local/types';
+
+// Re-export from @web2local/types
+export type {
+    HttpMethod,
+    CapturedRequest,
+    CapturedResponse,
+    CapturedRedirect,
+    FixtureIndexEntry,
+    FixtureIndex,
+    ServerManifest,
+    ApiFixture,
+} from '@web2local/types';
 
 /**
  * Server configuration from manifest
@@ -34,108 +35,6 @@ export interface ServerConfig {
 export interface RouteConfig {
     api: string;
     static: string;
-}
-
-/**
- * A redirect captured from the original site
- */
-export interface CapturedRedirect {
-    /** Original requested path (without origin) */
-    from: string;
-    /** Final path after redirect (without origin) */
-    to: string;
-    /** HTTP status code (301, 302, 307, 308) */
-    status: number;
-}
-
-/**
- * Server manifest - main configuration file
- */
-export interface ServerManifest {
-    name: string;
-    sourceUrl: string;
-    capturedAt: string;
-    server: ServerConfig;
-    routes: RouteConfig;
-    fixtures: {
-        count: number;
-        indexFile: string;
-    };
-    static: {
-        enabled: boolean;
-        entrypoint: string;
-        assetCount: number;
-        /**
-         * Path prefix from the original source URL.
-         * For example, if capturing https://example.com/games/snake/,
-         * pathPrefix would be "/games/snake/".
-         * Used to redirect root requests to the correct subpath.
-         */
-        pathPrefix?: string;
-    };
-    /** Captured redirects to replay */
-    redirects?: CapturedRedirect[];
-}
-
-/**
- * Fixture index entry
- */
-export interface FixtureIndexEntry {
-    id: string;
-    file: string;
-    method: HttpMethod;
-    pattern: string;
-    params: string[];
-    priority: number;
-}
-
-/**
- * Fixture index file structure
- */
-export interface FixtureIndex {
-    generatedAt: string;
-    fixtures: FixtureIndexEntry[];
-}
-
-/**
- * Captured request in fixture
- */
-export interface CapturedRequest {
-    method: HttpMethod;
-    url: string;
-    path: string;
-    pattern: string;
-    params: string[];
-    query: Record<string, string>;
-    headers: Record<string, string>;
-    body?: unknown;
-    bodyRaw?: string;
-}
-
-/**
- * Captured response in fixture
- */
-export interface CapturedResponse {
-    status: number;
-    statusText: string;
-    headers: Record<string, string>;
-    body: unknown;
-    bodyRaw?: string;
-    bodyType: 'json' | 'text' | 'binary';
-}
-
-/**
- * API fixture - a captured request/response pair
- */
-export interface ApiFixture {
-    id: string;
-    request: CapturedRequest;
-    response: CapturedResponse;
-    metadata: {
-        capturedAt: string;
-        responseTimeMs: number;
-        sourcePageUrl: string;
-    };
 }
 
 /**

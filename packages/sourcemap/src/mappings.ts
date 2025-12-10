@@ -134,9 +134,6 @@ function decodeVlqSegment(
 // VALIDATION HELPERS
 // ============================================================================
 
-// Alias for convenience within this module
-const validationError = createValidationErrorResult;
-
 /**
  * Human-readable field names for VLQ mapping segments
  */
@@ -221,7 +218,7 @@ export function validateMappings(
             if (segmentLength === 0 && hasSegmentContent) {
                 // Empty segment after content on this line (e.g., "AAAA," or "AAAA,,")
                 errors.push(
-                    validationError(
+                    createValidationErrorResult(
                         SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
                         'Invalid mapping: contains empty segment (0 fields)',
                         'mappings',
@@ -243,7 +240,7 @@ export function validateMappings(
             if (segmentLength === 0 && charCode === CHAR_COMMA) {
                 // Leading comma on a line (e.g., ";,AAAA" or ",AAAA")
                 errors.push(
-                    validationError(
+                    createValidationErrorResult(
                         SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
                         'Invalid mapping: contains empty segment (0 fields)',
                         'mappings',
@@ -270,7 +267,7 @@ export function validateMappings(
                     const error = decodeResult.error;
                     if (error.type === 'invalid_char') {
                         errors.push(
-                            validationError(
+                            createValidationErrorResult(
                                 SourceMapErrorCode.INVALID_VLQ,
                                 `Invalid VLQ: contains non-base64 character '${error.char}' at position ${error.position}`,
                                 'mappings',
@@ -281,7 +278,7 @@ export function validateMappings(
                     } else {
                         // error.type === 'incomplete'
                         errors.push(
-                            validationError(
+                            createValidationErrorResult(
                                 SourceMapErrorCode.INVALID_VLQ,
                                 `Invalid VLQ at ${segmentLocation}: Missing continuation digits`,
                                 'mappings',
@@ -297,7 +294,7 @@ export function validateMappings(
                     // - decodeVlqSegment only succeeds with valid base64 chars, always producing >= 1 value
                     if (values.length === 2 || values.length === 3) {
                         errors.push(
-                            validationError(
+                            createValidationErrorResult(
                                 SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
                                 `Invalid mapping segment at ${segmentLocation}: ${values.length} fields (must be 1, 4, or 5)`,
                                 'mappings',
@@ -305,7 +302,7 @@ export function validateMappings(
                         );
                     } else if (values.length > 5) {
                         errors.push(
-                            validationError(
+                            createValidationErrorResult(
                                 SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
                                 `Invalid mapping segment at ${segmentLocation}: ${values.length} fields (must be 1, 4, or 5)`,
                                 'mappings',
@@ -319,7 +316,7 @@ export function validateMappings(
                             const v = values[i];
                             if (v > MAX_INT32 || v < MIN_INT32) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
                                         `Mapping ${getFieldName(i)} at ${segmentLocation} exceeds 32-bit range: ${v}`,
                                         'mappings',
@@ -332,7 +329,7 @@ export function validateMappings(
                         accColumn += values[0];
                         if (accColumn < 0) {
                             errors.push(
-                                validationError(
+                                createValidationErrorResult(
                                     SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
                                     `Mapping column at ${segmentLocation} is negative: ${accColumn}`,
                                     'mappings',
@@ -346,7 +343,7 @@ export function validateMappings(
                             accSourceIndex += values[1];
                             if (accSourceIndex < 0) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
                                         `Mapping source index at ${segmentLocation} is negative: ${accSourceIndex}`,
                                         'mappings',
@@ -354,7 +351,7 @@ export function validateMappings(
                                 );
                             } else if (accSourceIndex >= sourcesLength) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
                                         `Mapping source index at ${segmentLocation} is out of bounds: ${accSourceIndex} >= ${sourcesLength}`,
                                         'mappings',
@@ -366,7 +363,7 @@ export function validateMappings(
                             accOriginalLine += values[2];
                             if (accOriginalLine < 0) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
                                         `Mapping original line at ${segmentLocation} is negative: ${accOriginalLine}`,
                                         'mappings',
@@ -378,7 +375,7 @@ export function validateMappings(
                             accOriginalColumn += values[3];
                             if (accOriginalColumn < 0) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
                                         `Mapping original column at ${segmentLocation} is negative: ${accOriginalColumn}`,
                                         'mappings',
@@ -393,7 +390,7 @@ export function validateMappings(
                             accNameIndex += values[4];
                             if (accNameIndex < 0) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
                                         `Mapping name index at ${segmentLocation} is negative: ${accNameIndex}`,
                                         'mappings',
@@ -401,7 +398,7 @@ export function validateMappings(
                                 );
                             } else if (accNameIndex >= namesLength) {
                                 errors.push(
-                                    validationError(
+                                    createValidationErrorResult(
                                         SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
                                         `Mapping name index at ${segmentLocation} is out of bounds: ${accNameIndex} >= ${namesLength}`,
                                         'mappings',

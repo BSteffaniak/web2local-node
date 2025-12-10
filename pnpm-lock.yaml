@@ -115,6 +115,9 @@ importers:
       '@web2local/ast':
         specifier: 0.0.1
         version: link:../ast
+      '@web2local/types':
+        specifier: 0.0.1
+        version: link:../types
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -295,6 +298,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.6
         version: 1.19.7(hono@4.10.7)
+      '@web2local/types':
+        specifier: 0.0.1
+        version: link:../types
       commander:
         specifier: ^14.0.2
         version: 14.0.2

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createSignalWithTimeout } from '../src/utils/signal.js';
+import { createSignalWithTimeout } from '../src/index.js';
 
 describe('createSignalWithTimeout', () => {
     describe('no arguments', () => {

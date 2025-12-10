@@ -24,6 +24,7 @@
     "license": "MIT",
     "dependencies": {
         "@hono/node-server": "^1.19.6",
+        "@web2local/types": "0.0.1",
         "commander": "^14.0.2",
         "hono": "^4.10.7",
         "picocolors": "^1.1.1"

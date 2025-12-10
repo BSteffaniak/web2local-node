@@ -12,7 +12,11 @@ import type {
     SourceMapDiscoveryResult,
     DiscoverSourceMapOptions,
 } from '@web2local/types';
-import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
+import {
+    BROWSER_HEADERS,
+    robustFetch,
+    createSignalWithTimeout,
+} from '@web2local/http';
 import {
     SOURCE_MAP_HEADERS,
     VALID_SOURCE_MAP_CONTENT_TYPES,
@@ -20,7 +24,6 @@ import {
     ALLOW_MISSING_CONTENT_TYPE,
 } from './constants.js';
 import { resolveSourceMapUrl, isDataUri } from './utils/url.js';
-import { createSignalWithTimeout } from './utils/signal.js';
 
 // ============================================================================
 // HEADER DETECTION

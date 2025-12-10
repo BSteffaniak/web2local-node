@@ -125,14 +125,9 @@ export interface SourceMapDiscoveryCache {
     fetchedAt: number;
 }
 
-export interface DependencyInfo {
-    name: string;
-    version: string | null;
-    confidence?: 'exact' | 'high' | 'medium' | 'low' | 'unverified';
-    versionSource?: string;
-    importedFrom: string[];
-    isPrivate?: boolean;
-}
+// Import and re-export DependencyInfo from @web2local/types
+import type { DependencyInfo } from '@web2local/types';
+export type { DependencyInfo } from '@web2local/types';
 
 export interface DependencyAnalysisCache {
     /** Hash of extracted files (paths + content hashes) */

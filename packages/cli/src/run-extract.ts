@@ -333,13 +333,13 @@ async function extractFromPageUrl(
                 }
             }
 
-            if (result.files.length === 0) {
+            if (result.sources.length === 0) {
                 extractSpinner.info(`${bundleName}: No source files found`);
                 continue;
             }
 
             // Reconstruct files on disk
-            const reconstructResult = await reconstructSources(result.files, {
+            const reconstructResult = await reconstructSources(result.sources, {
                 outputDir: options.output,
                 includeNodeModules: options.includeNodeModules,
                 siteHostname: hostname,
@@ -354,7 +354,7 @@ async function extractFromPageUrl(
                 bundleUrl: bundle.url,
                 sourceMapUrl: bundle.sourceMapUrl!,
                 filesExtracted: reconstructResult.filesWritten,
-                files: result.files.map((f) => f.path).slice(0, 100),
+                files: result.sources.map((f) => f.path).slice(0, 100),
             });
 
             extractSpinner.succeed(
@@ -611,13 +611,13 @@ async function extractWithCrawl(
                     }
                 }
 
-                if (result.files.length === 0) {
+                if (result.sources.length === 0) {
                     extractSpinner.info(`${bundleName}: No source files found`);
                     continue;
                 }
 
                 const reconstructResult = await reconstructSources(
-                    result.files,
+                    result.sources,
                     {
                         outputDir: options.output,
                         includeNodeModules: options.includeNodeModules,
@@ -633,7 +633,7 @@ async function extractWithCrawl(
                     bundleUrl: bundle.url,
                     sourceMapUrl: bundle.sourceMapUrl!,
                     filesExtracted: reconstructResult.filesWritten,
-                    files: result.files.map((f) => f.path).slice(0, 100),
+                    files: result.sources.map((f) => f.path).slice(0, 100),
                 });
 
                 extractSpinner.succeed(

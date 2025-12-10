@@ -24,7 +24,7 @@ export {
 // From sourcemap.ts
 export {
     type ExtractedSource,
-    type SourceMapResult,
+    type SourceMapExtractionResult,
     extractSourcesFromMap,
     normalizePath,
     shouldIncludeSource,

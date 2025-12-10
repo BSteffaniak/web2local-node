@@ -176,7 +176,7 @@ export async function createApp(options: ServerOptions): Promise<{
 
             // Fallback to index.html for SPA routing
             app.get('*', async (c) => {
-                const entrypoint = manifest.static.entrypoint;
+                const entrypoint = manifest.static.entrypoint ?? 'index.html';
                 const indexPath = join(staticDir, entrypoint);
 
                 try {

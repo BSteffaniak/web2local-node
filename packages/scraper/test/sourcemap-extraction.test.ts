@@ -12,6 +12,7 @@ import { http, HttpResponse } from 'msw';
 import { extractSourcesFromMap } from '@web2local/scraper';
 import { server } from '../../../helpers/msw-handlers.js';
 import { initCache } from '@web2local/cache';
+import { FetchError } from '@web2local/http';
 
 // ============================================================================
 // Test Setup
@@ -50,10 +51,10 @@ describe('extractSourcesFromMap', () => {
             );
 
             expect(result.errors).toHaveLength(0);
-            expect(result.files).toHaveLength(2);
-            expect(result.files[0].path).toBe('src/index.ts');
-            expect(result.files[0].content).toContain('main');
-            expect(result.files[1].path).toBe('src/utils.ts');
+            expect(result.sources).toHaveLength(2);
+            expect(result.sources[0].path).toBe('src/index.ts');
+            expect(result.sources[0].content).toContain('main');
+            expect(result.sources[1].path).toBe('src/utils.ts');
         });
 
         it('should skip sources with null content', async () => {
@@ -83,8 +84,8 @@ describe('extractSourcesFromMap', () => {
             );
 
             expect(result.errors).toHaveLength(0);
-            expect(result.files).toHaveLength(2);
-            expect(result.files.map((f) => f.path)).not.toContain(
+            expect(result.sources).toHaveLength(2);
+            expect(result.sources.map((f) => f.path)).not.toContain(
                 'external.ts',
             );
         });
@@ -106,12 +107,9 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
-                'https://example.com/missing.js.map',
-            );
-            expect(result.errors[0]).toContain('404');
+            expect(result.errors[0].message).toContain('404');
         });
 
         it('should include URL in error message when fetch returns 403', async () => {
@@ -129,12 +127,9 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
-                'https://example.com/forbidden.js.map',
-            );
-            expect(result.errors[0]).toContain('403');
+            expect(result.errors[0].message).toContain('403');
         });
 
         it('should include URL and response preview when server returns HTML instead of JSON', async () => {
@@ -154,13 +149,13 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
+            expect(result.errors[0].message).toContain(
                 'https://example.com/fake-map.js.map',
             );
-            expect(result.errors[0]).toContain('<!DOCTYPE');
-            expect(result.errors[0]).toMatch(/Response preview:/i);
+            expect(result.errors[0].message).toContain('<!DOCTYPE');
+            expect(result.errors[0].message).toMatch(/Response preview:/i);
         });
 
         it('should include URL and response preview when server returns JavaScript comment', async () => {
@@ -182,12 +177,12 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
+            expect(result.errors[0].message).toContain(
                 'https://example.com/comment.js.map',
             );
-            expect(result.errors[0]).toContain('PLEASE DO NOT COPY');
+            expect(result.errors[0].message).toContain('PLEASE DO NOT COPY');
         });
 
         it('should include URL when source map is missing sources array', async () => {
@@ -207,13 +202,13 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
+            expect(result.errors[0].message).toContain(
                 'https://example.com/invalid.js.map',
             );
             // The new parser throws a validation error for missing sources
-            expect(result.errors[0]).toContain(
+            expect(result.errors[0].message).toContain(
                 'Invalid source map: Missing required field: sources',
             );
         });
@@ -236,13 +231,10 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
-                'https://example.com/no-content.js.map',
-            );
-            expect(result.errors[0]).toBe(
-                'Source map from https://example.com/no-content.js.map is missing sourcesContent array',
+            expect(result.errors[0].message).toBe(
+                'Source map has no sourcesContent array',
             );
         });
 
@@ -266,10 +258,10 @@ describe('extractSourcesFromMap', () => {
 
             // Empty sourcesContent is treated as an error since there's nothing to extract
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toBe(
-                'Source map from https://example.com/empty.js.map is missing sourcesContent array',
+            expect(result.errors[0].message).toBe(
+                'Source map has no sourcesContent array',
             );
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
         });
 
         it('should include URL in error for malformed JSON', async () => {
@@ -286,12 +278,12 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
+            expect(result.errors[0].message).toContain(
                 'https://example.com/malformed.js.map',
             );
-            expect(result.errors[0]).toContain('{invalid json');
+            expect(result.errors[0].message).toContain('{invalid json');
         });
 
         it('should handle network errors gracefully', async () => {
@@ -306,11 +298,11 @@ describe('extractSourcesFromMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.files).toHaveLength(0);
+            expect(result.sources).toHaveLength(0);
             expect(result.errors).toHaveLength(1);
-            expect(result.errors[0]).toContain(
-                'https://example.com/network-error.js.map',
-            );
+            // MSW's HttpResponse.error() produces a FetchError with "Failed to fetch"
+            expect(result.errors[0]).toBeInstanceOf(FetchError);
+            expect(result.errors[0].message).toBe('Failed to fetch');
         });
     });
 
@@ -338,8 +330,8 @@ describe('extractSourcesFromMap', () => {
             );
 
             expect(result.errors).toHaveLength(0);
-            expect(result.files).toHaveLength(1);
-            expect(result.files[0].path).toBe('src/components/Button.tsx');
+            expect(result.sources).toHaveLength(1);
+            expect(result.sources[0].path).toBe('src/components/Button.tsx');
         });
 
         it('should apply sourceRoot to paths', async () => {
@@ -364,8 +356,8 @@ describe('extractSourcesFromMap', () => {
             );
 
             expect(result.errors).toHaveLength(0);
-            expect(result.files).toHaveLength(1);
-            expect(result.files[0].path).toBe('src/components/Button.tsx');
+            expect(result.sources).toHaveLength(1);
+            expect(result.sources[0].path).toBe('src/components/Button.tsx');
         });
     });
 

@@ -1,10 +1,21 @@
 import { writeFile } from 'fs/promises';
-import type {
-    AliasPathMapping,
-    DetectedProjectConfig,
-    WorkspacePackageMapping,
-    SubpathMapping,
-} from '@web2local/types';
+import type { DetectedProjectConfig } from '@web2local/types';
+
+// Local types for path mappings (only used by this generator)
+interface AliasPathMapping {
+    alias: string;
+    relativePath: string;
+}
+
+interface WorkspacePackageMapping {
+    name: string;
+    relativePath: string;
+}
+
+interface SubpathMapping {
+    specifier: string;
+    relativePath: string;
+}
 
 /**
  * Generates a tsconfig.json object based on detected project configuration

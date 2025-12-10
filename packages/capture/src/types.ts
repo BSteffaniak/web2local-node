@@ -2,7 +2,17 @@
  * Type definitions for API capture and mock server manifest generation
  */
 
-import {
+import type {
+    ApiFixture,
+    CapturedAsset,
+    CapturedRedirect,
+} from '@web2local/types';
+
+// Re-export core capture types from @web2local/types
+export type {
+    HttpMethod,
+    CapturedRequest,
+    CapturedResponse,
     ApiFixture,
     CapturedAsset,
     CapturedRedirect,
@@ -10,52 +20,6 @@ import {
     FixtureIndex,
     ServerManifest,
 } from '@web2local/types';
-
-export {
-    ApiFixture,
-    CapturedAsset,
-    CapturedRedirect,
-    FixtureIndexEntry,
-    FixtureIndex,
-    ServerManifest,
-};
-
-/**
- * HTTP methods supported for API capture
- */
-export type HttpMethod =
-    | 'GET'
-    | 'POST'
-    | 'PUT'
-    | 'DELETE'
-    | 'PATCH'
-    | 'HEAD'
-    | 'OPTIONS';
-
-/**
- * Captured API request details
- */
-export interface CapturedRequest {
-    method: HttpMethod;
-    url: string;
-    path: string;
-    query: Record<string, string>;
-    headers: Record<string, string>;
-    body?: unknown;
-    bodyRaw?: string;
-}
-
-/**
- * Captured API response details
- */
-export interface CapturedResponse {
-    status: number;
-    statusText: string;
-    headers: Record<string, string>;
-    body: unknown;
-    bodyRaw?: string;
-    bodyType: 'json' | 'text' | 'binary';
-}
 
 /**
  * Server configuration in manifest

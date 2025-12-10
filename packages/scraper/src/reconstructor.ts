@@ -76,7 +76,7 @@ async function fileExistsWithSameContent(
  * Skips writing files that already exist with the same content.
  */
 export async function reconstructSources(
-    files: ExtractedSource[],
+    files: readonly ExtractedSource[],
     options: ReconstructionOptions,
 ): Promise<ReconstructionResult> {
     const result: ReconstructionResult = {

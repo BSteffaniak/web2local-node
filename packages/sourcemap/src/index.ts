@@ -88,11 +88,21 @@ export { discoverSourceMap, findSourceMapInComment } from './discovery.js';
 /**
  * Parse and validate source map JSON content.
  * Supports both regular and index maps per ECMA-426.
+ *
+ * Two API styles:
+ * - Result-based (recommended): tryParseSourceMap(), tryParseSourceMapAuto()
+ * - Throwing (legacy): parseSourceMap(), parseSourceMapAuto()
  */
 export {
+    // Result-based API (recommended)
+    tryParseSourceMap,
+    tryParseSourceMapAuto,
+    tryParseInlineSourceMap,
+    // Throwing API (legacy compatibility)
     parseSourceMap,
     parseSourceMapAuto,
     parseInlineSourceMap,
+    // Validation
     validateSourceMap,
     isSourceMapV3,
 } from './parser.js';

@@ -23,7 +23,8 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "@web2local/ast": "0.0.1"
+        "@web2local/ast": "0.0.1",
+        "@web2local/types": "0.0.1"
     },
     "devDependencies": {
         "@types/node": "^20.10.0",

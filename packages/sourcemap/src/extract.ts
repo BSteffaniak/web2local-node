@@ -10,7 +10,11 @@ import type {
     SourceMapMetadata,
     ExtractSourceMapOptions,
 } from '@web2local/types';
-import { robustFetch, BROWSER_HEADERS } from '@web2local/http';
+import {
+    robustFetch,
+    BROWSER_HEADERS,
+    createSignalWithTimeout,
+} from '@web2local/http';
 import {
     SourceMapError,
     createHttpError,
@@ -20,10 +24,9 @@ import {
 } from './errors.js';
 import { DEFAULT_MAX_SOURCE_MAP_SIZE, DEFAULT_TIMEOUT } from './constants.js';
 import { isDataUri } from './utils/url.js';
-import { parseSourceMapAuto } from './parser.js';
+import { tryParseSourceMapAuto } from './parser.js';
 import { discoverSourceMap } from './discovery.js';
 import { extractSources } from './sources.js';
-import { createSignalWithTimeout } from './utils/signal.js';
 
 // ============================================================================
 // INTERNAL HELPERS
@@ -196,17 +199,16 @@ export async function extractSourceMap(
     }
 
     // Step 3: Parse the source map
-    let parsed;
-    try {
-        parsed = parseSourceMapAuto(sourceMapContent, sourceMapUrl);
-    } catch (error) {
-        return createErrorResult(
-            bundleUrl,
-            sourceMapUrl,
-            error instanceof Error ? error : new Error(String(error)),
-        );
+    const parseResult = tryParseSourceMapAuto(sourceMapContent, sourceMapUrl);
+    if (!parseResult.ok) {
+        return createErrorResult(bundleUrl, sourceMapUrl, parseResult.error);
     }
 
     // Step 4: Extract sources
-    return extractSources(parsed, bundleUrl, sourceMapUrl, extractionOptions);
+    return extractSources(
+        parseResult.value,
+        bundleUrl,
+        sourceMapUrl,
+        extractionOptions,
+    );
 }

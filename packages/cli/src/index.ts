@@ -284,8 +284,8 @@ export async function runMain(options: CliOptions) {
     const bundleExtractions: Array<{
         bundle: BundleInfo;
         bundleName: string;
-        files: ExtractedSource[];
-        errors: string[];
+        files: readonly ExtractedSource[];
+        errors: readonly Error[];
     }> = [];
 
     // Phase 1: Extract all source maps (only if there are bundles with source maps)
@@ -317,7 +317,7 @@ export async function runMain(options: CliOptions) {
                 }
             }
 
-            if (result.files.length === 0) {
+            if (result.sources.length === 0) {
                 extractSpinner.info(`${bundleName}: No source files found`);
                 continue;
             }
@@ -326,7 +326,7 @@ export async function runMain(options: CliOptions) {
             // This includes node_modules/*/package.json files
             // Sanitize paths FIRST to resolve `..` segments, THEN prefix with bundle name
             // to match the actual output structure (sanitizePath in reconstructSources does the same)
-            const filesWithBundlePrefix = result.files
+            const filesWithBundlePrefix = result.sources
                 .map((f) => {
                     const sanitized = sanitizePath(f.path);
                     return sanitized
@@ -340,12 +340,12 @@ export async function runMain(options: CliOptions) {
             bundleExtractions.push({
                 bundle,
                 bundleName,
-                files: result.files,
+                files: result.sources,
                 errors: result.errors,
             });
 
             extractSpinner.succeed(
-                `${chalk.cyan(bundleName)}: ${chalk.green(result.files.length)} files found`,
+                `${chalk.cyan(bundleName)}: ${chalk.green(result.sources.length)} files found`,
             );
         } catch (error) {
             extractSpinner.fail(`${bundleName}: ${error}`);

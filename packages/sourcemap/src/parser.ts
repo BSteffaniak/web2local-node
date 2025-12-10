@@ -1,733 +1,153 @@
 /**
  * Source Map Parser
  *
- * Parses and validates source map JSON content.
+ * Parses source map JSON content and validates it using the validation module.
  * Handles both external source maps and inline base64 data URIs.
+ *
+ * Two API styles are available:
+ * - Result-based: `tryParseSourceMap()` returns `Result<SourceMapV3, SourceMapError>`
+ * - Throwing: `parseSourceMap()` throws `SourceMapError` on failure
  */
 
-import type {
-    SourceMapV3,
-    SourceMapValidationResult,
-    SourceMapValidationError,
-} from '@web2local/types';
+import type { SourceMapV3, Result } from '@web2local/types';
+import { Ok, Err } from '@web2local/types';
 import {
+    SourceMapError,
     SourceMapErrorCode,
     createParseError,
     createValidationError,
     createDataUriError,
-    createValidationErrorResult,
 } from './errors.js';
-import {
-    SUPPORTED_SOURCE_MAP_VERSION,
-    ERROR_PREVIEW_LENGTH,
-} from './constants.js';
+import { ERROR_PREVIEW_LENGTH } from './constants.js';
 import { decodeDataUri, isDataUri } from './utils/url.js';
-import { validateMappings } from './mappings.js';
+import { validateSourceMap, isSourceMapV3 } from './validation/index.js';
+
+// Re-export validation functions for backwards compatibility
+export { validateSourceMap, isSourceMapV3 };
 
 // ============================================================================
-// RAW SOURCE MAP TYPES (before validation)
-// ============================================================================
-
-interface RawSourceMap {
-    version?: unknown;
-    file?: unknown;
-    sourceRoot?: unknown;
-    sources?: unknown;
-    sourcesContent?: unknown;
-    names?: unknown;
-    mappings?: unknown;
-    ignoreList?: unknown;
-    sections?: unknown;
-    [key: string]: unknown;
-}
-
-interface RawIndexMapSection {
-    offset?: unknown;
-    map?: unknown;
-    [key: string]: unknown;
-}
-
-interface RawIndexMapOffset {
-    line?: unknown;
-    column?: unknown;
-    [key: string]: unknown;
-}
-
-// ============================================================================
-// VALIDATION HELPERS
-// ============================================================================
-
-// Alias for convenience within this module
-const validationError = createValidationErrorResult;
-
-/**
- * Checks if a raw source map object is an index map (has sections field).
- * Per ECMA-426, an index map has `sections` instead of `sources`/`mappings`.
- */
-function isIndexMap(obj: RawSourceMap): boolean {
-    return 'sections' in obj;
-}
-
-// ============================================================================
-// REGULAR SOURCE MAP VALIDATION - FIELD VALIDATORS
+// RESULT-BASED API (Recommended)
 // ============================================================================
 
 /**
- * Validates the version field (required, must be 3).
+ * Parses and validates a source map from JSON string.
+ * Returns a Result instead of throwing.
+ *
+ * @param content - The JSON string content
+ * @param url - The URL of the source map (for error messages)
+ * @returns Result with validated SourceMapV3 or SourceMapError
+ *
+ * @example
+ * ```typescript
+ * const result = tryParseSourceMap(jsonString);
+ * if (result.ok) {
+ *     console.log(result.value.sources);
+ * } else {
+ *     console.error(result.error.message);
+ * }
+ * ```
  */
-function validateVersion(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj.version === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.MISSING_VERSION,
-                'Missing required field: version',
-                'version',
-            ),
-        );
-    } else if (obj.version !== SUPPORTED_SOURCE_MAP_VERSION) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_VERSION,
-                `Invalid version: expected ${SUPPORTED_SOURCE_MAP_VERSION}, got ${obj.version}`,
-                'version',
-            ),
-        );
-    }
-}
-
-/**
- * Validates the sources field (required, must be array of strings or null).
- */
-function validateSources(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj.sources === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.MISSING_SOURCES,
-                'Missing required field: sources',
-                'sources',
-            ),
-        );
-    } else if (!Array.isArray(obj.sources)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.SOURCES_NOT_ARRAY,
-                'Field "sources" must be an array',
-                'sources',
-            ),
-        );
-    } else if (!obj.sources.every((s) => typeof s === 'string' || s === null)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.SOURCES_NOT_ARRAY,
-                'All entries in "sources" must be strings or null',
-                'sources',
-            ),
-        );
-    }
-}
-
-/**
- * Validates the mappings field (required, must be string).
- */
-function validateMappingsField(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj.mappings === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.MISSING_MAPPINGS,
-                'Missing required field: mappings',
-                'mappings',
-            ),
-        );
-    } else if (typeof obj.mappings !== 'string') {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.MISSING_MAPPINGS,
-                'Field "mappings" must be a string',
-                'mappings',
-            ),
-        );
-    }
-}
-
-/**
- * Validates the sourcesContent field (optional, must be array of strings or null).
- */
-function validateSourcesContent(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-    warnings: string[],
-): void {
-    if (obj.sourcesContent === undefined) return;
-
-    if (!Array.isArray(obj.sourcesContent)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
-                'Field "sourcesContent" must be an array',
-                'sourcesContent',
-            ),
-        );
-        return;
-    }
-
-    // Check that all entries are strings or null
-    if (!obj.sourcesContent.every((c) => typeof c === 'string' || c === null)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
-                'All entries in "sourcesContent" must be strings or null',
-                'sourcesContent',
+export function tryParseSourceMap(
+    content: string,
+    url?: string,
+): Result<SourceMapV3, SourceMapError> {
+    // Try to parse JSON
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
+    } catch (e) {
+        const preview = content
+            .slice(0, ERROR_PREVIEW_LENGTH)
+            .replace(/\n/g, ' ');
+        return Err(
+            createParseError(
+                `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
+                url ?? 'unknown',
+                preview,
             ),
         );
     }
 
-    // Length mismatch is a warning, not an error
-    if (
-        Array.isArray(obj.sources) &&
-        obj.sourcesContent.length !== obj.sources.length
-    ) {
-        warnings.push(
-            `sourcesContent length (${obj.sourcesContent.length}) does not match sources length (${obj.sources.length})`,
-        );
-    }
-}
-
-/**
- * Validates the names field (optional, must be array of strings).
- */
-function validateNames(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj.names === undefined) return;
-
-    if (!Array.isArray(obj.names)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_NAMES,
-                'Field "names" must be an array',
-                'names',
-            ),
-        );
-    } else if (!obj.names.every((n) => typeof n === 'string')) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_NAMES,
-                'All entries in "names" must be strings',
-                'names',
-            ),
-        );
-    }
-}
-
-/**
- * Validates an optional string field (sourceRoot, file).
- */
-function validateOptionalStringField(
-    obj: RawSourceMap,
-    field: 'sourceRoot' | 'file',
-    errorCode: SourceMapErrorCode,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj[field] !== undefined && typeof obj[field] !== 'string') {
-        errors.push(
-            validationError(
-                errorCode,
-                `Field "${field}" must be a string`,
-                field,
-            ),
-        );
-    }
-}
-
-/**
- * Validates the ignoreList field (optional, must be array of valid indices).
- */
-function validateIgnoreList(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    if (obj.ignoreList === undefined) return;
-
-    if (!Array.isArray(obj.ignoreList)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_IGNORE_LIST,
-                'Field "ignoreList" must be an array',
-                'ignoreList',
-            ),
-        );
-        return;
+    // Validate structure (single validation call)
+    const validation = validateSourceMap(parsed);
+    if (validation.valid) {
+        return Ok(parsed as SourceMapV3);
     }
 
-    // Check that all entries are non-negative integers
-    const hasInvalidType = obj.ignoreList.some(
-        (idx) => typeof idx !== 'number' || !Number.isInteger(idx) || idx < 0,
+    // Build error message from validation errors
+    const firstError = validation.errors[0];
+    const errorCode = firstError?.code as SourceMapErrorCode;
+    const errorMessages = validation.errors.map((e) => e.message).join('; ');
+
+    return Err(
+        createValidationError(
+            errorCode ?? SourceMapErrorCode.INVALID_VERSION,
+            `Invalid source map: ${errorMessages}`,
+            url,
+            {
+                errors: validation.errors,
+                warnings: validation.warnings,
+            },
+        ),
     );
-
-    if (hasInvalidType) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_IGNORE_LIST,
-                'All entries in "ignoreList" must be non-negative integers',
-                'ignoreList',
-            ),
-        );
-        return;
-    }
-
-    // Check bounds (only if sources is valid)
-    if (Array.isArray(obj.sources)) {
-        const sourcesLength = obj.sources.length;
-        const hasOutOfBounds = obj.ignoreList.some(
-            (idx) => (idx as number) >= sourcesLength,
-        );
-        if (hasOutOfBounds) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_IGNORE_LIST,
-                    'ignoreList contains index out of bounds of sources array',
-                    'ignoreList',
-                ),
-            );
-        }
-    }
 }
 
 /**
- * Validates VLQ mappings content (only if structural prerequisites are met).
- */
-function validateVlqMappings(
-    obj: RawSourceMap,
-    errors: SourceMapValidationError[],
-): void {
-    // Only validate if we have valid structural prerequisites
-    if (typeof obj.mappings !== 'string' || !Array.isArray(obj.sources)) {
-        return;
-    }
-
-    const sourcesLength = obj.sources.length;
-    const namesLength = Array.isArray(obj.names) ? obj.names.length : 0;
-    const mappingsResult = validateMappings(
-        obj.mappings,
-        sourcesLength,
-        namesLength,
-    );
-    errors.push(...mappingsResult.errors);
-}
-
-// ============================================================================
-// REGULAR SOURCE MAP VALIDATION - MAIN FUNCTION
-// ============================================================================
-
-/**
- * Validates a regular source map (not index map) against the ECMA-426 spec.
- * This is an internal function - use validateSourceMap() for public API.
+ * Parses a source map from an inline base64 data URI.
+ * Returns a Result instead of throwing.
  *
- * @param obj - The raw source map object (already verified to be an object)
- * @returns Validation result with structured errors
+ * @param dataUri - The data URI string (data:application/json;base64,...)
+ * @param url - The URL context (for error messages)
+ * @returns Result with validated SourceMapV3 or SourceMapError
  */
-function validateRegularSourceMap(
-    obj: RawSourceMap,
-): SourceMapValidationResult {
-    const errors: SourceMapValidationError[] = [];
-    const warnings: string[] = [];
+export function tryParseInlineSourceMap(
+    dataUri: string,
+    url?: string,
+): Result<SourceMapV3, SourceMapError> {
+    if (!isDataUri(dataUri)) {
+        return Err(
+            createDataUriError(
+                SourceMapErrorCode.INVALID_DATA_URI,
+                'Not a valid data URI',
+                url,
+            ),
+        );
+    }
 
-    // Required fields
-    validateVersion(obj, errors);
-    validateSources(obj, errors);
-    validateMappingsField(obj, errors);
+    const decoded = decodeDataUri(dataUri);
+    if (decoded === null) {
+        return Err(
+            createDataUriError(
+                SourceMapErrorCode.INVALID_BASE64,
+                'Failed to decode base64 content from data URI',
+                url,
+            ),
+        );
+    }
 
-    // Optional fields
-    validateSourcesContent(obj, errors, warnings);
-    validateOptionalStringField(
-        obj,
-        'sourceRoot',
-        SourceMapErrorCode.INVALID_SOURCE_ROOT,
-        errors,
-    );
-    validateNames(obj, errors);
-    validateOptionalStringField(
-        obj,
-        'file',
-        SourceMapErrorCode.INVALID_FILE,
-        errors,
-    );
-    validateIgnoreList(obj, errors);
-
-    // VLQ content validation
-    validateVlqMappings(obj, errors);
-
-    return {
-        valid: errors.length === 0,
-        errors,
-        warnings,
-    };
-}
-
-// ============================================================================
-// INDEX MAP VALIDATION - HELPER FUNCTIONS
-// ============================================================================
-
-/** Validated offset with line and column */
-interface ValidatedOffset {
-    line: number;
-    column: number;
+    return tryParseSourceMap(decoded, url);
 }
 
 /**
- * Validates section.offset field structure and values.
- * Returns the validated offset if valid, null otherwise.
- */
-function validateSectionOffset(
-    section: RawIndexMapSection,
-    fieldPrefix: string,
-    errors: SourceMapValidationError[],
-): ValidatedOffset | null {
-    if (section.offset === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset is required`,
-                `${fieldPrefix}.offset`,
-            ),
-        );
-        return null;
-    }
-
-    if (typeof section.offset !== 'object' || section.offset === null) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset must be an object`,
-                `${fieldPrefix}.offset`,
-            ),
-        );
-        return null;
-    }
-
-    const offset = section.offset as RawIndexMapOffset;
-    let lineValid = false;
-    let columnValid = false;
-
-    // Validate offset.line
-    if (offset.line === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset.line is required`,
-                `${fieldPrefix}.offset.line`,
-            ),
-        );
-    } else if (
-        typeof offset.line !== 'number' ||
-        !Number.isInteger(offset.line) ||
-        offset.line < 0
-    ) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset.line must be a non-negative integer`,
-                `${fieldPrefix}.offset.line`,
-            ),
-        );
-    } else {
-        lineValid = true;
-    }
-
-    // Validate offset.column
-    if (offset.column === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset.column is required`,
-                `${fieldPrefix}.offset.column`,
-            ),
-        );
-    } else if (
-        typeof offset.column !== 'number' ||
-        !Number.isInteger(offset.column) ||
-        offset.column < 0
-    ) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                `${fieldPrefix}.offset.column must be a non-negative integer`,
-                `${fieldPrefix}.offset.column`,
-            ),
-        );
-    } else {
-        columnValid = true;
-    }
-
-    // Return validated offset only if both line and column are valid
-    if (lineValid && columnValid) {
-        return {
-            line: offset.line as number,
-            column: offset.column as number,
-        };
-    }
-    return null;
-}
-
-/**
- * Validates section ordering and overlap against previous section.
- */
-function validateSectionOrdering(
-    current: ValidatedOffset,
-    prev: ValidatedOffset | null,
-    fieldPrefix: string,
-    errors: SourceMapValidationError[],
-): void {
-    if (prev === null) return;
-
-    // Check for invalid order (current section starts before previous)
-    if (
-        current.line < prev.line ||
-        (current.line === prev.line && current.column < prev.column)
-    ) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
-                `${fieldPrefix} has offset before previous section (sections must be in order)`,
-                `${fieldPrefix}.offset`,
-            ),
-        );
-    }
-    // Check for overlap (same position as previous)
-    else if (current.line === prev.line && current.column === prev.column) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INDEX_MAP_OVERLAP,
-                `${fieldPrefix} overlaps with previous section (same offset)`,
-                `${fieldPrefix}.offset`,
-            ),
-        );
-    }
-}
-
-/**
- * Validates section.map field.
- */
-function validateSectionMap(
-    section: RawIndexMapSection,
-    fieldPrefix: string,
-    errors: SourceMapValidationError[],
-    warnings: string[],
-): void {
-    if (section.map === undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
-                `${fieldPrefix}.map is required`,
-                `${fieldPrefix}.map`,
-            ),
-        );
-        return;
-    }
-
-    if (typeof section.map !== 'object' || section.map === null) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
-                `${fieldPrefix}.map must be an object`,
-                `${fieldPrefix}.map`,
-            ),
-        );
-        return;
-    }
-
-    const sectionMap = section.map as RawSourceMap;
-
-    // Check for nested index map (not allowed per spec)
-    if (isIndexMap(sectionMap)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INDEX_MAP_NESTED,
-                `${fieldPrefix}.map cannot be an index map (nested index maps not allowed)`,
-                `${fieldPrefix}.map`,
-            ),
-        );
-        return;
-    }
-
-    // Recursively validate the section map as a regular source map
-    const sectionResult = validateRegularSourceMap(sectionMap);
-    for (const error of sectionResult.errors) {
-        errors.push(
-            validationError(
-                error.code as SourceMapErrorCode,
-                `${fieldPrefix}.map: ${error.message}`,
-                error.field
-                    ? `${fieldPrefix}.map.${error.field}`
-                    : `${fieldPrefix}.map`,
-            ),
-        );
-    }
-    for (const warning of sectionResult.warnings) {
-        warnings.push(`${fieldPrefix}.map: ${warning}`);
-    }
-}
-
-// ============================================================================
-// INDEX MAP VALIDATION - MAIN FUNCTION
-// ============================================================================
-
-/**
- * Validates an index map against the ECMA-426 spec.
- * Index maps have `sections` array with offset/map pairs instead of sources/mappings.
+ * Parses a source map from either a JSON string or data URI.
+ * Automatically detects the format. Returns a Result instead of throwing.
  *
- * @param obj - The raw source map object (already verified to have sections)
- * @returns Validation result with structured errors
+ * @param content - Either JSON string or data URI
+ * @param url - The URL context (for error messages)
+ * @returns Result with validated SourceMapV3 or SourceMapError
  */
-function validateIndexMapInternal(
-    obj: RawSourceMap,
-): SourceMapValidationResult {
-    const errors: SourceMapValidationError[] = [];
-    const warnings: string[] = [];
-
-    // Reuse existing validators for common fields
-    validateVersion(obj, errors);
-    validateOptionalStringField(
-        obj,
-        'file',
-        SourceMapErrorCode.INVALID_FILE,
-        errors,
-    );
-
-    // Index maps cannot have mappings field (they use sections instead)
-    if (obj.mappings !== undefined) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
-                'Index map cannot have both "sections" and "mappings" fields',
-                'mappings',
-            ),
-        );
+export function tryParseSourceMapAuto(
+    content: string,
+    url?: string,
+): Result<SourceMapV3, SourceMapError> {
+    if (isDataUri(content)) {
+        return tryParseInlineSourceMap(content, url);
     }
-
-    // Sections must be an array
-    if (!Array.isArray(obj.sections)) {
-        errors.push(
-            validationError(
-                SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
-                'Field "sections" must be an array',
-                'sections',
-            ),
-        );
-        return { valid: false, errors, warnings };
-    }
-
-    // Validate each section
-    let prevOffset: ValidatedOffset | null = null;
-
-    for (let i = 0; i < obj.sections.length; i++) {
-        const section = obj.sections[i] as RawIndexMapSection | null;
-        const fieldPrefix = `sections[${i}]`;
-
-        // Section must be an object
-        if (typeof section !== 'object' || section === null) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
-                    `${fieldPrefix} must be an object`,
-                    fieldPrefix,
-                ),
-            );
-            continue;
-        }
-
-        // Validate offset
-        const offset = validateSectionOffset(section, fieldPrefix, errors);
-        if (offset !== null) {
-            validateSectionOrdering(offset, prevOffset, fieldPrefix, errors);
-            prevOffset = offset;
-        }
-
-        // Validate map
-        validateSectionMap(section, fieldPrefix, errors, warnings);
-    }
-
-    return {
-        valid: errors.length === 0,
-        errors,
-        warnings,
-    };
+    return tryParseSourceMap(content, url);
 }
 
 // ============================================================================
-// PUBLIC VALIDATION API
-// ============================================================================
-
-/**
- * Validates a raw parsed object against the ECMA-426 Source Map specification.
- * Automatically detects and validates both regular source maps and index maps.
- *
- * For regular source maps, checks:
- * - version === 3
- * - sources is a string array (entries can be null)
- * - mappings is a string
- * - sourcesContent (if present) contains strings or null
- * - names (if present) is a string array
- * - file (if present) is a string
- * - ignoreList (if present) is array of valid indices
- *
- * For index maps, additionally checks:
- * - sections is an array of valid section objects
- * - Each section has valid offset (line, column) and map
- * - Sections are in order and don't overlap
- * - Nested index maps are not allowed
- * - Cannot have both sections and mappings
- *
- * @param raw - The parsed JSON object
- * @returns Validation result with structured errors (including error codes)
- */
-export function validateSourceMap(raw: unknown): SourceMapValidationResult {
-    if (typeof raw !== 'object' || raw === null) {
-        return {
-            valid: false,
-            errors: [
-                validationError(
-                    SourceMapErrorCode.INVALID_JSON,
-                    'Source map must be an object',
-                ),
-            ],
-            warnings: [],
-        };
-    }
-
-    const obj = raw as RawSourceMap;
-
-    // Dispatch to appropriate validator based on presence of sections field
-    if (isIndexMap(obj)) {
-        return validateIndexMapInternal(obj);
-    }
-
-    return validateRegularSourceMap(obj);
-}
-
-/**
- * Type guard that checks if a value is a valid SourceMapV3.
- * Uses validateSourceMap internally for validation.
- *
- * @param value - The value to check
- * @returns true if the value is a valid SourceMapV3
- */
-export function isSourceMapV3(value: unknown): value is SourceMapV3 {
-    return validateSourceMap(value).valid;
-}
-
-// ============================================================================
-// PARSING
+// THROWING API (Legacy compatibility)
 // ============================================================================
 
 /**
@@ -739,41 +159,11 @@ export function isSourceMapV3(value: unknown): value is SourceMapV3 {
  * @throws SourceMapError if parsing or validation fails
  */
 export function parseSourceMap(content: string, url?: string): SourceMapV3 {
-    // Try to parse JSON
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(content);
-    } catch (e) {
-        const preview = content
-            .slice(0, ERROR_PREVIEW_LENGTH)
-            .replace(/\n/g, ' ');
-        throw createParseError(
-            `Failed to parse source map JSON: ${e instanceof Error ? e.message : String(e)}`,
-            url ?? 'unknown',
-            preview,
-        );
+    const result = tryParseSourceMap(content, url);
+    if (result.ok) {
+        return result.value;
     }
-
-    // Validate structure (single validation call)
-    const validation = validateSourceMap(parsed);
-    if (validation.valid) {
-        return parsed as SourceMapV3;
-    }
-
-    // Build error message from validation errors
-    const firstError = validation.errors[0];
-    const errorCode = firstError?.code as SourceMapErrorCode;
-    const errorMessages = validation.errors.map((e) => e.message).join('; ');
-
-    throw createValidationError(
-        errorCode ?? SourceMapErrorCode.INVALID_VERSION,
-        `Invalid source map: ${errorMessages}`,
-        url,
-        {
-            errors: validation.errors,
-            warnings: validation.warnings,
-        },
-    );
+    throw result.error;
 }
 
 /**
@@ -788,24 +178,11 @@ export function parseInlineSourceMap(
     dataUri: string,
     url?: string,
 ): SourceMapV3 {
-    if (!isDataUri(dataUri)) {
-        throw createDataUriError(
-            SourceMapErrorCode.INVALID_DATA_URI,
-            'Not a valid data URI',
-            url,
-        );
+    const result = tryParseInlineSourceMap(dataUri, url);
+    if (result.ok) {
+        return result.value;
     }
-
-    const decoded = decodeDataUri(dataUri);
-    if (decoded === null) {
-        throw createDataUriError(
-            SourceMapErrorCode.INVALID_BASE64,
-            'Failed to decode base64 content from data URI',
-            url,
-        );
-    }
-
-    return parseSourceMap(decoded, url);
+    throw result.error;
 }
 
 /**
@@ -815,10 +192,12 @@ export function parseInlineSourceMap(
  * @param content - Either JSON string or data URI
  * @param url - The URL context (for error messages)
  * @returns Validated SourceMapV3 object
+ * @throws SourceMapError if parsing fails
  */
 export function parseSourceMapAuto(content: string, url?: string): SourceMapV3 {
-    if (isDataUri(content)) {
-        return parseInlineSourceMap(content, url);
+    const result = tryParseSourceMapAuto(content, url);
+    if (result.ok) {
+        return result.value;
     }
-    return parseSourceMap(content, url);
+    throw result.error;
 }

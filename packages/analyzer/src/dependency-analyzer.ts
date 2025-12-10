@@ -5,9 +5,12 @@ import {
     getPackageFiles,
     type VersionResult,
     type VersionConfidence,
-    type VersionSource,
 } from './version-detector.js';
-import type { ExtractedSource } from '@web2local/types';
+import type {
+    ExtractedSource,
+    DependencyInfo,
+    AnalysisResult,
+} from '@web2local/types';
 import {
     findMatchingVersions,
     fingerprintVendorBundles,
@@ -32,20 +35,8 @@ import {
 } from '@web2local/ast';
 import { robustFetch } from '@web2local/http';
 
-export interface DependencyInfo {
-    name: string;
-    version: string | null;
-    confidence?: VersionConfidence;
-    versionSource?: VersionSource;
-    importedFrom: string[];
-    isPrivate?: boolean;
-}
-
-export interface AnalysisResult {
-    dependencies: Map<string, DependencyInfo>;
-    localImports: Set<string>;
-    errors: string[];
-}
+// Re-export for backwards compatibility
+export type { DependencyInfo, AnalysisResult } from '@web2local/types';
 
 /**
  * Pattern to match node_modules paths with versions in source map sources
