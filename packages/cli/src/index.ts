@@ -578,7 +578,7 @@ export async function runMain(options: CliOptions) {
                                     depSpinner.text = `[${stage}] ${packageName}`;
                             }
                         },
-                        useFingerprinting: options.useFingerprinting,
+                        useFingerprinting: !options.noFingerprinting,
                         maxVersionsToCheck: options.maxVersions,
                         fetchFromNpm: !options.noFetchVersions,
                         includePrereleases: options.includePrereleases,

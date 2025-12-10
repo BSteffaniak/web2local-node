@@ -45,7 +45,7 @@ export interface CliOptions {
     concurrency: number;
     // Package.json generation (default: enabled)
     noPackageJson: boolean;
-    useFingerprinting: boolean;
+    noFingerprinting: boolean;
     noFetchVersions: boolean;
     maxVersions: number;
     cacheDir: string;
@@ -193,9 +193,8 @@ export function parseArgs(): CliOptions {
             'Skip generating package.json with detected dependencies',
         )
         .option(
-            '--use-fingerprinting',
-            'Use source fingerprinting to match versions against npm (slower but more accurate)',
-            false,
+            '--no-fingerprinting',
+            'Disable source fingerprinting for version matching',
         )
         .option(
             '--no-fetch-versions',
@@ -359,7 +358,7 @@ export function parseArgs(): CliOptions {
                 concurrency: parseInt(options.concurrency, 10),
                 // Package.json options (--no-X sets to false, so we check !== false for enabled)
                 noPackageJson: options.packageJson === false,
-                useFingerprinting: options.useFingerprinting || false,
+                noFingerprinting: options.fingerprinting === false,
                 noFetchVersions: options.fetchVersions === false,
                 maxVersions: parseInt(options.maxVersions, 10),
                 cacheDir: options.cacheDir || '',
@@ -514,7 +513,7 @@ export function parseArgs(): CliOptions {
         concurrency: parseInt(options.concurrency, 10),
         // Package.json options
         noPackageJson: options.packageJson === false,
-        useFingerprinting: options.useFingerprinting || false,
+        noFingerprinting: options.fingerprinting === false,
         noFetchVersions: options.fetchVersions === false,
         maxVersions: parseInt(options.maxVersions, 10),
         cacheDir: options.cacheDir || '',

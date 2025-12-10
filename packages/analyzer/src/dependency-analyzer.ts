@@ -1620,12 +1620,6 @@ export function generatePackageJson(
             'Version confidence metadata available in _versionMeta (exact/high/medium/low/unverified)',
         );
     }
-    const unknownCount = Object.values(deps).filter((v) => v === '*').length;
-    if (unknownCount > 0) {
-        notes.push(
-            `${unknownCount} packages have unknown versions (*) - consider running with --use-fingerprinting`,
-        );
-    }
 
     if (notes.length > 0) {
         result._notes = notes;

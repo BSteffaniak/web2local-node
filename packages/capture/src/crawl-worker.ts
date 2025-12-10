@@ -119,7 +119,7 @@ export class CrawlWorker {
         private workerId: number,
         private options: CrawlWorkerOptions,
         private sharedState: SharedCrawlState,
-    ) { }
+    ) {}
 
     /**
      * Build a PageProgressEvent with current queue state

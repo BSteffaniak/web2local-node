@@ -80,12 +80,12 @@ web2local serve <dir> [--port 3000]
 
 #### Dependency Analysis
 
-| Option                  | Default | Description                              |
-| ----------------------- | ------- | ---------------------------------------- |
-| `--no-package-json`     | —       | Skip package.json generation             |
-| `--use-fingerprinting`  | `false` | Match versions via source fingerprinting |
-| `--no-fetch-versions`   | —       | Skip fetching latest npm versions        |
-| `--include-prereleases` | `false` | Include alpha/beta/rc versions           |
+| Option                  | Default | Description                       |
+| ----------------------- | ------- | --------------------------------- |
+| `--no-package-json`     | —       | Skip package.json generation      |
+| `--no-fingerprinting`   | —       | Disable source fingerprinting     |
+| `--no-fetch-versions`   | —       | Skip fetching latest npm versions |
+| `--include-prereleases` | `false` | Include alpha/beta/rc versions    |
 
 #### API Capture
 
