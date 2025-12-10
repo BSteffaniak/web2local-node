@@ -44,7 +44,9 @@ export function normalizeSourcePath(
 
     // Apply source root if present and path is relative
     if (sourceRoot && !path.startsWith('/') && !path.startsWith('.')) {
-        path = sourceRoot + path;
+        // Add separator if sourceRoot doesn't end with one
+        const separator = sourceRoot.endsWith('/') ? '' : '/';
+        path = sourceRoot + separator + path;
     }
 
     // Remove leading ./

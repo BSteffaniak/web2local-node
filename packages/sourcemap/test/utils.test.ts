@@ -68,6 +68,25 @@ describe('normalizeSourcePath', () => {
                 'src/Button.tsx',
             );
         });
+
+        it('adds separator between sourceRoot and path when missing', () => {
+            // Regression test: "src" + "file.ts" should become "src/file.ts", not "srcfile.ts"
+            expect(normalizeSourcePath('file.ts', 'src')).toBe('src/file.ts');
+        });
+
+        it('does not double separator when sourceRoot ends with /', () => {
+            expect(normalizeSourcePath('file.ts', 'src/')).toBe('src/file.ts');
+        });
+
+        it('handles nested sourceRoot without trailing slash', () => {
+            expect(normalizeSourcePath('Button.tsx', 'src/components')).toBe(
+                'src/components/Button.tsx',
+            );
+        });
+
+        it('handles empty sourceRoot', () => {
+            expect(normalizeSourcePath('file.ts', '')).toBe('file.ts');
+        });
     });
 
     describe('path normalization', () => {
@@ -161,6 +180,20 @@ describe('resolveSourceMapUrl', () => {
         expect(resolveSourceMapUrl(baseUrl, '../maps/bundle.js.map')).toBe(
             'https://example.com/assets/maps/bundle.js.map',
         );
+    });
+
+    it('returns sourceMapUrl unchanged when baseUrl is invalid', () => {
+        expect(resolveSourceMapUrl('not-a-url', 'map.js')).toBe('map.js');
+    });
+
+    it('returns sourceMapUrl unchanged when baseUrl is empty', () => {
+        expect(resolveSourceMapUrl('', 'map.js')).toBe('map.js');
+    });
+
+    it('handles absolute sourceMapUrl with invalid baseUrl', () => {
+        expect(
+            resolveSourceMapUrl('invalid', 'https://cdn.example.com/map.js'),
+        ).toBe('https://cdn.example.com/map.js');
     });
 });
 

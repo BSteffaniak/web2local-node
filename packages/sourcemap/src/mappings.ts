@@ -60,19 +60,27 @@ function base64CharToDigit(charCode: number): number {
 }
 
 /**
+ * Discriminated error types for VLQ decoding.
+ * Using error codes instead of string matching for robustness.
+ */
+type VlqDecodeError =
+    | { type: 'invalid_char'; char: string; position: number }
+    | { type: 'incomplete' };
+
+/**
  * Decode VLQ values from a segment of the mappings string.
- * Uses the Result pattern instead of returning Error objects.
+ * Uses the Result pattern with discriminated error types.
  *
  * @param mappings - The full mappings string
  * @param start - Start index of the segment
  * @param end - End index of the segment (exclusive)
- * @returns Result with decoded values or error message
+ * @returns Result with decoded values or typed error
  */
 function decodeVlqSegment(
     mappings: string,
     start: number,
     end: number,
-): Result<number[], string> {
+): Result<number[], VlqDecodeError> {
     const values: number[] = [];
     let value = 0;
     let shift = 0;
@@ -82,9 +90,11 @@ function decodeVlqSegment(
         const digit = base64CharToDigit(charCode);
 
         if (digit === -1) {
-            return Err(
-                `Invalid character '${mappings[pos]}' at position ${pos}`,
-            );
+            return Err({
+                type: 'invalid_char',
+                char: mappings[pos],
+                position: pos,
+            });
         }
 
         // Lower 5 bits are the value, bit 5 is the continuation flag
@@ -114,7 +124,7 @@ function decodeVlqSegment(
 
     // If we ended with a continuation bit set, the VLQ is invalid
     if (shift !== 0) {
-        return Err('Missing continuation digits');
+        return Err({ type: 'incomplete' });
     }
 
     return Ok(values);
@@ -257,24 +267,23 @@ export function validateMappings(
                 );
 
                 if (!decodeResult.ok) {
-                    // Check if it's a character error or continuation error
-                    const errorMessage = decodeResult.error;
-                    if (errorMessage.includes('Invalid character')) {
-                        // Extract the character for the error message
+                    const error = decodeResult.error;
+                    if (error.type === 'invalid_char') {
                         errors.push(
                             validationError(
                                 SourceMapErrorCode.INVALID_VLQ,
-                                `Invalid VLQ: contains non-base64 character at position ${segmentStart}`,
+                                `Invalid VLQ: contains non-base64 character '${error.char}' at position ${error.position}`,
                                 'mappings',
                             ),
                         );
                         // Return early on invalid character
                         return { valid: false, errors };
                     } else {
+                        // error.type === 'incomplete'
                         errors.push(
                             validationError(
                                 SourceMapErrorCode.INVALID_VLQ,
-                                `Invalid VLQ at ${segmentLocation}: ${errorMessage}`,
+                                `Invalid VLQ at ${segmentLocation}: Missing continuation digits`,
                                 'mappings',
                             ),
                         );
@@ -283,15 +292,10 @@ export function validateMappings(
                     const values = decodeResult.value;
 
                     // Validate segment field count (must be 1, 4, or 5)
-                    if (values.length === 0) {
-                        errors.push(
-                            validationError(
-                                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
-                                `Invalid mapping segment at ${segmentLocation}: empty segment (0 fields)`,
-                                'mappings',
-                            ),
-                        );
-                    } else if (values.length === 2 || values.length === 3) {
+                    // Note: values.length === 0 is unreachable here because:
+                    // - Empty segments (segmentLength === 0) are caught earlier
+                    // - decodeVlqSegment only succeeds with valid base64 chars, always producing >= 1 value
+                    if (values.length === 2 || values.length === 3) {
                         errors.push(
                             validationError(
                                 SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
@@ -421,20 +425,9 @@ export function validateMappings(
             } else if (charCode === CHAR_COMMA) {
                 segmentIndex++;
             }
-        } else {
-            // Non-separator character - validate it's a valid base64 char
-            const digit = base64CharToDigit(charCode);
-            if (digit === -1) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_VLQ,
-                        `Invalid VLQ: contains non-base64 character '${mappings[pos]}' at position ${pos}`,
-                        'mappings',
-                    ),
-                );
-                return { valid: false, errors };
-            }
         }
+        // Non-separator characters are validated by decodeVlqSegment when processing
+        // each segment, so no need for duplicate validation here.
     }
 
     return { valid: errors.length === 0, errors };

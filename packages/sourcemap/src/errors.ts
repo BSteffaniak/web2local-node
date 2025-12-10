@@ -17,16 +17,16 @@ export { SourceMapErrorCode };
 // ERROR CATEGORY HELPERS
 // ============================================================================
 
-const NETWORK_ERROR_CODES: readonly SourceMapErrorCode[] = [
+const NETWORK_ERROR_CODES = new Set<SourceMapErrorCode>([
     SourceMapErrorCode.FETCH_FAILED,
     SourceMapErrorCode.FETCH_TIMEOUT,
     SourceMapErrorCode.FETCH_DNS_ERROR,
     SourceMapErrorCode.FETCH_CONNECTION_REFUSED,
     SourceMapErrorCode.FETCH_CONNECTION_RESET,
     SourceMapErrorCode.FETCH_SSL_ERROR,
-];
+]);
 
-const VALIDATION_ERROR_CODES: readonly SourceMapErrorCode[] = [
+const VALIDATION_ERROR_CODES = new Set<SourceMapErrorCode>([
     SourceMapErrorCode.INVALID_VERSION,
     SourceMapErrorCode.MISSING_VERSION,
     SourceMapErrorCode.MISSING_SOURCES,
@@ -44,49 +44,49 @@ const VALIDATION_ERROR_CODES: readonly SourceMapErrorCode[] = [
     SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
     SourceMapErrorCode.INDEX_MAP_NESTED,
     SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
-];
+]);
 
-const PARSE_ERROR_CODES: readonly SourceMapErrorCode[] = [
+const PARSE_ERROR_CODES = new Set<SourceMapErrorCode>([
     SourceMapErrorCode.INVALID_JSON,
     SourceMapErrorCode.INVALID_BASE64,
     SourceMapErrorCode.INVALID_DATA_URI,
-];
+]);
 
-const VLQ_ERROR_CODES: readonly SourceMapErrorCode[] = [
+const VLQ_ERROR_CODES = new Set<SourceMapErrorCode>([
     SourceMapErrorCode.INVALID_VLQ,
     SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
     SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
     SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
     SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
     SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
-];
+]);
 
 /**
  * Check if an error code is a network-related error
  */
 export function isNetworkError(code: SourceMapErrorCode): boolean {
-    return (NETWORK_ERROR_CODES as readonly string[]).includes(code);
+    return NETWORK_ERROR_CODES.has(code);
 }
 
 /**
  * Check if an error code is a validation error
  */
 export function isValidationError(code: SourceMapErrorCode): boolean {
-    return (VALIDATION_ERROR_CODES as readonly string[]).includes(code);
+    return VALIDATION_ERROR_CODES.has(code);
 }
 
 /**
  * Check if an error code is a parse error
  */
 export function isParseError(code: SourceMapErrorCode): boolean {
-    return (PARSE_ERROR_CODES as readonly string[]).includes(code);
+    return PARSE_ERROR_CODES.has(code);
 }
 
 /**
  * Check if an error code is a VLQ/mapping error
  */
 export function isVlqError(code: SourceMapErrorCode): boolean {
-    return (VLQ_ERROR_CODES as readonly string[]).includes(code);
+    return VLQ_ERROR_CODES.has(code);
 }
 
 // ============================================================================

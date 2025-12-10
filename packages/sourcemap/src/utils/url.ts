@@ -9,6 +9,9 @@ import { DATA_URI_PATTERN } from '../constants.js';
 /**
  * Checks if a URL is a data URI (inline source map).
  *
+ * Uses startsWith check rather than DATA_URI_PATTERN because this needs to
+ * match ANY data URI format, not just base64 JSON source maps.
+ *
  * @param url - The URL to check
  * @returns true if the URL starts with "data:"
  */
@@ -48,20 +51,25 @@ export function resolveSourceMapUrl(
     }
 
     // Use URL API for proper resolution
-    const base = new URL(baseUrl);
+    try {
+        const base = new URL(baseUrl);
 
-    // Protocol-relative URLs
-    if (sourceMapUrl.startsWith('//')) {
-        return `${base.protocol}${sourceMapUrl}`;
+        // Protocol-relative URLs
+        if (sourceMapUrl.startsWith('//')) {
+            return `${base.protocol}${sourceMapUrl}`;
+        }
+
+        // Absolute paths
+        if (sourceMapUrl.startsWith('/')) {
+            return `${base.origin}${sourceMapUrl}`;
+        }
+
+        // Relative URLs - let URL API handle resolution
+        return new URL(sourceMapUrl, base).href;
+    } catch {
+        // Invalid base URL - return sourceMapUrl as-is (best effort)
+        return sourceMapUrl;
     }
-
-    // Absolute paths
-    if (sourceMapUrl.startsWith('/')) {
-        return `${base.origin}${sourceMapUrl}`;
-    }
-
-    // Relative URLs - let URL API handle resolution
-    return new URL(sourceMapUrl, base).href;
 }
 
 /** Regex pattern for validating base64 content */

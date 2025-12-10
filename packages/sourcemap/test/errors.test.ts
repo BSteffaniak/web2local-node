@@ -16,6 +16,10 @@ import {
     createDiscoveryError,
     createContentError,
     createDataUriError,
+    isNetworkError,
+    isValidationError,
+    isParseError,
+    isVlqError,
 } from '../src/errors.js';
 
 // ============================================================================
@@ -446,5 +450,175 @@ describe('SourceMapErrorCode', () => {
         expect(SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS).toBe(
             'MAPPING_VALUE_EXCEEDS_32_BITS',
         );
+    });
+});
+
+// ============================================================================
+// ERROR CATEGORY HELPERS
+// ============================================================================
+
+describe('error category helpers', () => {
+    describe('isNetworkError', () => {
+        it('returns true for FETCH_FAILED', () => {
+            expect(isNetworkError(SourceMapErrorCode.FETCH_FAILED)).toBe(true);
+        });
+
+        it('returns true for all network error codes', () => {
+            const networkCodes = [
+                SourceMapErrorCode.FETCH_FAILED,
+                SourceMapErrorCode.FETCH_TIMEOUT,
+                SourceMapErrorCode.FETCH_DNS_ERROR,
+                SourceMapErrorCode.FETCH_CONNECTION_REFUSED,
+                SourceMapErrorCode.FETCH_CONNECTION_RESET,
+                SourceMapErrorCode.FETCH_SSL_ERROR,
+            ];
+            networkCodes.forEach((code) => {
+                expect(isNetworkError(code)).toBe(true);
+            });
+        });
+
+        it('returns false for non-network errors', () => {
+            expect(isNetworkError(SourceMapErrorCode.INVALID_JSON)).toBe(false);
+            expect(isNetworkError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                false,
+            );
+            expect(isNetworkError(SourceMapErrorCode.INVALID_VLQ)).toBe(false);
+        });
+    });
+
+    describe('isValidationError', () => {
+        it('returns true for INVALID_VERSION', () => {
+            expect(isValidationError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                true,
+            );
+        });
+
+        it('returns true for all validation error codes', () => {
+            const validationCodes = [
+                SourceMapErrorCode.INVALID_VERSION,
+                SourceMapErrorCode.MISSING_VERSION,
+                SourceMapErrorCode.MISSING_SOURCES,
+                SourceMapErrorCode.MISSING_MAPPINGS,
+                SourceMapErrorCode.SOURCES_NOT_ARRAY,
+                SourceMapErrorCode.INVALID_SOURCE_ROOT,
+                SourceMapErrorCode.INVALID_NAMES,
+                SourceMapErrorCode.INVALID_FILE,
+                SourceMapErrorCode.INVALID_SOURCES_CONTENT,
+                SourceMapErrorCode.INVALID_IGNORE_LIST,
+                SourceMapErrorCode.INVALID_INDEX_MAP_SECTIONS,
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+                SourceMapErrorCode.INDEX_MAP_NESTED,
+                SourceMapErrorCode.INDEX_MAP_WITH_MAPPINGS,
+            ];
+            validationCodes.forEach((code) => {
+                expect(isValidationError(code)).toBe(true);
+            });
+        });
+
+        it('returns false for non-validation errors', () => {
+            expect(isValidationError(SourceMapErrorCode.FETCH_FAILED)).toBe(
+                false,
+            );
+            expect(isValidationError(SourceMapErrorCode.INVALID_JSON)).toBe(
+                false,
+            );
+            expect(isValidationError(SourceMapErrorCode.INVALID_VLQ)).toBe(
+                false,
+            );
+        });
+    });
+
+    describe('isParseError', () => {
+        it('returns true for INVALID_JSON', () => {
+            expect(isParseError(SourceMapErrorCode.INVALID_JSON)).toBe(true);
+        });
+
+        it('returns true for all parse error codes', () => {
+            const parseCodes = [
+                SourceMapErrorCode.INVALID_JSON,
+                SourceMapErrorCode.INVALID_BASE64,
+                SourceMapErrorCode.INVALID_DATA_URI,
+            ];
+            parseCodes.forEach((code) => {
+                expect(isParseError(code)).toBe(true);
+            });
+        });
+
+        it('returns false for non-parse errors', () => {
+            expect(isParseError(SourceMapErrorCode.FETCH_FAILED)).toBe(false);
+            expect(isParseError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                false,
+            );
+            expect(isParseError(SourceMapErrorCode.INVALID_VLQ)).toBe(false);
+        });
+    });
+
+    describe('isVlqError', () => {
+        it('returns true for INVALID_VLQ', () => {
+            expect(isVlqError(SourceMapErrorCode.INVALID_VLQ)).toBe(true);
+        });
+
+        it('returns true for all VLQ/mapping error codes', () => {
+            const vlqCodes = [
+                SourceMapErrorCode.INVALID_VLQ,
+                SourceMapErrorCode.INVALID_MAPPING_SEGMENT,
+                SourceMapErrorCode.MAPPING_SOURCE_INDEX_OUT_OF_BOUNDS,
+                SourceMapErrorCode.MAPPING_NAME_INDEX_OUT_OF_BOUNDS,
+                SourceMapErrorCode.MAPPING_NEGATIVE_VALUE,
+                SourceMapErrorCode.MAPPING_VALUE_EXCEEDS_32_BITS,
+            ];
+            vlqCodes.forEach((code) => {
+                expect(isVlqError(code)).toBe(true);
+            });
+        });
+
+        it('returns false for non-VLQ errors', () => {
+            expect(isVlqError(SourceMapErrorCode.FETCH_FAILED)).toBe(false);
+            expect(isVlqError(SourceMapErrorCode.INVALID_JSON)).toBe(false);
+            expect(isVlqError(SourceMapErrorCode.INVALID_VERSION)).toBe(false);
+        });
+    });
+
+    describe('error category exclusivity', () => {
+        it('categories are mutually exclusive', () => {
+            // A network error should not be a validation, parse, or VLQ error
+            expect(isNetworkError(SourceMapErrorCode.FETCH_FAILED)).toBe(true);
+            expect(isValidationError(SourceMapErrorCode.FETCH_FAILED)).toBe(
+                false,
+            );
+            expect(isParseError(SourceMapErrorCode.FETCH_FAILED)).toBe(false);
+            expect(isVlqError(SourceMapErrorCode.FETCH_FAILED)).toBe(false);
+
+            // A validation error should not be in other categories
+            expect(isNetworkError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                false,
+            );
+            expect(isValidationError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                true,
+            );
+            expect(isParseError(SourceMapErrorCode.INVALID_VERSION)).toBe(
+                false,
+            );
+            expect(isVlqError(SourceMapErrorCode.INVALID_VERSION)).toBe(false);
+
+            // A parse error should not be in other categories
+            expect(isNetworkError(SourceMapErrorCode.INVALID_JSON)).toBe(false);
+            expect(isValidationError(SourceMapErrorCode.INVALID_JSON)).toBe(
+                false,
+            );
+            expect(isParseError(SourceMapErrorCode.INVALID_JSON)).toBe(true);
+            expect(isVlqError(SourceMapErrorCode.INVALID_JSON)).toBe(false);
+
+            // A VLQ error should not be in other categories
+            expect(isNetworkError(SourceMapErrorCode.INVALID_VLQ)).toBe(false);
+            expect(isValidationError(SourceMapErrorCode.INVALID_VLQ)).toBe(
+                false,
+            );
+            expect(isParseError(SourceMapErrorCode.INVALID_VLQ)).toBe(false);
+            expect(isVlqError(SourceMapErrorCode.INVALID_VLQ)).toBe(true);
+        });
     });
 });

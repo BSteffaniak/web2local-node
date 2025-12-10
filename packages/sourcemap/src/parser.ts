@@ -375,7 +375,211 @@ function validateRegularSourceMap(
 }
 
 // ============================================================================
-// INDEX MAP VALIDATION
+// INDEX MAP VALIDATION - HELPER FUNCTIONS
+// ============================================================================
+
+/** Validated offset with line and column */
+interface ValidatedOffset {
+    line: number;
+    column: number;
+}
+
+/**
+ * Validates section.offset field structure and values.
+ * Returns the validated offset if valid, null otherwise.
+ */
+function validateSectionOffset(
+    section: RawIndexMapSection,
+    fieldPrefix: string,
+    errors: SourceMapValidationError[],
+): ValidatedOffset | null {
+    if (section.offset === undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset is required`,
+                `${fieldPrefix}.offset`,
+            ),
+        );
+        return null;
+    }
+
+    if (typeof section.offset !== 'object' || section.offset === null) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset must be an object`,
+                `${fieldPrefix}.offset`,
+            ),
+        );
+        return null;
+    }
+
+    const offset = section.offset as RawIndexMapOffset;
+    let lineValid = false;
+    let columnValid = false;
+
+    // Validate offset.line
+    if (offset.line === undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset.line is required`,
+                `${fieldPrefix}.offset.line`,
+            ),
+        );
+    } else if (
+        typeof offset.line !== 'number' ||
+        !Number.isInteger(offset.line) ||
+        offset.line < 0
+    ) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset.line must be a non-negative integer`,
+                `${fieldPrefix}.offset.line`,
+            ),
+        );
+    } else {
+        lineValid = true;
+    }
+
+    // Validate offset.column
+    if (offset.column === undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset.column is required`,
+                `${fieldPrefix}.offset.column`,
+            ),
+        );
+    } else if (
+        typeof offset.column !== 'number' ||
+        !Number.isInteger(offset.column) ||
+        offset.column < 0
+    ) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
+                `${fieldPrefix}.offset.column must be a non-negative integer`,
+                `${fieldPrefix}.offset.column`,
+            ),
+        );
+    } else {
+        columnValid = true;
+    }
+
+    // Return validated offset only if both line and column are valid
+    if (lineValid && columnValid) {
+        return {
+            line: offset.line as number,
+            column: offset.column as number,
+        };
+    }
+    return null;
+}
+
+/**
+ * Validates section ordering and overlap against previous section.
+ */
+function validateSectionOrdering(
+    current: ValidatedOffset,
+    prev: ValidatedOffset | null,
+    fieldPrefix: string,
+    errors: SourceMapValidationError[],
+): void {
+    if (prev === null) return;
+
+    // Check for invalid order (current section starts before previous)
+    if (
+        current.line < prev.line ||
+        (current.line === prev.line && current.column < prev.column)
+    ) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
+                `${fieldPrefix} has offset before previous section (sections must be in order)`,
+                `${fieldPrefix}.offset`,
+            ),
+        );
+    }
+    // Check for overlap (same position as previous)
+    else if (current.line === prev.line && current.column === prev.column) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INDEX_MAP_OVERLAP,
+                `${fieldPrefix} overlaps with previous section (same offset)`,
+                `${fieldPrefix}.offset`,
+            ),
+        );
+    }
+}
+
+/**
+ * Validates section.map field.
+ */
+function validateSectionMap(
+    section: RawIndexMapSection,
+    fieldPrefix: string,
+    errors: SourceMapValidationError[],
+    warnings: string[],
+): void {
+    if (section.map === undefined) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                `${fieldPrefix}.map is required`,
+                `${fieldPrefix}.map`,
+            ),
+        );
+        return;
+    }
+
+    if (typeof section.map !== 'object' || section.map === null) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
+                `${fieldPrefix}.map must be an object`,
+                `${fieldPrefix}.map`,
+            ),
+        );
+        return;
+    }
+
+    const sectionMap = section.map as RawSourceMap;
+
+    // Check for nested index map (not allowed per spec)
+    if (isIndexMap(sectionMap)) {
+        errors.push(
+            validationError(
+                SourceMapErrorCode.INDEX_MAP_NESTED,
+                `${fieldPrefix}.map cannot be an index map (nested index maps not allowed)`,
+                `${fieldPrefix}.map`,
+            ),
+        );
+        return;
+    }
+
+    // Recursively validate the section map as a regular source map
+    const sectionResult = validateRegularSourceMap(sectionMap);
+    for (const error of sectionResult.errors) {
+        errors.push(
+            validationError(
+                error.code as SourceMapErrorCode,
+                `${fieldPrefix}.map: ${error.message}`,
+                error.field
+                    ? `${fieldPrefix}.map.${error.field}`
+                    : `${fieldPrefix}.map`,
+            ),
+        );
+    }
+    for (const warning of sectionResult.warnings) {
+        warnings.push(`${fieldPrefix}.map: ${warning}`);
+    }
+}
+
+// ============================================================================
+// INDEX MAP VALIDATION - MAIN FUNCTION
 // ============================================================================
 
 /**
@@ -411,7 +615,7 @@ function validateIndexMapInternal(
         );
     }
 
-    // Sections validation
+    // Sections must be an array
     if (!Array.isArray(obj.sections)) {
         errors.push(
             validationError(
@@ -423,14 +627,14 @@ function validateIndexMapInternal(
         return { valid: false, errors, warnings };
     }
 
-    // Track previous offset for order/overlap validation
-    let prevLine = -1;
-    let prevColumn = -1;
+    // Validate each section
+    let prevOffset: ValidatedOffset | null = null;
 
     for (let i = 0; i < obj.sections.length; i++) {
         const section = obj.sections[i] as RawIndexMapSection | null;
         const fieldPrefix = `sections[${i}]`;
 
+        // Section must be an object
         if (typeof section !== 'object' || section === null) {
             errors.push(
                 validationError(
@@ -443,166 +647,14 @@ function validateIndexMapInternal(
         }
 
         // Validate offset
-        if (section.offset === undefined) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                    `${fieldPrefix}.offset is required`,
-                    `${fieldPrefix}.offset`,
-                ),
-            );
-        } else if (
-            typeof section.offset !== 'object' ||
-            section.offset === null
-        ) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                    `${fieldPrefix}.offset must be an object`,
-                    `${fieldPrefix}.offset`,
-                ),
-            );
-        } else {
-            const offset = section.offset as RawIndexMapOffset;
-
-            // Validate offset.line
-            if (offset.line === undefined) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                        `${fieldPrefix}.offset.line is required`,
-                        `${fieldPrefix}.offset.line`,
-                    ),
-                );
-            } else if (
-                typeof offset.line !== 'number' ||
-                !Number.isInteger(offset.line) ||
-                offset.line < 0
-            ) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                        `${fieldPrefix}.offset.line must be a non-negative integer`,
-                        `${fieldPrefix}.offset.line`,
-                    ),
-                );
-            }
-
-            // Validate offset.column
-            if (offset.column === undefined) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                        `${fieldPrefix}.offset.column is required`,
-                        `${fieldPrefix}.offset.column`,
-                    ),
-                );
-            } else if (
-                typeof offset.column !== 'number' ||
-                !Number.isInteger(offset.column) ||
-                offset.column < 0
-            ) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INVALID_INDEX_MAP_OFFSET,
-                        `${fieldPrefix}.offset.column must be a non-negative integer`,
-                        `${fieldPrefix}.offset.column`,
-                    ),
-                );
-            }
-
-            // Check ordering and overlap (only if both line and column are valid numbers)
-            if (
-                typeof offset.line === 'number' &&
-                typeof offset.column === 'number' &&
-                Number.isInteger(offset.line) &&
-                Number.isInteger(offset.column)
-            ) {
-                const currentLine = offset.line;
-                const currentColumn = offset.column;
-
-                if (i > 0) {
-                    // Check for invalid order (current section starts before previous)
-                    if (
-                        currentLine < prevLine ||
-                        (currentLine === prevLine && currentColumn < prevColumn)
-                    ) {
-                        errors.push(
-                            validationError(
-                                SourceMapErrorCode.INDEX_MAP_INVALID_ORDER,
-                                `${fieldPrefix} has offset before previous section (sections must be in order)`,
-                                `${fieldPrefix}.offset`,
-                            ),
-                        );
-                    }
-                    // Check for overlap (same position as previous)
-                    else if (
-                        currentLine === prevLine &&
-                        currentColumn === prevColumn
-                    ) {
-                        errors.push(
-                            validationError(
-                                SourceMapErrorCode.INDEX_MAP_OVERLAP,
-                                `${fieldPrefix} overlaps with previous section (same offset)`,
-                                `${fieldPrefix}.offset`,
-                            ),
-                        );
-                    }
-                }
-
-                prevLine = currentLine;
-                prevColumn = currentColumn;
-            }
+        const offset = validateSectionOffset(section, fieldPrefix, errors);
+        if (offset !== null) {
+            validateSectionOrdering(offset, prevOffset, fieldPrefix, errors);
+            prevOffset = offset;
         }
 
         // Validate map
-        if (section.map === undefined) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
-                    `${fieldPrefix}.map is required`,
-                    `${fieldPrefix}.map`,
-                ),
-            );
-        } else if (typeof section.map !== 'object' || section.map === null) {
-            errors.push(
-                validationError(
-                    SourceMapErrorCode.INVALID_INDEX_MAP_SECTION_MAP,
-                    `${fieldPrefix}.map must be an object`,
-                    `${fieldPrefix}.map`,
-                ),
-            );
-        } else {
-            const sectionMap = section.map as RawSourceMap;
-
-            // Check for nested index map (not allowed per spec)
-            if (isIndexMap(sectionMap)) {
-                errors.push(
-                    validationError(
-                        SourceMapErrorCode.INDEX_MAP_NESTED,
-                        `${fieldPrefix}.map cannot be an index map (nested index maps not allowed)`,
-                        `${fieldPrefix}.map`,
-                    ),
-                );
-            } else {
-                // Recursively validate the section map as a regular source map
-                const sectionResult = validateRegularSourceMap(sectionMap);
-                for (const error of sectionResult.errors) {
-                    errors.push(
-                        validationError(
-                            error.code as SourceMapErrorCode,
-                            `${fieldPrefix}.map: ${error.message}`,
-                            error.field
-                                ? `${fieldPrefix}.map.${error.field}`
-                                : `${fieldPrefix}.map`,
-                        ),
-                    );
-                }
-                for (const warning of sectionResult.warnings) {
-                    warnings.push(`${fieldPrefix}.map: ${warning}`);
-                }
-            }
-        }
+        validateSectionMap(section, fieldPrefix, errors, warnings);
     }
 
     return {
