@@ -9,17 +9,22 @@ Extract and reconstruct original source code from production websites using publ
 - Node.js >= 20.12.0
 - pnpm >= 10.24.0
 
+### Installation
+
 ```bash
 git clone https://github.com/BSteffaniak/web2local-node
 cd web2local-node
 pnpm install
 pnpm build
 
-# Extract, analyze, capture API calls, and rebuild
-pnpm cli https://example.com -o ./my-project
+# Install playwright browser dependencies required for crawling pages
+pnpm exec playwright install
+
+# Extract, analyze, capture API calls, and rebuild (output to ./output/example.com)
+pnpm cli https://example.com
 
 # Start mock server to develop against captured data
-pnpm cli serve ./my-project
+pnpm cli serve ./output/example.com
 ```
 
 ## Features
