@@ -503,6 +503,33 @@ async function extractWithCrawl(
 
         progress.stop();
 
+        // Check for critical errors (like browser launch failure)
+        if (result.errors.length > 0) {
+            // If we have errors and no bundles, it's likely a critical failure
+            if (capturedBundles.size === 0) {
+                console.log(
+                    chalk.red(
+                        `✗ Capture failed with ${result.errors.length} error(s):`,
+                    ),
+                );
+                for (const error of result.errors) {
+                    console.log(chalk.red(`    ${error}`));
+                }
+                return;
+            }
+            // Otherwise, show warnings but continue
+            console.log(
+                chalk.yellow(
+                    `⚠ Capture completed with ${result.errors.length} error(s)`,
+                ),
+            );
+            if (options.verbose) {
+                for (const error of result.errors) {
+                    console.log(chalk.red(`    ${error}`));
+                }
+            }
+        }
+
         const crawlStats = result.stats.crawlStats;
         console.log(
             chalk.green(
