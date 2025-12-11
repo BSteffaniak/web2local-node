@@ -73,6 +73,8 @@ export interface CliOptions {
     // Capture parallelization options
     captureConcurrency: number;
     pageRetries: number;
+    retryDelay: number;
+    retryDelayMax: number;
     rateLimitDelay: number;
     pageTimeout: number;
     // Capture wait time options
@@ -282,8 +284,18 @@ export function parseArgs(): CliOptions {
         )
         .option(
             '--page-retries <number>',
-            'Number of retries for failed page navigations (default: 2)',
-            '2',
+            'Number of retries for failed page navigations (default: 3)',
+            '3',
+        )
+        .option(
+            '--retry-delay <ms>',
+            'Base delay for exponential backoff between retries in ms (default: 500)',
+            '500',
+        )
+        .option(
+            '--retry-delay-max <ms>',
+            'Maximum backoff delay between retries in ms (default: 5000)',
+            '5000',
         )
         .option(
             '--rate-limit-delay <ms>',
@@ -405,6 +417,8 @@ export function parseArgs(): CliOptions {
                 // Capture parallelization options
                 captureConcurrency: parseInt(options.captureConcurrency, 10),
                 pageRetries: parseInt(options.pageRetries, 10),
+                retryDelay: parseInt(options.retryDelay, 10),
+                retryDelayMax: parseInt(options.retryDelayMax, 10),
                 rateLimitDelay: parseInt(options.rateLimitDelay, 10),
                 pageTimeout: parseInt(options.pageTimeout, 10),
                 // Capture wait time options
@@ -567,6 +581,8 @@ export function parseArgs(): CliOptions {
         // Capture parallelization options
         captureConcurrency: parseInt(options.captureConcurrency, 10),
         pageRetries: parseInt(options.pageRetries, 10),
+        retryDelay: parseInt(options.retryDelay, 10),
+        retryDelayMax: parseInt(options.retryDelayMax, 10),
         rateLimitDelay: parseInt(options.rateLimitDelay, 10),
         pageTimeout: parseInt(options.pageTimeout, 10),
         // Capture wait time options

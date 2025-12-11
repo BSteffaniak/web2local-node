@@ -48,7 +48,8 @@ export type WorkerPhase =
     | 'capturing-html'
     | 'completed'
     | 'error'
-    | 'retrying';
+    | 'retrying'
+    | 'backing-off';
 
 /**
  * Worker status types (simplified for display)
@@ -82,6 +83,10 @@ export interface WorkerState {
         /** Size in bytes (if known) */
         size?: number;
     };
+    /** Backoff delay in ms (when phase is 'backing-off') */
+    backoffMs?: number;
+    /** Backoff start time (when phase is 'backing-off') for countdown */
+    backoffStartTime?: number;
 }
 
 /**
@@ -928,8 +933,12 @@ export class ProgressDisplay {
             const url = state.url ? this.formatUrl(state.url) : '';
             const elapsed = this.formatElapsed(state.phaseStartTime);
             const progressBar = this.renderProgressBar(state.phase);
-            const phaseLabelFull = this.getPhaseLabel(state.phase, true);
-            const phaseLabelShort = this.getPhaseLabel(state.phase, false);
+            const phaseLabelFull = this.getPhaseLabel(state.phase, true, state);
+            const phaseLabelShort = this.getPhaseLabel(
+                state.phase,
+                false,
+                state,
+            );
 
             // Adaptive layout based on available space
             mainLine = this.layoutWorkerLine(
@@ -1172,9 +1181,31 @@ export class ProgressDisplay {
 
     /**
      * Get phase label for display
+     * @param phase The current phase
+     * @param full Whether to use full label (true) or short label (false)
+     * @param state Optional worker state for dynamic labels (e.g., backing-off countdown)
      */
-    private getPhaseLabel(phase?: WorkerPhase, full: boolean = false): string {
+    private getPhaseLabel(
+        phase?: WorkerPhase,
+        full: boolean = false,
+        state?: WorkerState,
+    ): string {
         if (!phase) return '';
+
+        // Special handling for backing-off phase with countdown
+        if (
+            phase === 'backing-off' &&
+            state?.backoffMs &&
+            state?.backoffStartTime
+        ) {
+            const elapsed = Date.now() - state.backoffStartTime;
+            const remaining = Math.max(0, state.backoffMs - elapsed);
+            const remainingSeconds = (remaining / 1000).toFixed(1);
+            const label = full
+                ? `backing off (${remainingSeconds}s)`
+                : `backoff ${remainingSeconds}s`;
+            return `[${label}]`;
+        }
 
         const labels: Record<WorkerPhase, [string, string]> = {
             navigating: ['navigating', 'nav'],
@@ -1186,6 +1217,7 @@ export class ProgressDisplay {
             completed: ['completed', 'done'],
             error: ['error', 'error'],
             retrying: ['retrying', 'retry'],
+            'backing-off': ['backing off', 'backoff'],
         };
 
         const [fullLabel, shortLabel] = labels[phase] || ['', ''];

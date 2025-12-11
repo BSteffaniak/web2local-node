@@ -42,6 +42,7 @@ export const PHASE_STATUS_MAP: Record<string, WorkerStatus> = {
     completed: 'idle',
     error: 'error',
     retrying: 'retrying',
+    'backing-off': 'retrying',
 };
 
 /**
@@ -61,14 +62,27 @@ function handlePageProgress(
         depth,
         linksDiscovered,
         error,
+        backoffMs,
     } = event;
 
     // Update worker state
-    progress.updateWorker(workerId, {
+    // For backing-off phase, include backoff timing info for countdown display
+    const workerUpdate: Parameters<typeof progress.updateWorker>[1] = {
         status: PHASE_STATUS_MAP[phase] || 'idle',
         phase: phase as WorkerPhase,
         url,
-    });
+    };
+
+    if (phase === 'backing-off' && backoffMs) {
+        workerUpdate.backoffMs = backoffMs;
+        workerUpdate.backoffStartTime = Date.now();
+    } else {
+        // Clear backoff state when not backing off
+        workerUpdate.backoffMs = undefined;
+        workerUpdate.backoffStartTime = undefined;
+    }
+
+    progress.updateWorker(workerId, workerUpdate);
 
     // Update aggregate stats
     progress.updateStats({
@@ -89,6 +103,11 @@ function handlePageProgress(
         );
     } else if (phase === 'retrying') {
         progress.log(`${chalk.yellow('↻')} Retrying: ${shortUrl}`);
+    } else if (phase === 'backing-off' && backoffMs) {
+        const backoffSeconds = (backoffMs / 1000).toFixed(1);
+        progress.log(
+            `${chalk.yellow('⏳')} Backing off: ${shortUrl} (${backoffSeconds}s)`,
+        );
     }
 }
 

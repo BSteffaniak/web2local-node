@@ -91,7 +91,9 @@ const DEFAULT_CAPTURE_OPTIONS: Partial<CaptureOptions> = {
     crawlMaxPages: 100,
     // Parallelization defaults
     concurrency: 5,
-    pageRetries: 2,
+    pageRetries: 3,
+    retryDelayBase: 500,
+    retryDelayMax: 5000,
     rateLimitDelay: 0,
     pageTimeout: 30000,
     // Wait time defaults
@@ -129,7 +131,9 @@ export async function captureWebsite(
 
     // Parallelization settings
     const concurrency = opts.concurrency ?? 5;
-    const pageRetries = opts.pageRetries ?? 2;
+    const pageRetries = opts.pageRetries ?? 3;
+    const retryDelayBase = opts.retryDelayBase ?? 500;
+    const retryDelayMax = opts.retryDelayMax ?? 5000;
     const rateLimitDelay = opts.rateLimitDelay ?? 0;
     const pageTimeout = opts.pageTimeout ?? 30000;
 
@@ -250,6 +254,8 @@ export async function captureWebsite(
                         autoScroll: opts.autoScroll,
                         pageTimeout,
                         rateLimitDelay,
+                        retryDelayBase,
+                        retryDelayMax,
                         captureStatic: opts.captureStatic,
                         captureRenderedHtml: opts.captureRenderedHtml ?? false,
                         crawlEnabled,

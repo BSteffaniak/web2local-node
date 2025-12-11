@@ -1475,7 +1475,7 @@ export class StaticCapturer {
             : htmlAssets.length + cssAssets.length;
 
         // Total items across all phases
-        let overallTotal =
+        const overallTotal =
             pendingCapturesCount + responsiveUrlsCount + rewriteCount;
         let completedItems = 0;
 

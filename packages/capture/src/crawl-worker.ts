@@ -17,6 +17,22 @@ import type {
 } from './types.js';
 
 /**
+ * Calculate exponential backoff delay for a retry attempt.
+ * @param retryCount - The current retry count (0 = first retry)
+ * @param baseDelay - Base delay in ms
+ * @param maxDelay - Maximum delay in ms
+ * @returns Delay in ms: base * 2^retryCount, capped at maxDelay
+ */
+function getBackoffDelay(
+    retryCount: number,
+    baseDelay: number,
+    maxDelay: number,
+): number {
+    // Exponential: base * 2^retryCount => 500, 1000, 2000, 4000...
+    return Math.min(baseDelay * Math.pow(2, retryCount), maxDelay);
+}
+
+/**
  * Options for the crawl worker
  */
 export interface CrawlWorkerOptions {
@@ -52,6 +68,10 @@ export interface CrawlWorkerOptions {
     pageTimeout: number;
     /** Delay between requests in ms (rate limiting) */
     rateLimitDelay: number;
+    /** Base delay for exponential backoff between retries in ms */
+    retryDelayBase: number;
+    /** Maximum backoff delay between retries in ms */
+    retryDelayMax: number;
 
     // Capture options
     /** Whether to capture static assets */
@@ -244,6 +264,33 @@ export class CrawlWorker {
                     this.errors.push(
                         `Failed after ${item.retries + 1} attempts: ${item.url}: ${error}`,
                     );
+                } else {
+                    // Apply exponential backoff before retry
+                    const { retryDelayBase, retryDelayMax } = this.options;
+                    const backoffDelay = getBackoffDelay(
+                        item.retries,
+                        retryDelayBase,
+                        retryDelayMax,
+                    );
+
+                    // Emit backing-off event so TUI can display countdown
+                    onProgress?.(
+                        this.buildProgressEvent('backing-off', item, {
+                            backoffMs: backoffDelay,
+                        }),
+                    );
+
+                    this.verbose(
+                        `Backoff: waiting ${backoffDelay}ms before retry ${item.retries + 1}`,
+                        'debug',
+                        {
+                            url: item.url,
+                            backoffDelay,
+                            retryCount: item.retries,
+                        },
+                    );
+
+                    await sleep(backoffDelay);
                 }
             }
 

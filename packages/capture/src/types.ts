@@ -140,8 +140,12 @@ export interface CaptureOptions {
 
     /** Number of pages to crawl in parallel (default: 5) */
     concurrency?: number;
-    /** Number of retries for failed page navigations (default: 2) */
+    /** Number of retries for failed page navigations (default: 3) */
     pageRetries?: number;
+    /** Base delay for exponential backoff between retries in ms (default: 500) */
+    retryDelayBase?: number;
+    /** Maximum backoff delay between retries in ms (default: 5000) */
+    retryDelayMax?: number;
     /** Delay between requests in ms to avoid rate limiting (default: 0, disabled) */
     rateLimitDelay?: number;
     /** Per-page navigation timeout in ms (default: 30000) */
@@ -196,7 +200,8 @@ export interface PageProgressEvent {
         | 'capturing-html'
         | 'completed'
         | 'error'
-        | 'retrying';
+        | 'retrying'
+        | 'backing-off';
     /** URL being processed */
     url: string;
     /** Number of pages completed so far */
@@ -217,6 +222,8 @@ export interface PageProgressEvent {
     willRetry?: boolean;
     /** Number of links discovered from this page */
     linksDiscovered?: number;
+    /** Backoff delay in ms (when phase is 'backing-off') */
+    backoffMs?: number;
 }
 
 /**

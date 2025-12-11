@@ -910,6 +910,8 @@ export async function runMain(options: CliOptions) {
                 // Parallelization options
                 concurrency: options.captureConcurrency,
                 pageRetries: options.pageRetries,
+                retryDelayBase: options.retryDelay,
+                retryDelayMax: options.retryDelayMax,
                 rateLimitDelay: options.rateLimitDelay,
                 pageTimeout: options.pageTimeout,
                 // Wait time options
