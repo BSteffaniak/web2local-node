@@ -27,6 +27,7 @@
         "@web2local/scraper": "0.0.1-alpha.1",
         "@web2local/server": "0.0.1-alpha.1",
         "@web2local/sourcemap": "0.0.1-alpha.1",
+        "@web2local/state": "0.0.1-alpha.1",
         "@web2local/stubs": "0.0.1-alpha.1",
         "@web2local/types": "0.0.1-alpha.1",
         "@web2local/utils": "0.0.1-alpha.1",

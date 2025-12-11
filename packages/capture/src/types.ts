@@ -7,6 +7,7 @@ import type {
     CapturedAsset,
     CapturedRedirect,
 } from '@web2local/types';
+import type { StateManager } from '@web2local/state';
 
 // Re-export core capture types from @web2local/types
 export type {
@@ -161,6 +162,14 @@ export interface CaptureOptions {
     scrollDelay?: number;
     /** Additional settle time after scrolling in ms (default: 1000) */
     pageSettleTime?: number;
+
+    // ===== State Management (for resume) =====
+
+    /**
+     * State manager for resume functionality.
+     * When provided, capture will track progress and can resume from interruptions.
+     */
+    stateManager?: StateManager;
 }
 
 /**
@@ -222,6 +231,8 @@ export interface PageProgressEvent {
     willRetry?: boolean;
     /** Number of links discovered from this page */
     linksDiscovered?: number;
+    /** URLs discovered from this page (when phase is 'completed') */
+    discoveredUrls?: Array<{ url: string; depth: number }>;
     /** Backoff delay in ms (when phase is 'backing-off') */
     backoffMs?: number;
 }

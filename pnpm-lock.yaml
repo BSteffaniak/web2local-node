@@ -134,6 +134,9 @@ importers:
       '@web2local/manifest':
         specifier: 0.0.1-alpha.1
         version: link:../manifest
+      '@web2local/state':
+        specifier: 0.0.1-alpha.1
+        version: link:../state
       '@web2local/types':
         specifier: 0.0.1-alpha.1
         version: link:../types
@@ -189,6 +192,9 @@ importers:
       '@web2local/sourcemap':
         specifier: 0.0.1-alpha.1
         version: link:../sourcemap
+      '@web2local/state':
+        specifier: 0.0.1-alpha.1
+        version: link:../state
       '@web2local/stubs':
         specifier: 0.0.1-alpha.1
         version: link:../stubs
@@ -338,6 +344,19 @@ importers:
       '@web2local/http':
         specifier: 0.0.1-alpha.1
         version: link:../http
+      '@web2local/types':
+        specifier: 0.0.1-alpha.1
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.26
+      typescript:
+        specifier: ^5.3.0
+        version: 5.9.3
+
+  packages/state:
+    dependencies:
       '@web2local/types':
         specifier: 0.0.1-alpha.1
         version: link:../types

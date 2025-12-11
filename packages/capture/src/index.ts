@@ -191,8 +191,51 @@ export async function captureWebsite(
         maxDepth,
     });
 
-    // Add initial URL to queue
-    crawlQueue.add(opts.url, 0);
+    // Initialize from state if resuming
+    const stateManager = opts.stateManager;
+    if (stateManager) {
+        const completedUrls = stateManager.getCompletedUrls();
+
+        // Mark completed URLs as visited (won't be re-queued)
+        for (const url of completedUrls) {
+            crawlQueue.markVisited(url);
+        }
+
+        // Initialize completed count so maxPages limit accounts for prior work
+        crawlQueue.initializeCompletedCount(completedUrls.length);
+
+        // Re-queue in-progress URLs (pages that started but didn't complete)
+        // These need to be reprocessed from scratch
+        for (const item of stateManager.getInProgressUrls()) {
+            crawlQueue.add(item.url, item.depth);
+        }
+
+        // Re-queue pending URLs
+        for (const item of stateManager.getPendingUrls()) {
+            crawlQueue.add(item.url, item.depth);
+        }
+
+        // Add initial URL only if not already processed
+        if (
+            !stateManager.isUrlVisited(opts.url) &&
+            !stateManager.getPendingUrls().some((p) => p.url === opts.url)
+        ) {
+            crawlQueue.add(opts.url, 0);
+        }
+
+        // Log resume status
+        if (completedUrls.length > 0) {
+            opts.onVerbose?.({
+                type: 'verbose',
+                level: 'info',
+                source: 'queue',
+                message: `Resuming capture: ${completedUrls.length} pages already completed`,
+            });
+        }
+    } else {
+        // Fresh start - add initial URL to queue
+        crawlQueue.add(opts.url, 0);
+    }
 
     // Shared state for coordinating between workers
     const sharedState: SharedCrawlState = {
@@ -234,6 +277,46 @@ export async function captureWebsite(
 
         opts.onProgress?.({ type: 'lifecycle', phase: 'crawl-starting' });
 
+        // Wrap progress callback to track state if state manager is provided
+        const originalOnProgress = opts.onProgress;
+        const wrappedOnProgress: typeof opts.onProgress = stateManager
+            ? async (event) => {
+                  // Call original callback first
+                  originalOnProgress?.(event);
+
+                  // Track page state changes
+                  if (event.type === 'page-progress') {
+                      if (event.phase === 'navigating') {
+                          // Page started - mark as in progress
+                          await stateManager.markPageStarted(
+                              event.url,
+                              event.depth,
+                          );
+                      } else if (event.phase === 'completed') {
+                          // Page completed - mark URL as completed and persist discovered URLs
+                          // Note: We don't track per-page fixtures/assets as they're written
+                          // to disk as they're captured. We only need URL completion status
+                          // for resume functionality.
+                          await stateManager.markPageCompleted({
+                              url: event.url,
+                              depth: event.depth,
+                              fixtures: [],
+                              assets: [],
+                              discoveredUrls: event.discoveredUrls,
+                          });
+                      } else if (event.phase === 'error' && !event.willRetry) {
+                          // Page failed permanently
+                          await stateManager.markPageFailed(
+                              event.url,
+                              event.depth,
+                              event.error || 'Unknown error',
+                              false,
+                          );
+                      }
+                  }
+              }
+            : originalOnProgress;
+
         // Create workers
         const workers = pages.map(
             (page, i) =>
@@ -260,7 +343,7 @@ export async function captureWebsite(
                         captureRenderedHtml: opts.captureRenderedHtml ?? false,
                         crawlEnabled,
                         maxDepth,
-                        onProgress: opts.onProgress,
+                        onProgress: wrappedOnProgress,
                         onVerbose: opts.onVerbose,
                         verbose: opts.verbose,
                     },

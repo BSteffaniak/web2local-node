@@ -53,6 +53,7 @@ import {
     extractBundleUrls,
     findAllSourceMaps,
     type BundleInfo,
+    type BundleWithContent,
     type ScrapedRedirect,
 } from '@web2local/scraper';
 import { extractSourcesFromMap } from '@web2local/scraper';
@@ -94,6 +95,8 @@ import {
     resolveMissingDynamicImports,
     updateManifestWithResolvedFiles,
 } from '@web2local/analyzer';
+import { StateManager, PHASES, PHASE_STATUS } from '@web2local/state';
+import { shouldTruncateCorruptedWal } from './output-dir.js';
 import type { CliOptions } from './cli.js';
 
 export async function runMain(options: CliOptions) {
@@ -116,106 +119,197 @@ export async function runMain(options: CliOptions) {
     const hostname = new URL(options.url).hostname;
     const outputDir = resolveOutputDir(options.output, hostname);
 
-    // Check if output directory exists and handle overwrite logic
-    await checkOutputDirectory(outputDir, options.overwrite);
+    // Check if output directory exists and handle overwrite/resume logic
+    const outputAction = await checkOutputDirectory(outputDir, {
+        overwrite: options.overwrite,
+        resume: options.resume,
+    });
 
-    console.log(chalk.bold.cyan('\n  web2local'));
-    console.log(chalk.gray('  ' + '─'.repeat(12)));
-    console.log();
-
-    // Step 1: Fetch the page and extract bundle URLs
-    const spinner = ora({
-        text: `Fetching ${options.url}...`,
-        color: 'cyan',
-    }).start();
-    registry.register(spinner);
-
-    let bundles: BundleInfo[];
-    let scrapedRedirect: ScrapedRedirect | undefined;
-    let finalUrl: string;
-    try {
-        const result = await extractBundleUrls(options.url);
-        bundles = result.bundles;
-        finalUrl = result.finalUrl;
-        scrapedRedirect = result.redirect;
-
-        let statusMsg = `Found ${chalk.bold(bundles.length)} bundles (JS/CSS files)`;
-        if (scrapedRedirect) {
-            statusMsg += chalk.gray(
-                ` (redirected: ${scrapedRedirect.from} -> ${scrapedRedirect.to})`,
-            );
-        }
-        spinner.succeed(statusMsg);
-    } catch (error) {
-        if (error instanceof FetchError) {
-            spinner.fail(error.format(options.verbose));
-        } else {
-            spinner.fail(`Failed to fetch page: ${error}`);
-        }
-        process.exit(1);
-    }
-
-    if (bundles.length === 0) {
-        console.log(
-            chalk.yellow('\nNo JavaScript or CSS bundles found on this page.'),
-        );
+    if (outputAction === 'cancel') {
         process.exit(0);
     }
 
-    if (options.verbose) {
-        if (scrapedRedirect) {
+    const isResuming = outputAction === 'resume';
+
+    // Initialize state manager for resume support
+    const truncateWal = isResuming
+        ? await shouldTruncateCorruptedWal(outputDir)
+        : false;
+    const state = await StateManager.create({
+        outputDir,
+        url: options.url,
+        resume: isResuming,
+        truncateCorruptedWal: truncateWal,
+    });
+
+    console.log(chalk.bold.cyan('\n  web2local'));
+    console.log(chalk.gray('  ' + '─'.repeat(12)));
+    if (isResuming) {
+        console.log(chalk.cyan(`  Resuming: ${state.getProgressString()}`));
+    }
+    console.log();
+
+    // Step 1: Fetch the page and extract bundle URLs
+    // Note: We need the actual bundle content for some operations (saveBundles),
+    // so if scrape is complete but extract is not, we re-run scrape to get content.
+    // This is a limitation of storing only metadata in state.
+    const canSkipScrape =
+        state.getPhaseStatus(PHASES.SCRAPE) === PHASE_STATUS.COMPLETED &&
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED;
+
+    let bundles: BundleInfo[];
+    let bundlesWithMaps: BundleInfo[];
+    let vendorBundles: Array<{
+        url: string;
+        filename: string;
+        content: string;
+        inferredPackage?: string;
+    }>;
+    let bundlesWithoutMaps: BundleWithContent[];
+    let scrapedRedirect: ScrapedRedirect | undefined;
+    let finalUrl: string;
+
+    if (canSkipScrape) {
+        // Resume from cached scrape results - we can skip entirely
+        const scrapeResult = state.getScrapeResult()!;
+        bundles = scrapeResult.bundles as BundleInfo[];
+        bundlesWithMaps = scrapeResult.bundlesWithMaps as BundleInfo[];
+        // For vendor bundles, we don't have content when resuming, but that's OK
+        // since we're past the extract phase
+        vendorBundles = scrapeResult.vendorBundles.map((v) => ({
+            ...v,
+            content: '', // Content not needed if extract is done
+        }));
+        // When resuming past extract, we don't need bundlesWithoutMaps content
+        bundlesWithoutMaps = [];
+        finalUrl = scrapeResult.finalUrl || options.url;
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping scrape phase (${bundles.length} bundles cached)`,
+            ),
+        );
+    } else {
+        // Run scrape phase (or re-run if we need content)
+        if (state.getPhaseStatus(PHASES.SCRAPE) !== PHASE_STATUS.COMPLETED) {
+            await state.startPhase(PHASES.SCRAPE);
+        }
+
+        const spinner = ora({
+            text: `Fetching ${options.url}...`,
+            color: 'cyan',
+        }).start();
+        registry.register(spinner);
+
+        try {
+            const result = await extractBundleUrls(options.url);
+            bundles = result.bundles;
+            finalUrl = result.finalUrl;
+            scrapedRedirect = result.redirect;
+
+            let statusMsg = `Found ${chalk.bold(bundles.length)} bundles (JS/CSS files)`;
+            if (scrapedRedirect) {
+                statusMsg += chalk.gray(
+                    ` (redirected: ${scrapedRedirect.from} -> ${scrapedRedirect.to})`,
+                );
+            }
+            spinner.succeed(statusMsg);
+        } catch (error) {
+            await state.failPhase(PHASES.SCRAPE, String(error));
+            if (error instanceof FetchError) {
+                spinner.fail(error.format(options.verbose));
+            } else {
+                spinner.fail(`Failed to fetch page: ${error}`);
+            }
+            process.exit(1);
+        }
+
+        if (bundles.length === 0) {
             console.log(
-                chalk.gray(
-                    `\nRedirect detected: ${scrapedRedirect.from} -> ${scrapedRedirect.to} (${scrapedRedirect.status})`,
+                chalk.yellow(
+                    '\nNo JavaScript or CSS bundles found on this page.',
                 ),
             );
+            await state.finalize();
+            process.exit(0);
         }
-        console.log(chalk.gray('\nBundles found:'));
-        for (const bundle of bundles) {
-            console.log(chalk.gray(`  - ${bundle.url}`));
+
+        if (options.verbose) {
+            if (scrapedRedirect) {
+                console.log(
+                    chalk.gray(
+                        `\nRedirect detected: ${scrapedRedirect.from} -> ${scrapedRedirect.to} (${scrapedRedirect.status})`,
+                    ),
+                );
+            }
+            console.log(chalk.gray('\nBundles found:'));
+            for (const bundle of bundles) {
+                console.log(chalk.gray(`  - ${bundle.url}`));
+            }
+            console.log();
         }
-        console.log();
-    }
 
-    // Step 2: Find source maps for each bundle
-    const mapSpinner = ora({
-        text: 'Searching for source maps...',
-        color: 'cyan',
-    }).start();
-    registry.register(mapSpinner);
+        // Step 2: Find source maps for each bundle
+        const mapSpinner = ora({
+            text: 'Searching for source maps...',
+            color: 'cyan',
+        }).start();
+        registry.register(mapSpinner);
 
-    const { bundlesWithMaps, vendorBundles, bundlesWithoutMaps } =
-        await findAllSourceMaps(bundles, {
+        const sourceMapResult = await findAllSourceMaps(bundles, {
             concurrency: options.concurrency,
             onProgress: (completed, total) => {
                 mapSpinner.text = `Checking bundles for source maps... (${completed}/${total})`;
             },
         });
 
-    let savedBundles: SavedBundle[] = [];
+        bundlesWithMaps = sourceMapResult.bundlesWithMaps;
+        vendorBundles = sourceMapResult.vendorBundles;
+        bundlesWithoutMaps = sourceMapResult.bundlesWithoutMaps;
 
-    if (bundlesWithMaps.length === 0) {
-        if (bundlesWithoutMaps.length > 0) {
-            mapSpinner.warn(
-                'No source maps found - will use minified bundles as fallback',
-            );
+        // Save scrape results to state (only metadata, not content)
+        await state.setScrapeResult({
+            bundles,
+            bundlesWithMaps,
+            vendorBundles: vendorBundles.map(
+                ({ url, filename, inferredPackage }) => ({
+                    url,
+                    filename,
+                    inferredPackage,
+                }),
+            ),
+            bundlesWithoutMaps: bundlesWithoutMaps.map((bwc) => bwc.bundle),
+            finalUrl,
+        });
+
+        if (bundlesWithMaps.length === 0) {
+            if (bundlesWithoutMaps.length > 0) {
+                mapSpinner.warn(
+                    'No source maps found - will use minified bundles as fallback',
+                );
+            } else {
+                mapSpinner.fail('No source maps found for any bundles');
+                console.log(
+                    chalk.yellow(
+                        '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.',
+                    ),
+                );
+            }
         } else {
-            mapSpinner.fail('No source maps found for any bundles');
-            console.log(
-                chalk.yellow(
-                    '\nThis site may not have publicly accessible source maps, or they may be using inline source maps.',
-                ),
-            );
+            let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
+            if (vendorBundles.length > 0) {
+                mapStatusMsg += chalk.gray(
+                    ` + ${vendorBundles.length} vendor bundles`,
+                );
+            }
+            mapSpinner.succeed(mapStatusMsg);
         }
-    } else {
-        let mapStatusMsg = `Found ${chalk.bold(bundlesWithMaps.length)} source maps`;
-        if (vendorBundles.length > 0) {
-            mapStatusMsg += chalk.gray(
-                ` + ${vendorBundles.length} vendor bundles`,
-            );
+
+        if (state.getPhaseStatus(PHASES.SCRAPE) !== PHASE_STATUS.COMPLETED) {
+            await state.completePhase(PHASES.SCRAPE);
         }
-        mapSpinner.succeed(mapStatusMsg);
     }
+
+    let savedBundles: SavedBundle[] = [];
 
     // Always save bundles without source maps (best-effort fallback)
     // --save-bundles additionally saves bundles that DO have source maps
@@ -295,66 +389,97 @@ export async function runMain(options: CliOptions) {
     }> = [];
 
     // Phase 1: Extract all source maps (only if there are bundles with source maps)
-    if (bundlesWithMaps.length > 0) {
+    // Check if extract phase is already complete (for resume)
+    const skipExtract =
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED;
+
+    if (skipExtract) {
+        totalFilesWritten = state.getTotalFilesExtracted();
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping extract phase (${totalFilesWritten} files already extracted)`,
+            ),
+        );
+    } else if (bundlesWithMaps.length > 0) {
+        if (state.getPhaseStatus(PHASES.EXTRACT) !== PHASE_STATUS.IN_PROGRESS) {
+            await state.startPhase(PHASES.EXTRACT);
+        }
+
         console.log(chalk.bold('\nExtracting source files:'));
         console.log();
-    }
 
-    for (const bundle of bundlesWithMaps) {
-        const bundleName = getBundleName(bundle.url);
-        const extractSpinner = ora({
-            text: `Extracting ${chalk.cyan(bundleName)}...`,
-            indent: 2,
-        }).start();
-        registry.register(extractSpinner);
+        for (const bundle of bundlesWithMaps) {
+            const bundleName = getBundleName(bundle.url);
 
-        try {
-            const result = await extractSourcesFromMap(
-                bundle.sourceMapUrl!,
-                bundle.url,
-            );
-
-            if (result.errors.length > 0) {
-                extractSpinner.warn(
-                    `${bundleName}: ${result.errors.length} errors during extraction`,
+            // Skip already extracted bundles (for partial resume)
+            if (state.isBundleExtracted(bundleName)) {
+                console.log(
+                    chalk.gray(`  Skipping ${bundleName} (already extracted)`),
                 );
-                for (const error of result.errors) {
-                    console.log(chalk.red(`    ${error}`));
-                }
-            }
-
-            if (result.sources.length === 0) {
-                extractSpinner.info(`${bundleName}: No source files found`);
                 continue;
             }
 
-            // Collect ALL files for version extraction (before filtering)
-            // This includes node_modules/*/package.json files
-            // Sanitize paths FIRST to resolve `..` segments, THEN prefix with bundle name
-            // to match the actual output structure (sanitizePath in reconstructSources does the same)
-            const filesWithBundlePrefix = result.sources
-                .map((f) => {
-                    const sanitized = sanitizePath(f.path);
-                    return sanitized
-                        ? { ...f, path: `${bundleName}/${sanitized}` }
-                        : null;
-                })
-                .filter((f): f is ExtractedSource => f !== null);
-            allExtractedFiles.push(...filesWithBundlePrefix);
+            const extractSpinner = ora({
+                text: `Extracting ${chalk.cyan(bundleName)}...`,
+                indent: 2,
+            }).start();
+            registry.register(extractSpinner);
 
-            // Store for reconstruction phase (original paths, bundleName is added during reconstruction)
-            bundleExtractions.push({
-                bundle,
-                bundleName,
-                files: result.sources,
-                errors: result.errors,
-            });
+            try {
+                const result = await extractSourcesFromMap(
+                    bundle.sourceMapUrl!,
+                    bundle.url,
+                );
 
-            extractSpinner.succeed(
-                `${chalk.cyan(bundleName)}: ${chalk.green(result.sources.length)} files found`,
-            );
-        } catch (error) {
-            extractSpinner.fail(`${bundleName}: ${error}`);
+                if (result.errors.length > 0) {
+                    extractSpinner.warn(
+                        `${bundleName}: ${result.errors.length} errors during extraction`,
+                    );
+                    for (const error of result.errors) {
+                        console.log(chalk.red(`    ${error}`));
+                    }
+                }
+
+                if (result.sources.length === 0) {
+                    extractSpinner.info(`${bundleName}: No source files found`);
+                    await state.markBundleExtracted(bundleName, 0);
+                    continue;
+                }
+
+                // Collect ALL files for version extraction (before filtering)
+                // This includes node_modules/*/package.json files
+                // Sanitize paths FIRST to resolve `..` segments, THEN prefix with bundle name
+                // to match the actual output structure (sanitizePath in reconstructSources does the same)
+                const filesWithBundlePrefix = result.sources
+                    .map((f) => {
+                        const sanitized = sanitizePath(f.path);
+                        return sanitized
+                            ? { ...f, path: `${bundleName}/${sanitized}` }
+                            : null;
+                    })
+                    .filter((f): f is ExtractedSource => f !== null);
+                allExtractedFiles.push(...filesWithBundlePrefix);
+
+                // Store for reconstruction phase (original paths, bundleName is added during reconstruction)
+                bundleExtractions.push({
+                    bundle,
+                    bundleName,
+                    files: result.sources,
+                    errors: result.errors,
+                });
+
+                // Mark bundle as extracted in state
+                await state.markBundleExtracted(
+                    bundleName,
+                    result.sources.length,
+                );
+
+                extractSpinner.succeed(
+                    `${chalk.cyan(bundleName)}: ${chalk.green(result.sources.length)} files found`,
+                );
+            } catch (error) {
+                extractSpinner.fail(`${bundleName}: ${error}`);
+            }
         }
     }
 
@@ -395,9 +520,11 @@ export async function runMain(options: CliOptions) {
     }
 
     // Phase 3: Reconstruct files with internal packages knowledge
-    console.log();
-    console.log(chalk.bold('Reconstructing files:'));
-    console.log();
+    if (!skipExtract && bundleExtractions.length > 0) {
+        console.log();
+        console.log(chalk.bold('Reconstructing files:'));
+        console.log();
+    }
 
     for (const { bundle, bundleName, files } of bundleExtractions) {
         const reconstructSpinner = ora({
@@ -494,7 +621,19 @@ export async function runMain(options: CliOptions) {
         }
     }
 
-    // Step 5: Generate package.json if requested
+    // Complete extract phase if we ran it
+    if (
+        !skipExtract &&
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.IN_PROGRESS
+    ) {
+        await state.completePhase(PHASES.EXTRACT);
+    }
+
+    // Step 5: Analyze dependencies and generate project files
+    // Check if dependencies phase is already complete (for resume)
+    const skipDependencies =
+        state.getPhaseStatus(PHASES.DEPENDENCIES) === PHASE_STATUS.COMPLETED;
+
     let dependencyStats: {
         totalDependencies: number;
         withVersion: number;
@@ -504,11 +643,26 @@ export async function runMain(options: CliOptions) {
         byConfidence: Record<string, number>;
     } | null = null;
 
+    if (skipDependencies) {
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping dependencies phase (already completed)`,
+            ),
+        );
+    }
+
     // Generate package.json (enabled by default, works with extracted sources OR saved bundles)
     if (
+        !skipDependencies &&
         !options.noPackageJson &&
         (totalFilesWritten > 0 || savedBundles.length > 0)
     ) {
+        // Start dependencies phase if not already in progress
+        if (
+            state.getPhaseStatus(PHASES.DEPENDENCIES) === PHASE_STATUS.PENDING
+        ) {
+            await state.startPhase(PHASES.DEPENDENCIES);
+        }
         const depSpinner = ora({
             text: 'Analyzing dependencies...',
             color: 'cyan',
@@ -823,6 +977,14 @@ export async function runMain(options: CliOptions) {
         } catch (error) {
             depSpinner.fail(`Failed to generate package.json: ${error}`);
         }
+
+        // Complete dependencies phase
+        if (
+            state.getPhaseStatus(PHASES.DEPENDENCIES) ===
+            PHASE_STATUS.IN_PROGRESS
+        ) {
+            await state.completePhase(PHASES.DEPENDENCIES);
+        }
     }
 
     // Summary
@@ -888,7 +1050,29 @@ export async function runMain(options: CliOptions) {
         totalFilesWritten > 0 || savedBundles.length > 0 || !options.noCapture;
 
     // Step 6: Capture API calls (enabled by default)
-    if (!options.noCapture) {
+    // Check if capture phase is already complete (for resume)
+    const skipCapture =
+        options.noCapture ||
+        state.getPhaseStatus(PHASES.CAPTURE) === PHASE_STATUS.COMPLETED;
+
+    if (!skipCapture) {
+        // Check if we're resuming or starting fresh
+        const captureStatus = state.getPhaseStatus(PHASES.CAPTURE);
+        const isResumingCapture = captureStatus === PHASE_STATUS.IN_PROGRESS;
+
+        if (isResumingCapture) {
+            const completedPages = state.getCompletedUrls().length;
+            console.log(
+                chalk.gray(
+                    `  Resuming capture phase (${completedPages} pages already completed)`,
+                ),
+            );
+        }
+
+        if (captureStatus === PHASE_STATUS.PENDING) {
+            await state.startPhase(PHASES.CAPTURE);
+        }
+
         console.log(chalk.bold('\nCapturing API calls:'));
         console.log();
 
@@ -933,6 +1117,8 @@ export async function runMain(options: CliOptions) {
                 scrapedRedirects: scrapedRedirect
                     ? [scrapedRedirect]
                     : undefined,
+                // Pass state manager for resume support
+                stateManager: state,
                 // Use shared event handlers
                 onProgress: createCaptureProgressHandler({
                     progress,
@@ -1180,6 +1366,20 @@ export async function runMain(options: CliOptions) {
                 `    ${chalk.green('✓')} Generated ${chalk.bold(scssVarResult.stubFilesGenerated)} SCSS variable stubs for captured assets`,
             );
         }
+
+        // Mark capture phase as completed
+        if (state.getPhaseStatus(PHASES.CAPTURE) === PHASE_STATUS.IN_PROGRESS) {
+            await state.completePhase(PHASES.CAPTURE);
+        }
+    } else if (
+        state.getPhaseStatus(PHASES.CAPTURE) === PHASE_STATUS.COMPLETED
+    ) {
+        // Skip capture - show resume message
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping capture phase (already completed)`,
+            ),
+        );
     }
 
     // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
@@ -1312,7 +1512,17 @@ export async function runMain(options: CliOptions) {
     }
 
     // Step 7: Rebuild (enabled by default, skip with --no-rebuild)
-    if (!options.noRebuild) {
+    // Check if rebuild phase is already complete (for resume)
+    const skipRebuild =
+        options.noRebuild ||
+        state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED;
+
+    if (!skipRebuild) {
+        // Start rebuild phase if not already in progress
+        if (state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.PENDING) {
+            await state.startPhase(PHASES.REBUILD);
+        }
+
         const sourceDir = outputDir;
 
         console.log(chalk.bold('\nRebuilding from source:'));
@@ -1353,11 +1563,27 @@ export async function runMain(options: CliOptions) {
                 console.log(
                     `    ${chalk.blue('→')} Build time: ${(result.durationMs / 1000).toFixed(1)}s`,
                 );
+
+                // Store rebuild result and complete phase
+                await state.setRebuildResult({
+                    success: true,
+                    outputDir: result.outputDir,
+                    bundles: result.bundles,
+                    durationMs: result.durationMs,
+                });
+                await state.completePhase(PHASES.REBUILD);
             } else {
                 rebuildSpinner.fail('Rebuild failed');
                 for (const error of result.errors) {
                     console.log(chalk.red(`    ${error}`));
                 }
+
+                // Store rebuild failure
+                await state.setRebuildResult({
+                    success: false,
+                    errors: result.errors,
+                });
+                await state.failPhase(PHASES.REBUILD, result.errors.join('; '));
             }
 
             if (result.warnings.length > 0 && options.verbose) {
@@ -1367,10 +1593,27 @@ export async function runMain(options: CliOptions) {
             }
         } catch (error) {
             rebuildSpinner.fail(`Rebuild failed: ${error}`);
+            await state.failPhase(PHASES.REBUILD, String(error));
         }
 
         console.log();
+    } else if (
+        state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED
+    ) {
+        // Skip rebuild - show resume message
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping rebuild phase (already completed)`,
+            ),
+        );
     }
+
+    // Finalize state BEFORE starting server (which may block indefinitely)
+    // This ensures state is persisted even if server is Ctrl+C'd
+    await state.finalize();
+
+    // Clean up spinner registry before server (removes signal handlers that could interfere)
+    registry.cleanup();
 
     // Start mock server if requested and operations were successful
     if (options.serve) {
@@ -1396,9 +1639,6 @@ export async function runMain(options: CliOptions) {
             console.log(`Skipping server start - ${reason}`);
         }
     }
-
-    // Clean up spinner registry
-    registry.cleanup();
 }
 
 /**

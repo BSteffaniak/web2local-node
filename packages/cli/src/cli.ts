@@ -26,6 +26,8 @@ export interface ExtractOptions {
     output?: string;
     /** Clear existing output directory without prompting */
     overwrite: boolean;
+    /** Resume from checkpoint if available */
+    resume: boolean;
     verbose: boolean;
     includeNodeModules: boolean;
     concurrency: number;
@@ -46,6 +48,8 @@ export interface CliOptions {
     output?: string;
     /** Clear existing output directory without prompting */
     overwrite: boolean;
+    /** Resume from checkpoint if available */
+    resume: boolean;
     verbose: boolean;
     includeNodeModules: boolean;
     concurrency: number;
@@ -124,6 +128,7 @@ interface ServeCliOptions {
 interface ExtractCliOptions {
     output?: string;
     overwrite?: boolean;
+    resume?: boolean;
     verbose?: boolean;
     includeNodeModules?: boolean;
     concurrency: string;
@@ -193,6 +198,7 @@ export function parseArgs(): CliOptions {
             'Clear existing output directory without prompting',
             false,
         )
+        .option('--resume', 'Resume from checkpoint if available', false)
         .option('-v, --verbose', 'Enable verbose logging', false)
         .option(
             '-n, --include-node-modules',
@@ -381,6 +387,7 @@ export function parseArgs(): CliOptions {
                 url: normalizedUrl,
                 output: options.output,
                 overwrite: options.overwrite || false,
+                resume: options.resume || false,
                 verbose: options.verbose || false,
                 includeNodeModules: options.includeNodeModules || false,
                 concurrency: parseInt(options.concurrency, 10),
@@ -521,12 +528,14 @@ export function parseArgs(): CliOptions {
             '100',
         )
         .option('--no-headless', 'Run browser in visible mode (not headless)')
+        .option('--resume', 'Resume from checkpoint if available')
         .action(async (url: string, opts: ExtractCliOptions) => {
             const { runExtract } = await import('./run-extract.js');
             await runExtract({
                 url: normalizeUrl(url),
                 output: opts.output,
                 overwrite: opts.overwrite || false,
+                resume: opts.resume || false,
                 verbose: opts.verbose || false,
                 includeNodeModules: opts.includeNodeModules || false,
                 concurrency: parseInt(opts.concurrency, 10),
@@ -548,6 +557,7 @@ export function parseArgs(): CliOptions {
         url,
         output: options.output,
         overwrite: options.overwrite || false,
+        resume: options.resume || false,
         verbose: options.verbose || false,
         includeNodeModules: options.includeNodeModules || false,
         concurrency: parseInt(options.concurrency, 10),

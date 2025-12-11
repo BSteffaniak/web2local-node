@@ -223,19 +223,21 @@ export class CrawlWorker {
                 queue.complete(item.url);
                 this.pagesProcessed++;
 
-                // Include linksDiscovered in completed event
-                const linksDiscovered = (
-                    item as QueueItem & { linksDiscovered?: number }
-                ).linksDiscovered;
+                // Include linksDiscovered and discoveredUrls in completed event
+                const extendedItem = item as QueueItem & {
+                    linksDiscovered?: number;
+                    discoveredUrls?: Array<{ url: string; depth: number }>;
+                };
                 onProgress?.(
                     this.buildProgressEvent('completed', item, {
-                        linksDiscovered,
+                        linksDiscovered: extendedItem.linksDiscovered,
+                        discoveredUrls: extendedItem.discoveredUrls,
                     }),
                 );
 
                 this.verbose(`Completed: ${item.url}`, 'info', {
                     url: item.url,
-                    linksDiscovered,
+                    linksDiscovered: extendedItem.linksDiscovered,
                 });
             } catch (error) {
                 const errorStr = String(error);
@@ -414,6 +416,7 @@ export class CrawlWorker {
 
         // Extract links for crawling
         let linksDiscovered = 0;
+        const discoveredUrls: Array<{ url: string; depth: number }> = [];
         if (crawlEnabled && item.depth < maxDepth) {
             onProgress?.(this.buildProgressEvent('extracting-links', item));
 
@@ -424,9 +427,11 @@ export class CrawlWorker {
                 this.sharedState.resolvedBaseOrigin || baseOrigin;
             const links = await extractPageLinks(page, effectiveBaseOrigin);
 
+            const newDepth = item.depth + 1;
             for (const link of links) {
-                if (queue.add(link, item.depth + 1)) {
+                if (queue.add(link, newDepth)) {
                     linksDiscovered++;
+                    discoveredUrls.push({ url: link, depth: newDepth });
                 }
             }
 
@@ -439,8 +444,18 @@ export class CrawlWorker {
             }
         }
 
-        // Store linksDiscovered for the completed event
-        (item as QueueItem & { linksDiscovered?: number }).linksDiscovered =
-            linksDiscovered;
+        // Store linksDiscovered and discoveredUrls for the completed event
+        (
+            item as QueueItem & {
+                linksDiscovered?: number;
+                discoveredUrls?: Array<{ url: string; depth: number }>;
+            }
+        ).linksDiscovered = linksDiscovered;
+        (
+            item as QueueItem & {
+                linksDiscovered?: number;
+                discoveredUrls?: Array<{ url: string; depth: number }>;
+            }
+        ).discoveredUrls = discoveredUrls;
     }
 }

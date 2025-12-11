@@ -25,6 +25,7 @@ export default defineConfig({
             '@web2local/rebuild': resolve('./packages/rebuild/dist/index.js'),
             '@web2local/scraper': resolve('./packages/scraper/dist/index.js'),
             '@web2local/server': resolve('./packages/server/dist/index.js'),
+            '@web2local/state': resolve('./packages/state/dist/index.js'),
             '@web2local/stubs': resolve('./packages/stubs/dist/index.js'),
             '@web2local/types': resolve('./packages/types/dist/index.js'),
             web2local: resolve('./packages/web2local/dist/index.js'),

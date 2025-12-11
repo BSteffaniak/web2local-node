@@ -262,4 +262,13 @@ export class CrawlQueue {
     markVisited(url: string): void {
         this.visitedUrls.add(normalizeUrlForCrawl(url));
     }
+
+    /**
+     * Initialize completed count for resume scenarios.
+     * Call this before processing begins to account for already-completed pages.
+     * This ensures the maxPages limit accounts for prior work.
+     */
+    initializeCompletedCount(count: number): void {
+        this.completedCount = count;
+    }
 }

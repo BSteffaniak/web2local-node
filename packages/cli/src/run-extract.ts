@@ -16,7 +16,11 @@ import {
     createCaptureProgressHandler,
     createVerboseHandler,
 } from './progress/index.js';
-import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
+import {
+    resolveOutputDir,
+    checkOutputDirectory,
+    shouldTruncateCorruptedWal,
+} from './output-dir.js';
 
 import {
     extractBundleUrls,
@@ -30,6 +34,7 @@ import {
 import { initCache } from '@web2local/cache';
 import { extractSourceMap, shouldIncludeSource } from '@web2local/sourcemap';
 import { FetchError } from '@web2local/http';
+import { StateManager, PHASES, PHASE_STATUS } from '@web2local/state';
 
 // ============================================================================
 // TYPES
@@ -90,12 +95,21 @@ async function writeExtractManifest(
 async function extractFromSourceMapUrl(
     options: ExtractOptions,
     registry: SpinnerRegistry,
+    outputDir: string,
+    state: StateManager,
 ): Promise<void> {
-    const hostname = getHostname(options.url);
-    const outputDir = resolveOutputDir(options.output, hostname);
+    // For direct source map extraction, we treat it as a single-bundle extract
+    // Check if extract phase is already complete
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED) {
+        console.log(
+            chalk.gray(`  Resuming: Skipping extraction (already completed)`),
+        );
+        return;
+    }
 
-    // Check if output directory exists
-    await checkOutputDirectory(outputDir, options.overwrite);
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.PENDING) {
+        await state.startPhase(PHASES.EXTRACT);
+    }
 
     const spinner = ora({
         text: `Extracting from ${chalk.cyan(options.url)}...`,
@@ -174,6 +188,11 @@ async function extractFromSourceMapUrl(
         };
         await writeExtractManifest(outputDir, manifest);
 
+        // Mark bundle as extracted and complete phase
+        const bundleName = getBundleName(options.url);
+        await state.markBundleExtracted(bundleName, filesWritten);
+        await state.completePhase(PHASES.EXTRACT);
+
         // Summary
         console.log(chalk.gray('\n  ' + '─'.repeat(20)));
         console.log(chalk.bold('\n  Summary:'));
@@ -199,6 +218,10 @@ async function extractFromSourceMapUrl(
         spinner.fail(
             `Failed to extract: ${error instanceof Error ? error.message : error}`,
         );
+        await state.failPhase(
+            PHASES.EXTRACT,
+            error instanceof Error ? error.message : String(error),
+        );
         process.exit(1);
     }
 }
@@ -213,12 +236,34 @@ async function extractFromSourceMapUrl(
 async function extractFromPageUrl(
     options: ExtractOptions,
     registry: SpinnerRegistry,
+    outputDir: string,
+    state: StateManager,
 ): Promise<void> {
-    const hostname = getHostname(options.url);
-    const outputDir = resolveOutputDir(options.output, hostname);
+    // Check if extract phase is already complete
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED) {
+        const extractedCount = state.getTotalFilesExtracted();
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping extraction (${extractedCount} files already extracted)`,
+            ),
+        );
+        return;
+    }
 
-    // Check if output directory exists
-    await checkOutputDirectory(outputDir, options.overwrite);
+    const isResuming =
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.IN_PROGRESS;
+    if (isResuming) {
+        const extractedBundles = state.getExtractedBundles().length;
+        console.log(
+            chalk.gray(
+                `  Resuming extraction (${extractedBundles} bundles already extracted)`,
+            ),
+        );
+    }
+
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.PENDING) {
+        await state.startPhase(PHASES.EXTRACT);
+    }
 
     console.log(chalk.bold.cyan('\n  web2local extract'));
     console.log(chalk.gray('  ' + '─'.repeat(18)));
@@ -311,11 +356,20 @@ async function extractFromPageUrl(
     console.log();
 
     const manifestBundles: BundleManifest[] = [];
-    let totalFilesWritten = 0;
+    let totalFilesWritten = state.getTotalFilesExtracted();
     let totalFilesSkipped = 0;
 
     for (const bundle of bundlesWithMaps) {
         const bundleName = getBundleName(bundle.url);
+
+        // Skip already extracted bundles (for resume)
+        if (state.isBundleExtracted(bundleName)) {
+            console.log(
+                chalk.gray(`  Skipping ${bundleName} (already extracted)`),
+            );
+            continue;
+        }
+
         const extractSpinner = ora({
             text: `Extracting ${chalk.cyan(bundleName)}...`,
             indent: 2,
@@ -342,6 +396,7 @@ async function extractFromPageUrl(
 
             if (result.sources.length === 0) {
                 extractSpinner.info(`${bundleName}: No source files found`);
+                await state.markBundleExtracted(bundleName, 0);
                 continue;
             }
 
@@ -362,6 +417,12 @@ async function extractFromPageUrl(
                 filesExtracted: reconstructResult.filesWritten,
                 files: result.sources.map((f) => f.path).slice(0, 100),
             });
+
+            // Mark bundle as extracted in state
+            await state.markBundleExtracted(
+                bundleName,
+                reconstructResult.filesWritten,
+            );
 
             extractSpinner.succeed(
                 `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files` +
@@ -392,6 +453,11 @@ async function extractFromPageUrl(
             totalFiles: totalFilesWritten,
         };
         await writeExtractManifest(outputDir, manifest);
+    }
+
+    // Complete extract phase
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.IN_PROGRESS) {
+        await state.completePhase(PHASES.EXTRACT);
     }
 
     // Summary
@@ -435,17 +501,39 @@ async function extractFromPageUrl(
 async function extractWithCrawl(
     options: ExtractOptions,
     registry: SpinnerRegistry,
+    outputDir: string,
+    state: StateManager,
 ): Promise<void> {
+    // Check if extract phase is already complete
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED) {
+        const extractedCount = state.getTotalFilesExtracted();
+        console.log(
+            chalk.gray(
+                `  Resuming: Skipping extraction (${extractedCount} files already extracted)`,
+            ),
+        );
+        return;
+    }
+
+    const isResuming =
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.IN_PROGRESS;
+    if (isResuming) {
+        const extractedBundles = state.getExtractedBundles().length;
+        console.log(
+            chalk.gray(
+                `  Resuming extraction (${extractedBundles} bundles already extracted)`,
+            ),
+        );
+    }
+
+    if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.PENDING) {
+        await state.startPhase(PHASES.EXTRACT);
+    }
+
     // Dynamically import capture module to avoid loading Playwright when not needed
     const { captureWebsite } = await import('@web2local/capture');
     // Import type separately
     type CapturedAssetInfo = import('@web2local/capture').CapturedAssetInfo;
-
-    const hostname = getHostname(options.url);
-    const outputDir = resolveOutputDir(options.output, hostname);
-
-    // Check if output directory exists
-    await checkOutputDirectory(outputDir, options.overwrite);
 
     console.log(chalk.bold.cyan('\n  web2local extract'));
     console.log(chalk.gray('  ' + '─'.repeat(25)));
@@ -619,11 +707,20 @@ async function extractWithCrawl(
         console.log();
 
         const manifestBundles: BundleManifest[] = [];
-        let totalFilesWritten = 0;
+        let totalFilesWritten = state.getTotalFilesExtracted();
         let totalFilesSkipped = 0;
 
         for (const bundle of bundlesWithMaps) {
             const bundleName = getBundleName(bundle.url);
+
+            // Skip already extracted bundles (for resume)
+            if (state.isBundleExtracted(bundleName)) {
+                console.log(
+                    chalk.gray(`  Skipping ${bundleName} (already extracted)`),
+                );
+                continue;
+            }
+
             const extractSpinner = ora({
                 text: `Extracting ${chalk.cyan(bundleName)}...`,
                 indent: 2,
@@ -649,6 +746,7 @@ async function extractWithCrawl(
 
                 if (result.sources.length === 0) {
                     extractSpinner.info(`${bundleName}: No source files found`);
+                    await state.markBundleExtracted(bundleName, 0);
                     continue;
                 }
 
@@ -670,6 +768,12 @@ async function extractWithCrawl(
                     filesExtracted: reconstructResult.filesWritten,
                     files: result.sources.map((f) => f.path).slice(0, 100),
                 });
+
+                // Mark bundle as extracted in state
+                await state.markBundleExtracted(
+                    bundleName,
+                    reconstructResult.filesWritten,
+                );
 
                 extractSpinner.succeed(
                     `${chalk.cyan(bundleName)}: ${chalk.green(reconstructResult.filesWritten)} files` +
@@ -694,6 +798,11 @@ async function extractWithCrawl(
                 totalFiles: totalFilesWritten,
             };
             await writeExtractManifest(outputDir, manifest);
+        }
+
+        // Complete extract phase
+        if (state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.IN_PROGRESS) {
+            await state.completePhase(PHASES.EXTRACT);
         }
 
         // Summary
@@ -757,17 +866,46 @@ export async function runExtract(options: ExtractOptions): Promise<void> {
         disabled: options.noCache,
     });
 
+    // Resolve output directory early for state management
+    const hostname = getHostname(options.url);
+    const outputDir = resolveOutputDir(options.output, hostname);
+
+    // Check if output directory exists and handle overwrite/resume logic
+    const outputAction = await checkOutputDirectory(outputDir, {
+        overwrite: options.overwrite,
+        resume: options.resume,
+    });
+
+    if (outputAction === 'cancel') {
+        process.exit(0);
+    }
+
+    const isResuming = outputAction === 'resume';
+
+    // Initialize state manager for resume support
+    const truncateWal = isResuming
+        ? await shouldTruncateCorruptedWal(outputDir)
+        : false;
+    const state = await StateManager.create({
+        outputDir,
+        url: options.url,
+        resume: isResuming,
+        truncateCorruptedWal: truncateWal,
+    });
+
     try {
         // Detect if URL is a direct source map URL or a page URL
         if (isSourceMapUrl(options.url)) {
-            await extractFromSourceMapUrl(options, registry);
+            await extractFromSourceMapUrl(options, registry, outputDir, state);
         } else if (options.crawl) {
             // Use browser-based crawling to discover bundles
-            await extractWithCrawl(options, registry);
+            await extractWithCrawl(options, registry, outputDir, state);
         } else {
-            await extractFromPageUrl(options, registry);
+            await extractFromPageUrl(options, registry, outputDir, state);
         }
     } finally {
+        // Finalize state before cleanup
+        await state.finalize();
         registry.cleanup();
     }
 }
