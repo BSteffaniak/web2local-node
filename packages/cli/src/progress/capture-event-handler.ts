@@ -150,15 +150,17 @@ export function createCaptureProgressHandler(
 ): (event: CaptureProgressEvent) => void {
     const {
         progress,
-        baseUrl,
         logApiCaptures = true,
         trackApiCaptures = true,
     } = options;
 
+    // Track the current base URL - may be updated on redirect
+    let currentBaseUrl = options.baseUrl;
+
     return (event: CaptureProgressEvent) => {
         switch (event.type) {
             case 'page-progress': {
-                handlePageProgress(progress, event, baseUrl);
+                handlePageProgress(progress, event, currentBaseUrl);
                 break;
             }
 
@@ -201,7 +203,12 @@ export function createCaptureProgressHandler(
             }
 
             case 'lifecycle': {
-                if (event.phase === 'flushing-assets') {
+                if (event.phase === 'redirect-detected' && event.finalUrl) {
+                    // Update base URL for path truncation in logs
+                    currentBaseUrl = event.finalUrl;
+                    // Update ProgressDisplay's base origin for formatUrl()
+                    progress.updateBaseOrigin(event.finalUrl);
+                } else if (event.phase === 'flushing-assets') {
                     progress.setFlushing(event.pendingCount ?? 0);
                 } else if (event.phase === 'flushing-complete') {
                     progress.setFlushing(0);

@@ -467,6 +467,19 @@ export class ProgressDisplay {
     }
 
     /**
+     * Update the base origin for URL formatting.
+     * This should be called when a redirect is detected to ensure
+     * URLs are properly truncated relative to the final destination.
+     */
+    updateBaseOrigin(newOrigin: string): void {
+        try {
+            this.baseOriginParsed = new URL(newOrigin);
+        } catch {
+            // If URL parsing fails, keep the existing base origin
+        }
+    }
+
+    /**
      * Update a worker's state
      */
     updateWorker(workerId: number, state: Partial<WorkerState>): void {

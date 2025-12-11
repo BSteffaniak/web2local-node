@@ -321,13 +321,18 @@ export interface CaptureLifecycleEvent {
         | 'flushing-assets'
         | 'flushing-complete'
         | 'manifest-generating'
-        | 'manifest-complete';
+        | 'manifest-complete'
+        | 'redirect-detected';
     /** Number of pages/workers (for pages-created) */
     count?: number;
     /** Final crawl stats (for crawl-complete) */
     stats?: CrawlStats;
     /** Number of pending items (for flushing-assets) */
     pendingCount?: number;
+    /** Original URL before redirect (for redirect-detected) */
+    fromUrl?: string;
+    /** Final URL after redirect (for redirect-detected) */
+    finalUrl?: string;
 }
 
 /**

@@ -321,6 +321,14 @@ export class CrawlWorker {
                     to: finalUrl,
                 });
 
+                // Emit redirect-detected event so TUI can update its baseOrigin
+                onProgress?.({
+                    type: 'lifecycle',
+                    phase: 'redirect-detected',
+                    fromUrl: item.url,
+                    finalUrl,
+                });
+
                 // Mark the redirected URL as visited
                 queue.markVisited(finalUrl);
 
