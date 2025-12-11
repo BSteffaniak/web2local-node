@@ -209,7 +209,8 @@ export function createCaptureProgressHandler(
                     // Update ProgressDisplay's base origin for formatUrl()
                     progress.updateBaseOrigin(event.finalUrl);
                 } else if (event.phase === 'flushing-assets') {
-                    progress.setFlushing(event.pendingCount ?? 0);
+                    // Enter flush mode - the actual progress will come from flush-progress events
+                    progress.setFlushing(1);
                 } else if (event.phase === 'flushing-complete') {
                     progress.setFlushing(0);
                 }
@@ -222,8 +223,9 @@ export function createCaptureProgressHandler(
                     event.completed,
                     event.total,
                     event.failed,
-                    event.currentItem,
+                    event.completedItem,
                     event.totalTimeMs,
+                    event.activeItems,
                 );
                 break;
             }

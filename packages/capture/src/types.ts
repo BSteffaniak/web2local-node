@@ -282,6 +282,22 @@ export interface DuplicateSkippedEvent {
 }
 
 /**
+ * Information about an actively downloading item during flush.
+ */
+export interface ActiveDownloadItem {
+    /** URL being downloaded */
+    url: string;
+    /** Download status */
+    status: 'downloading' | 'processing' | 'saving';
+    /** Expected size in bytes (from Content-Length header, if known) */
+    expectedSize?: number;
+    /** Bytes downloaded so far (if streaming progress available) */
+    downloadedBytes?: number;
+    /** When the download started (timestamp) */
+    startedAt: number;
+}
+
+/**
  * Progress event emitted during the flush phase.
  * Provides granular progress for pending captures, CSS asset fetching, and URL rewriting.
  */
@@ -293,14 +309,16 @@ export interface FlushProgressEvent {
         | 'fetching-css-assets'
         | 'rewriting-urls'
         | 'complete';
-    /** Number of items completed in current phase */
+    /** Number of items completed across ALL flush phases (unified counter) */
     completed: number;
-    /** Total number of items in current phase */
+    /** Total number of items across ALL flush phases (unified counter) */
     total: number;
-    /** Number of failed items (for fetching phase) */
+    /** Number of failed items */
     failed?: number;
-    /** URL or path of the current item being processed */
-    currentItem?: string;
+    /** Item that just completed (for logging) */
+    completedItem?: string;
+    /** Currently active downloads with their status */
+    activeItems?: ActiveDownloadItem[];
     /** Total elapsed time in ms (for 'complete' phase) */
     totalTimeMs?: number;
 }
@@ -327,8 +345,6 @@ export interface CaptureLifecycleEvent {
     count?: number;
     /** Final crawl stats (for crawl-complete) */
     stats?: CrawlStats;
-    /** Number of pending items (for flushing-assets) */
-    pendingCount?: number;
     /** Original URL before redirect (for redirect-detected) */
     fromUrl?: string;
     /** Final URL after redirect (for redirect-detected) */

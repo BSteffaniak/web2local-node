@@ -277,7 +277,6 @@ export async function captureWebsite(
                 opts.onProgress?.({
                     type: 'lifecycle',
                     phase: 'flushing-assets',
-                    pendingCount,
                 });
             }
             await staticCapturer.flush();

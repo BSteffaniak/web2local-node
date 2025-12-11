@@ -33,6 +33,9 @@ const PLACEHOLDER_PNG = Buffer.from(
     'base64',
 );
 
+/** Default timeout for truncation recovery fetch (60 seconds) */
+const TRUNCATION_RECOVERY_TIMEOUT_MS = 60000;
+
 /**
  * Direct HTTP fetch with proper streaming support and content verification.
  * Used as a fallback when Playwright's response.body() returns truncated data.
@@ -40,13 +43,16 @@ const PLACEHOLDER_PNG = Buffer.from(
  *
  * @param url - URL to fetch
  * @param onWarning - Optional callback for warning messages (truncation, fetch failures)
+ * @param timeoutMs - Timeout in milliseconds (default: 60000)
  */
 async function fetchWithContentVerification(
     url: string,
     onWarning?: (message: string) => void,
+    timeoutMs: number = TRUNCATION_RECOVERY_TIMEOUT_MS,
 ): Promise<Buffer | null> {
     try {
         const response = await robustFetch(url, {
+            signal: AbortSignal.timeout(timeoutMs),
             headers: {
                 'User-Agent':
                     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -161,6 +167,25 @@ const DEFAULT_OPTIONS: StaticCaptureOptions = {
     verbose: false,
     skipAssetWrite: false,
 };
+
+/**
+ * Data for an asset whose body has already been fetched.
+ * Used by processAndSaveAsset() to process assets without needing the Playwright Response.
+ */
+interface FetchedAssetData {
+    /** The URL of the asset */
+    url: string;
+    /** The fetched body buffer */
+    body: Buffer;
+    /** Content-Type from response headers */
+    contentType: string;
+    /** Content-Length from response headers (0 if not present) */
+    contentLength: number;
+    /** Browser resource type */
+    resourceType: ResourceType;
+    /** Worker ID for progress tracking */
+    workerId?: number;
+}
 
 /**
  * Resource types that are considered static assets
@@ -525,6 +550,16 @@ export class StaticCapturer {
     private duplicateRequestsByWorker: Map<number, number> = new Map();
     /** Count of assets that failed to fetch during flush (used placeholders) */
     private flushFailedCount: number = 0;
+    /** Active downloads during flush phase (for progress reporting) */
+    private activeDownloads: Map<
+        string,
+        {
+            url: string;
+            status: 'downloading' | 'processing' | 'saving';
+            expectedSize?: number;
+            startedAt: number;
+        }
+    > = new Map();
 
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -634,6 +669,92 @@ export class StaticCapturer {
             currentUrl: current?.url,
             currentSize: current?.size,
         });
+    }
+
+    /**
+     * Add an active download to tracking (for flush progress display).
+     */
+    private addActiveDownload(url: string, expectedSize?: number): void {
+        this.activeDownloads.set(url, {
+            url,
+            status: 'downloading',
+            expectedSize,
+            startedAt: Date.now(),
+        });
+    }
+
+    /**
+     * Update the status of an active download.
+     */
+    private updateDownloadStatus(
+        url: string,
+        status: 'downloading' | 'processing' | 'saving',
+    ): void {
+        const item = this.activeDownloads.get(url);
+        if (item) {
+            item.status = status;
+        }
+    }
+
+    /**
+     * Remove an active download from tracking.
+     */
+    private removeActiveDownload(url: string): void {
+        this.activeDownloads.delete(url);
+    }
+
+    /**
+     * Get current active downloads as an array (for progress events).
+     */
+    private getActiveItems(): Array<{
+        url: string;
+        status: 'downloading' | 'processing' | 'saving';
+        expectedSize?: number;
+        startedAt: number;
+    }> {
+        return Array.from(this.activeDownloads.values());
+    }
+
+    /**
+     * Check if the response should be captured based on Content-Type header.
+     * This allows filtering BEFORE fetching the body (optimization).
+     * Returns true if the response should be captured, false if it should be skipped.
+     */
+    private shouldCaptureByContentType(
+        response: Response,
+        url: string,
+        resourceType: ResourceType,
+    ): boolean {
+        // No MIME filter configured - capture everything
+        if (!this.options.staticFilter?.mimeTypes?.length) {
+            return true;
+        }
+
+        const contentType = getContentType(response, url);
+        return passesFilter(
+            url,
+            contentType,
+            resourceType,
+            this.options.staticFilter,
+        );
+    }
+
+    /**
+     * Check Content-Length header before fetching body.
+     * Returns true if we should proceed with body fetch.
+     */
+    private shouldCaptureBySize(response: Response, url: string): boolean {
+        const contentLength = parseInt(
+            response.headers()['content-length'] || '0',
+            10,
+        );
+        if (contentLength > 0 && contentLength > this.options.maxFileSize) {
+            this.log(
+                `[Static] Skipping large file (header): ${url} (${contentLength} bytes)`,
+            );
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -964,7 +1085,6 @@ export class StaticCapturer {
 
             // Early URL-based filtering (avoids fetching body for filtered assets)
             // This checks extensions, include patterns, and exclude patterns.
-            // MIME type filtering is deferred to captureAsset() since it needs headers.
             if (
                 this.options.staticFilter &&
                 !passesFilterEarly(url, this.options.staticFilter)
@@ -983,6 +1103,21 @@ export class StaticCapturer {
                 return;
             }
 
+            // Check MIME type from headers BEFORE fetching body (optimization)
+            if (!this.shouldCaptureByContentType(response, url, resourceType)) {
+                this.log(
+                    `[Static] Skipping ${url} (does not pass MIME type filter)`,
+                );
+                this.inFlightUrls.delete(url);
+                return;
+            }
+
+            // Check Content-Length BEFORE fetching body (optimization)
+            if (!this.shouldCaptureBySize(response, url)) {
+                this.inFlightUrls.delete(url);
+                return;
+            }
+
             const shortUrl =
                 url.length > 80 ? url.substring(0, 80) + '...' : url;
             this.log(`[Static] Capturing ${resourceType}: ${shortUrl}`);
@@ -993,15 +1128,37 @@ export class StaticCapturer {
             // Get workerId for this page for tracking
             const wid = this.pageToWorkerId.get(page);
 
-            // Capture asynchronously
-            const capturePromise = this.captureAsset(
-                response,
-                url,
-                resourceType,
-                wid,
+            // Fetch body IMMEDIATELY while response is still valid
+            // This prevents hanging if the page navigates away before we process the asset
+            let body: Buffer;
+            try {
+                body = await response.body();
+            } catch (error) {
+                // Response body may not be available (e.g., redirects, cached responses, page navigated)
+                this.log(`[Static] Could not get body for ${url}: ${error}`);
+                this.inFlightUrls.delete(url);
+                this.downloadedUrls.delete(url); // Allow retry
+                return;
+            }
+
+            // Get content info from headers for processAndSaveAsset
+            const contentType = getContentType(response, url);
+            const contentLength = parseInt(
+                response.headers()['content-length'] || '0',
+                10,
             );
-            this.pendingCaptures.set(url, capturePromise);
-            capturePromise.finally(() => {
+
+            // Process and save asynchronously (file I/O only - won't hang on page navigation)
+            const processPromise = this.processAndSaveAsset({
+                url,
+                body,
+                contentType,
+                contentLength,
+                resourceType,
+                workerId: wid,
+            });
+            this.pendingCaptures.set(url, processPromise);
+            processPromise.finally(() => {
                 this.pendingCaptures.delete(url);
                 // Clean up in-flight tracking
                 this.inFlightUrls.delete(url);
@@ -1016,62 +1173,19 @@ export class StaticCapturer {
     }
 
     /**
-     * Capture and save a static asset
+     * Process and save a static asset whose body has already been fetched.
+     * This method does NOT call response.body() - the body must be provided.
+     *
+     * This is the core asset processing logic extracted from captureAsset().
+     * It handles: truncation recovery, size validation, callbacks, file writing,
+     * and CSS URL extraction.
      */
-    private async captureAsset(
-        response: Response,
-        url: string,
-        resourceType: ResourceType,
-        workerId?: number,
-    ): Promise<void> {
+    private async processAndSaveAsset(data: FetchedAssetData): Promise<void> {
+        const { url, contentType, contentLength, resourceType, workerId } =
+            data;
+        let body = data.body;
+
         try {
-            const headers = response.headers();
-
-            // Get content type early (from headers, doesn't require body)
-            const contentType = getContentType(response, url);
-
-            // Apply MIME type filter BEFORE fetching body (optimization)
-            // Note: Extension/pattern checks were already done in response handler
-            // via passesFilterEarly(). Here we only need to check if MIME type
-            // filtering is configured and if so, apply the full filter.
-            if (this.options.staticFilter?.mimeTypes?.length) {
-                if (
-                    !passesFilter(
-                        url,
-                        contentType,
-                        resourceType,
-                        this.options.staticFilter,
-                    )
-                ) {
-                    this.log(
-                        `[Static] Skipping ${url} (does not pass MIME type filter)`,
-                    );
-                    return;
-                }
-            }
-
-            // Check content length header
-            const contentLength = parseInt(
-                headers['content-length'] || '0',
-                10,
-            );
-            if (contentLength > this.options.maxFileSize) {
-                this.log(
-                    `[Static] Skipping large file (header): ${url} (${contentLength} bytes)`,
-                );
-                return;
-            }
-
-            // NOW fetch the body (only for assets that passed all filters)
-            let body: Buffer;
-            try {
-                body = await response.body();
-            } catch (error) {
-                // Response body may not be available (e.g., redirects, cached responses)
-                this.log(`[Static] Could not get body for ${url}: ${error}`);
-                return;
-            }
-
             // Verify content length matches (if header was present and non-zero)
             // This detects truncated responses from chunked transfers or aborted connections
             // Note: We only check for body.length < contentLength (truncation)
@@ -1083,7 +1197,7 @@ export class StaticCapturer {
                         `expected ${contentLength} bytes, got ${body.length} bytes. Retrying with direct fetch...`,
                 );
 
-                // Try to recover with direct HTTP fetch
+                // Try to recover with direct HTTP fetch (with timeout)
                 const recoveredBody = await fetchWithContentVerification(
                     url,
                     (msg) => this.logWarning(msg),
@@ -1118,7 +1232,7 @@ export class StaticCapturer {
                 }
             }
 
-            // Double-check size
+            // Double-check size (body might be larger than header indicated due to decompression)
             if (body.length > this.options.maxFileSize) {
                 this.log(
                     `[Static] Skipping large file (body): ${url} (${body.length} bytes)`,
@@ -1226,7 +1340,7 @@ export class StaticCapturer {
                 }
             }
         } catch (error) {
-            this.log(`[Static] Error capturing ${url}: ${error}`);
+            this.log(`[Static] Error processing ${url}: ${error}`);
         }
     }
 
@@ -1334,31 +1448,71 @@ export class StaticCapturer {
      * all URLs in HTML and CSS files to point to local copies.
      *
      * Emits granular progress events via onFlushProgress callback.
+     * Uses unified progress tracking across all phases.
      */
     async flush(): Promise<void> {
         const flushStartTime = Date.now();
         this.flushFailedCount = 0;
+        this.activeDownloads.clear();
+
+        // Calculate totals upfront for unified progress
+        const pendingCapturesCount = this.pendingCaptures.size;
+        const responsiveUrlsCount = this.pendingResponsiveUrls.size;
+
+        // Calculate rewrite count upfront (we'll do actual filtering later)
+        const htmlAssets = this.assets.filter(
+            (a) =>
+                a.contentType.includes('html') ||
+                a.localPath.endsWith('.html') ||
+                a.localPath.endsWith('.htm'),
+        );
+        const cssAssets = this.assets.filter(
+            (a) =>
+                a.contentType.includes('css') || a.localPath.endsWith('.css'),
+        );
+        const rewriteCount = this.options.skipAssetWrite
+            ? 0
+            : htmlAssets.length + cssAssets.length;
+
+        // Total items across all phases
+        let overallTotal =
+            pendingCapturesCount + responsiveUrlsCount + rewriteCount;
+        let completedItems = 0;
 
         // Phase 1: Wait for pending captures with progress
         const pending = Array.from(this.pendingCaptures.entries());
-        const pendingTotal = pending.length;
 
-        if (pendingTotal > 0) {
+        if (pending.length > 0) {
             this.log(
-                `[StaticCapturer] Waiting for ${pendingTotal} pending captures...`,
+                `[StaticCapturer] Waiting for ${pending.length} pending captures...`,
             );
 
-            let pendingCompleted = 0;
+            // Add all pending URLs to active downloads tracking
+            for (const [url] of pending) {
+                this.addActiveDownload(url);
+            }
+
+            // Emit initial progress event to show progress bar immediately
+            this.options.onFlushProgress?.({
+                type: 'flush-progress',
+                phase: 'pending-captures',
+                completed: completedItems,
+                total: overallTotal,
+                activeItems: this.getActiveItems(),
+            });
+
             await Promise.all(
                 pending.map(async ([url, promise]) => {
                     await promise;
-                    pendingCompleted++;
+                    this.removeActiveDownload(url);
+                    completedItems++;
                     this.options.onFlushProgress?.({
                         type: 'flush-progress',
                         phase: 'pending-captures',
-                        completed: pendingCompleted,
-                        total: pendingTotal,
-                        currentItem: url,
+                        completed: completedItems,
+                        total: overallTotal,
+                        completedItem: url,
+                        activeItems: this.getActiveItems(),
                     });
                 }),
             );
@@ -1370,14 +1524,23 @@ export class StaticCapturer {
             this.log(
                 `[StaticCapturer] Fetching ${urls.length} URLs from CSS/HTML...`,
             );
-            await this.fetchAdditionalAssetsWithProgress(urls);
+            completedItems = await this.fetchAdditionalAssetsWithProgress(
+                urls,
+                completedItems,
+                overallTotal,
+            );
             this.pendingResponsiveUrls.clear();
         }
 
         // Phase 3: Rewrite URLs in HTML and CSS files
         // Skip if we're not writing assets to disk
         if (!this.options.skipAssetWrite) {
-            await this.rewriteAssetUrlsWithProgress();
+            completedItems = await this.rewriteAssetUrlsWithProgress(
+                completedItems,
+                overallTotal,
+                htmlAssets,
+                cssAssets,
+            );
         }
 
         // Emit completion event with total time
@@ -1385,8 +1548,8 @@ export class StaticCapturer {
         this.options.onFlushProgress?.({
             type: 'flush-progress',
             phase: 'complete',
-            completed: 0,
-            total: 0,
+            completed: overallTotal,
+            total: overallTotal,
             totalTimeMs,
         });
     }
@@ -1397,10 +1560,24 @@ export class StaticCapturer {
      * the complete URL mapping.
      *
      * Emits progress events via onFlushProgress callback.
+     * Uses unified progress tracking across all flush phases.
+     *
+     * @param baseCompleted - Number of items already completed in previous phases
+     * @param overallTotal - Total number of items across all phases
+     * @param htmlAssets - Pre-filtered HTML assets to rewrite
+     * @param cssAssets - Pre-filtered CSS assets to rewrite
+     * @returns Updated completed count after this phase
      */
-    private async rewriteAssetUrlsWithProgress(): Promise<void> {
+    private async rewriteAssetUrlsWithProgress(
+        baseCompleted: number,
+        overallTotal: number,
+        htmlAssets: CapturedAsset[],
+        cssAssets: CapturedAsset[],
+    ): Promise<number> {
+        let completedItems = baseCompleted;
+
         if (this.assets.length === 0) {
-            return;
+            return completedItems;
         }
 
         const baseUrl = this.baseOrigin || this.entrypointUrl || '';
@@ -1408,7 +1585,7 @@ export class StaticCapturer {
             this.log(
                 '[StaticCapturer] No base URL available, skipping URL rewriting',
             );
-            return;
+            return completedItems;
         }
 
         // Build URL map from all captured assets
@@ -1417,24 +1594,21 @@ export class StaticCapturer {
             `[StaticCapturer] Built URL map with ${urlMap.size} entries for rewriting`,
         );
 
-        // Find all HTML and CSS files that need rewriting
-        const htmlAssets = this.assets.filter(
-            (a) =>
-                a.contentType.includes('html') ||
-                a.localPath.endsWith('.html') ||
-                a.localPath.endsWith('.htm'),
-        );
-        const cssAssets = this.assets.filter(
-            (a) =>
-                a.contentType.includes('css') || a.localPath.endsWith('.css'),
-        );
-
-        const total = htmlAssets.length + cssAssets.length;
-        let completed = 0;
+        const phaseTotal = htmlAssets.length + cssAssets.length;
 
         this.log(
             `[StaticCapturer] Rewriting URLs in ${htmlAssets.length} HTML and ${cssAssets.length} CSS files`,
         );
+
+        // Emit initial progress event to show progress bar immediately
+        if (phaseTotal > 0) {
+            this.options.onFlushProgress?.({
+                type: 'flush-progress',
+                phase: 'rewriting-urls',
+                completed: completedItems,
+                total: overallTotal,
+            });
+        }
 
         // Rewrite HTML files
         for (const asset of htmlAssets) {
@@ -1457,13 +1631,13 @@ export class StaticCapturer {
                 );
             }
 
-            completed++;
+            completedItems++;
             this.options.onFlushProgress?.({
                 type: 'flush-progress',
                 phase: 'rewriting-urls',
-                completed,
-                total,
-                currentItem: asset.localPath,
+                completed: completedItems,
+                total: overallTotal,
+                completedItem: asset.localPath,
             });
         }
 
@@ -1488,15 +1662,17 @@ export class StaticCapturer {
                 );
             }
 
-            completed++;
+            completedItems++;
             this.options.onFlushProgress?.({
                 type: 'flush-progress',
                 phase: 'rewriting-urls',
-                completed,
-                total,
-                currentItem: asset.localPath,
+                completed: completedItems,
+                total: overallTotal,
+                completedItem: asset.localPath,
             });
         }
+
+        return completedItems;
     }
 
     /**
@@ -1590,17 +1766,25 @@ export class StaticCapturer {
      * staticFilter is applied to respect user filtering preferences.
      *
      * Emits progress events via onFlushProgress callback.
+     * Uses unified progress tracking across all flush phases.
      *
      * @param urls - Array of absolute URLs to fetch
+     * @param baseCompleted - Number of items already completed in previous phases
+     * @param overallTotal - Total number of items across all phases
+     * @returns Updated completed count after this phase
      */
     private async fetchAdditionalAssetsWithProgress(
         urls: string[],
-    ): Promise<void> {
+        baseCompleted: number,
+        overallTotal: number,
+    ): Promise<number> {
+        let completedItems = baseCompleted;
+
         // Filter out URLs already downloaded
         const newUrls = urls.filter((url) => !this.downloadedUrls.has(url));
 
         if (newUrls.length === 0) {
-            return;
+            return completedItems;
         }
 
         this.log(
@@ -1612,7 +1796,7 @@ export class StaticCapturer {
             this.log(
                 '[Static] No base URL available, skipping additional assets',
             );
-            return;
+            return completedItems;
         }
 
         // Apply the same staticFilter that's used for other assets
@@ -1644,20 +1828,43 @@ export class StaticCapturer {
 
         if (eligibleUrls.length === 0) {
             this.log('[Static] No eligible URLs to fetch after filtering');
-            return;
+            return completedItems;
         }
 
         this.log(
             `[Static] ${eligibleUrls.length} URLs pass filter, fetching...`,
         );
 
-        const total = eligibleUrls.length;
-        let completed = 0;
+        // Emit initial progress event to show progress bar immediately
+        this.options.onFlushProgress?.({
+            type: 'flush-progress',
+            phase: 'fetching-css-assets',
+            completed: completedItems,
+            total: overallTotal,
+            failed: 0,
+            activeItems: [],
+        });
 
         // Fetch in batches to avoid overwhelming the server
         const BATCH_SIZE = 5;
         for (let i = 0; i < eligibleUrls.length; i += BATCH_SIZE) {
             const batch = eligibleUrls.slice(i, i + BATCH_SIZE);
+
+            // Add batch to active downloads tracking
+            for (const url of batch) {
+                this.addActiveDownload(url);
+            }
+
+            // Emit progress with active items before starting batch
+            this.options.onFlushProgress?.({
+                type: 'flush-progress',
+                phase: 'fetching-css-assets',
+                completed: completedItems,
+                total: overallTotal,
+                failed: this.flushFailedCount,
+                activeItems: this.getActiveItems(),
+            });
+
             await Promise.all(
                 batch.map(async (url) => {
                     const success =
@@ -1665,18 +1872,22 @@ export class StaticCapturer {
                     if (!success) {
                         this.flushFailedCount++;
                     }
-                    completed++;
+                    this.removeActiveDownload(url);
+                    completedItems++;
                     this.options.onFlushProgress?.({
                         type: 'flush-progress',
                         phase: 'fetching-css-assets',
-                        completed,
-                        total,
+                        completed: completedItems,
+                        total: overallTotal,
                         failed: this.flushFailedCount,
-                        currentItem: url,
+                        completedItem: url,
+                        activeItems: this.getActiveItems(),
                     });
                 }),
             );
         }
+
+        return completedItems;
     }
 
     /**

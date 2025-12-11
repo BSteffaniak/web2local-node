@@ -31,10 +31,10 @@ const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
 
 /**
  * Fixed height for flush progress section.
- * This accommodates: 3 completed phases (1 line each) + current phase (1 line) + current URL (1 line) + completion message (1 line)
+ * This accommodates: 3 completed phases (1 line each) + current phase (1 line) + up to 5 active items (4 + "and X more") + completion message (1 line)
  * Using a fixed height prevents layout jumps when transitioning between phases.
  */
-const FLUSH_SECTION_HEIGHT = 6;
+const FLUSH_SECTION_HEIGHT = 10;
 
 /**
  * Worker phase types - matches the capture module phases
@@ -146,6 +146,13 @@ export class ProgressDisplay {
     private flushPhaseStartTime: number | null = null;
     /** Completed phases for showing checkmarks */
     private flushCompletedPhases: Set<string> = new Set();
+    /** Active downloads during flush (for showing multiple in-progress items) */
+    private flushActiveItems: Array<{
+        url: string;
+        status: 'downloading' | 'processing' | 'saving';
+        expectedSize?: number;
+        startedAt: number;
+    }> = [];
 
     /** Total height of the TUI box in lines */
     private tuiHeight: number = 0;
@@ -526,11 +533,12 @@ export class ProgressDisplay {
     /**
      * Set the flush progress state for granular progress display
      * @param phase Current flush phase
-     * @param completed Number of items completed
-     * @param total Total number of items
+     * @param completed Number of items completed (unified across all phases)
+     * @param total Total number of items (unified across all phases)
      * @param failed Number of failed items (optional)
-     * @param currentItem Current item being processed (optional)
+     * @param completedItem Item that just completed (optional, for logging)
      * @param totalTimeMs Total elapsed time (only for 'complete' phase)
+     * @param activeItems Currently active downloads (optional)
      */
     setFlushProgress(
         phase:
@@ -541,8 +549,14 @@ export class ProgressDisplay {
         completed: number,
         total: number,
         failed?: number,
-        currentItem?: string,
+        completedItem?: string,
         totalTimeMs?: number,
+        activeItems?: Array<{
+            url: string;
+            status: 'downloading' | 'processing' | 'saving';
+            expectedSize?: number;
+            startedAt: number;
+        }>,
     ): void {
         // Track phase transitions for checkmarks
         if (this.flushPhase && phase !== this.flushPhase) {
@@ -559,8 +573,9 @@ export class ProgressDisplay {
         this.flushCompleted = completed;
         this.flushTotal = total;
         this.flushFailed = failed ?? 0;
-        this.flushCurrentItem = currentItem ?? null;
+        this.flushCurrentItem = completedItem ?? null;
         this.flushTotalTimeMs = totalTimeMs ?? null;
+        this.flushActiveItems = activeItems ?? [];
 
         // When complete, reset flush state for next run
         if (phase === 'complete') {
@@ -581,6 +596,7 @@ export class ProgressDisplay {
                 this.flushTotalTimeMs = null;
                 this.flushPhaseStartTime = null;
                 this.flushCompletedPhases.clear();
+                this.flushActiveItems = [];
                 // Recalculate layout to switch back to worker mode height
                 this.recalculateAndClear();
             });
@@ -697,7 +713,7 @@ export class ProgressDisplay {
             const phases = [
                 {
                     id: 'pending-captures',
-                    label: 'Completing pending downloads',
+                    label: 'Saving pending assets',
                 },
                 {
                     id: 'fetching-css-assets',
@@ -748,16 +764,58 @@ export class ProgressDisplay {
                         `    ${mainPart}${padding}${chalk.gray(elapsed)}`,
                     );
 
-                    // Show current item on second line if available
-                    if (this.flushCurrentItem) {
-                        const arrow = chalk.gray('↳');
-                        const maxUrlLen = innerWidth - 8;
-                        let displayUrl = this.flushCurrentItem;
-                        if (displayUrl.length > maxUrlLen) {
-                            displayUrl =
-                                '...' + displayUrl.slice(-(maxUrlLen - 3));
+                    // Show active items (multiple URLs being downloaded)
+                    if (this.flushActiveItems.length > 0) {
+                        const maxToShow = 4;
+                        const items = this.flushActiveItems.slice(0, maxToShow);
+
+                        for (const item of items) {
+                            const arrow = chalk.gray('↳');
+                            const itemElapsed = this.formatElapsed(
+                                item.startedAt,
+                            );
+                            const sizeStr = item.expectedSize
+                                ? ` ${chalk.gray(`(${this.formatBytes(item.expectedSize)})`)}`
+                                : '';
+
+                            // Calculate max URL length accounting for size and elapsed
+                            const fixedPartLen =
+                                8 + // indent + arrow + spaces
+                                (item.expectedSize
+                                    ? this.formatBytes(item.expectedSize)
+                                          .length + 3
+                                    : 0) +
+                                itemElapsed.length +
+                                1;
+                            const maxUrlLen = innerWidth - fixedPartLen;
+
+                            let displayUrl = item.url;
+                            try {
+                                // Try to show just the path for cleaner display
+                                const urlObj = new URL(item.url);
+                                displayUrl = urlObj.pathname + urlObj.search;
+                            } catch {
+                                // Keep full URL if parsing fails
+                            }
+
+                            if (displayUrl.length > maxUrlLen) {
+                                displayUrl =
+                                    '...' + displayUrl.slice(-(maxUrlLen - 3));
+                            }
+
+                            lines.push(
+                                `      ${arrow} ${chalk.cyan(displayUrl)}${sizeStr} ${chalk.gray(itemElapsed)}`,
+                            );
                         }
-                        lines.push(`      ${arrow} ${chalk.cyan(displayUrl)}`);
+
+                        // Show "... and X more" if there are more items
+                        if (this.flushActiveItems.length > maxToShow) {
+                            const remaining =
+                                this.flushActiveItems.length - maxToShow;
+                            lines.push(
+                                `      ${chalk.gray(`... and ${remaining} more`)}`,
+                            );
+                        }
                     } else {
                         lines.push(''); // Empty line for spacing
                     }
