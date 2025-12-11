@@ -2528,11 +2528,19 @@ export async function generateDependencyManifest(
         pageUrl?: string;
         /** Vendor bundles without source maps (for minified fingerprinting) */
         vendorBundles?: VendorBundleForAnalysis[];
-        /** Progress callback for vendor bundle fingerprinting */
+        /** Progress callback for vendor bundle fingerprinting (called when each bundle completes) */
         onVendorBundleProgress?: (
             completed: number,
             total: number,
             bundleFilename: string,
+        ) => void;
+        /** Detailed progress callback for vendor bundle fingerprinting (called for each version check) */
+        onVendorBundleDetailedProgress?: (
+            bundleFilename: string,
+            packageName: string,
+            version: string,
+            versionIndex: number,
+            versionTotal: number,
         ) => void;
         /** Progress callback for dependency classification */
         onClassificationProgress?: (
@@ -2568,6 +2576,7 @@ export async function generateDependencyManifest(
         pageUrl,
         vendorBundles = [],
         onVendorBundleProgress,
+        onVendorBundleDetailedProgress,
         onClassificationProgress,
         onVerbose,
     } = options;
@@ -2916,9 +2925,6 @@ export async function generateDependencyManifest(
                             filename: vb.filename,
                         }));
 
-                    let vendorCompleted = 0;
-                    const vendorTotal = vendorBundles.length;
-
                     const vendorResults = await fingerprintVendorBundles(
                         vendorBundleInputs,
                         packagesStillNeedingVersions,
@@ -2927,24 +2933,26 @@ export async function generateDependencyManifest(
                             minSimilarity: 0.6, // Lower threshold for minified comparison
                             includePrereleases,
                             concurrency: 2,
-                            onProgress: (
+                            versionConcurrency,
+                            onBundleComplete: (
+                                completed,
+                                total,
                                 bundleFilename,
-                                packageName,
                                 result,
                             ) => {
-                                vendorCompleted++;
                                 onVendorBundleProgress?.(
-                                    vendorCompleted,
-                                    vendorTotal,
+                                    completed,
+                                    total,
                                     bundleFilename,
                                 );
-                                if (result && packageName) {
+                                if (result) {
                                     onVersionProgress?.(
                                         'vendor-bundle-matched',
-                                        `${bundleFilename} -> ${packageName}@${result.version}`,
+                                        `${bundleFilename} -> ${result.packageName}@${result.version}`,
                                     );
                                 }
                             },
+                            onDetailedProgress: onVendorBundleDetailedProgress,
                         },
                     );
 

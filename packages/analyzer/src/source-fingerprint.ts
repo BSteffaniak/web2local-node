@@ -23,6 +23,7 @@ import {
     type PackageFileListCache,
 } from '@web2local/cache';
 import { robustFetch } from '@web2local/http';
+import { runConcurrent } from '@web2local/utils';
 
 // Re-export for external use
 export { computeNormalizedHash, extractCodeSignature };
@@ -1819,10 +1820,20 @@ export async function fingerprintVendorBundle(
         maxVersionsToCheck?: number;
         minSimilarity?: number;
         includePrereleases?: boolean;
+        /** Number of versions to check concurrently (default: 10) */
+        versionConcurrency?: number;
+        /** Called when a match is found */
         onProgress?: (
             packageName: string,
             version: string,
             result: FingerprintResult | null,
+        ) => void;
+        /** Called for each version being checked - provides detailed progress */
+        onDetailedProgress?: (
+            packageName: string,
+            version: string,
+            versionIndex: number,
+            versionTotal: number,
         ) => void;
     } = {},
 ): Promise<(FingerprintResult & { packageName: string }) | null> {
@@ -1830,27 +1841,22 @@ export async function fingerprintVendorBundle(
         maxVersionsToCheck = 0,
         minSimilarity = 0.6, // Lower threshold for minified comparison
         includePrereleases = false,
+        versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
         onProgress,
+        onDetailedProgress,
     } = options;
 
     const cache = getCache();
     const extractedContent = vendorBundle.content;
 
-    // Pre-compute fingerprint features for the extracted bundle
-    const _extractedFingerprint = {
-        contentHash: createHash('sha256')
-            .update(extractedContent)
-            .digest('hex'),
-        normalizedHash: computeNormalizedHash(extractedContent),
-        contentLength: extractedContent.length,
-    };
-
-    // Pre-extract features that survive minification
+    // Pre-extract features that survive minification (done once, reused for all versions)
     const extractedStrings = extractStringLiterals(extractedContent);
     const extractedCalls = extractFunctionCallPatterns(extractedContent);
     const extractedNums = extractNumericConstants(extractedContent);
+    const extractedLength = extractedContent.length;
 
     let bestMatch: (FingerprintResult & { packageName: string }) | null = null;
+    let foundExactMatch = false;
 
     // Try inferred package first if available
     const packagesToTry = vendorBundle.inferredPackage
@@ -1862,8 +1868,76 @@ export async function fingerprintVendorBundle(
           ]
         : candidatePackages;
 
+    // Helper to check a single version and compute similarity
+    async function checkVersion(
+        packageName: string,
+        version: string,
+    ): Promise<(FingerprintResult & { packageName: string }) | null> {
+        // Fetch minified version from CDN
+        const minifiedResult = await fetchMinifiedFromUnpkg(
+            packageName,
+            version,
+            cache,
+        );
+        if (!minifiedResult || !minifiedResult.content) {
+            return null;
+        }
+
+        // Compare using minified-specific similarity
+        const npmStrings = extractStringLiterals(minifiedResult.content);
+        const npmCalls = extractFunctionCallPatterns(minifiedResult.content);
+        const npmNums = extractNumericConstants(minifiedResult.content);
+
+        // Compute similarities for each feature type
+        const stringSim = computeJaccardSimilarity(
+            extractedStrings,
+            npmStrings,
+        );
+        const callSim = computeJaccardSimilarity(extractedCalls, npmCalls);
+        const numSim = computeJaccardSimilarity(extractedNums, npmNums);
+
+        // Length ratio
+        const lenRatio =
+            Math.min(extractedLength, minifiedResult.content.length) /
+            Math.max(extractedLength, minifiedResult.content.length);
+
+        // Weighted combination
+        const similarity =
+            stringSim * 0.35 + callSim * 0.35 + numSim * 0.15 + lenRatio * 0.15;
+
+        // Boost if multiple signals agree
+        const agreementBonus = stringSim > 0.5 && callSim > 0.5 ? 0.1 : 0;
+        const finalSimilarity = Math.min(similarity + agreementBonus, 1.0);
+
+        if (finalSimilarity < minSimilarity) {
+            return null;
+        }
+
+        return {
+            packageName,
+            version,
+            confidence:
+                finalSimilarity >= 0.95
+                    ? 'exact'
+                    : finalSimilarity >= 0.8
+                      ? 'high'
+                      : finalSimilarity >= 0.7
+                        ? 'medium'
+                        : 'low',
+            source: 'fingerprint-minified',
+            similarity: finalSimilarity,
+            matchedFiles: 1,
+            totalFiles: 1,
+        };
+    }
+
+    // Process packages sequentially (allows early exit on exact match)
     for (const packageName of packagesToTry) {
-        // Get versions to check
+        if (foundExactMatch) {
+            break;
+        }
+
+        // Get versions to check (already sorted by semver descending - latest first)
         const versions = await getAllVersions(
             packageName,
             cache,
@@ -1874,91 +1948,39 @@ export async function fingerprintVendorBundle(
             continue;
         }
 
-        for (const version of versions) {
-            onProgress?.(packageName, version, null);
-
-            // Fetch minified version from CDN
-            const minifiedResult = await fetchMinifiedFromUnpkg(
-                packageName,
-                version,
-                cache,
-            );
-            if (!minifiedResult || !minifiedResult.content) {
-                continue;
-            }
-
-            // Compare using minified-specific similarity
-            const npmStrings = extractStringLiterals(minifiedResult.content);
-            const npmCalls = extractFunctionCallPatterns(
-                minifiedResult.content,
-            );
-            const npmNums = extractNumericConstants(minifiedResult.content);
-
-            // Compute similarities for each feature type
-            const stringSim = computeJaccardSimilarity(
-                extractedStrings,
-                npmStrings,
-            );
-            const callSim = computeJaccardSimilarity(extractedCalls, npmCalls);
-            const numSim = computeJaccardSimilarity(extractedNums, npmNums);
-
-            // Length ratio
-            const lenRatio =
-                Math.min(
-                    extractedContent.length,
-                    minifiedResult.content.length,
-                ) /
-                Math.max(
-                    extractedContent.length,
-                    minifiedResult.content.length,
-                );
-
-            // Weighted combination
-            const similarity =
-                stringSim * 0.35 +
-                callSim * 0.35 +
-                numSim * 0.15 +
-                lenRatio * 0.15;
-
-            // Boost if multiple signals agree
-            const agreementBonus = stringSim > 0.5 && callSim > 0.5 ? 0.1 : 0;
-            const finalSimilarity = Math.min(similarity + agreementBonus, 1.0);
-
-            // Exact match - return immediately
-            if (finalSimilarity >= 0.95) {
-                const result = {
-                    packageName,
-                    version,
-                    confidence: 'high' as const,
-                    source: 'fingerprint-minified' as const,
-                    similarity: finalSimilarity,
-                    matchedFiles: 1,
-                    totalFiles: 1,
-                };
+        // Check versions concurrently with incremental progress reporting
+        const versionResults = await runConcurrent(
+            versions,
+            versionConcurrency,
+            async (version, _index) => {
+                return checkVersion(packageName, version);
+            },
+            (result, index, completed, total) => {
+                const version = versions[index];
+                onDetailedProgress?.(packageName, version, completed, total);
                 onProgress?.(packageName, version, result);
-                return result;
-            }
 
-            // Track best match
-            if (
-                finalSimilarity >= minSimilarity &&
-                (!bestMatch || finalSimilarity > bestMatch.similarity)
-            ) {
-                bestMatch = {
-                    packageName,
-                    version,
-                    confidence:
-                        finalSimilarity >= 0.8
-                            ? 'high'
-                            : finalSimilarity >= 0.7
-                              ? 'medium'
-                              : 'low',
-                    source: 'fingerprint-minified',
-                    similarity: finalSimilarity,
-                    matchedFiles: 1,
-                    totalFiles: 1,
-                };
+                // Track if we found an exact match (to skip remaining packages)
+                if (result && result.similarity >= 0.95) {
+                    foundExactMatch = true;
+                }
+            },
+        );
+
+        // Find best match from this package's results
+        // Since versions are sorted by semver descending, on equal similarity
+        // we naturally prefer the latest version (first encountered)
+        for (const result of versionResults) {
+            if (!result) continue;
+
+            if (!bestMatch || result.similarity > bestMatch.similarity) {
+                bestMatch = result;
             }
+        }
+
+        // If we found an exact match in this package, no need to check more packages
+        if (foundExactMatch) {
+            break;
         }
     }
 
@@ -1979,7 +2001,26 @@ export async function fingerprintVendorBundles(
         maxVersionsToCheck?: number;
         minSimilarity?: number;
         includePrereleases?: boolean;
+        /** Number of bundles to process concurrently (default: 2) */
         concurrency?: number;
+        /** Number of versions to check concurrently per bundle (default: 10) */
+        versionConcurrency?: number;
+        /** Called when a bundle completes processing */
+        onBundleComplete?: (
+            bundleIndex: number,
+            bundleTotal: number,
+            bundleFilename: string,
+            result: (FingerprintResult & { packageName: string }) | null,
+        ) => void;
+        /** Called for each version being checked within a bundle */
+        onDetailedProgress?: (
+            bundleFilename: string,
+            packageName: string,
+            version: string,
+            versionIndex: number,
+            versionTotal: number,
+        ) => void;
+        /** @deprecated Use onBundleComplete and onDetailedProgress instead */
         onProgress?: (
             bundleFilename: string,
             packageName: string | null,
@@ -1992,13 +2033,19 @@ export async function fingerprintVendorBundles(
         minSimilarity = 0.6,
         includePrereleases = false,
         concurrency = 2,
+        versionConcurrency = DEFAULT_VERSION_CHECK_CONCURRENCY,
         onProgress,
+        onBundleComplete,
+        onDetailedProgress,
     } = options;
 
     const results = new Map<
         string,
         FingerprintResult & { packageName: string }
     >();
+
+    const bundleTotal = vendorBundles.length;
+    let bundlesCompleted = 0;
 
     // Process in batches
     for (let i = 0; i < vendorBundles.length; i += concurrency) {
@@ -2025,8 +2072,18 @@ export async function fingerprintVendorBundles(
                         maxVersionsToCheck,
                         minSimilarity,
                         includePrereleases,
+                        versionConcurrency,
                         onProgress: (pkg, ver, res) => {
                             onProgress?.(filename, pkg, res);
+                        },
+                        onDetailedProgress: (pkg, ver, verIdx, verTotal) => {
+                            onDetailedProgress?.(
+                                filename,
+                                pkg,
+                                ver,
+                                verIdx,
+                                verTotal,
+                            );
                         },
                     },
                 );
@@ -2036,6 +2093,8 @@ export async function fingerprintVendorBundles(
         );
 
         for (const { filename, result } of batchResults) {
+            bundlesCompleted++;
+            onBundleComplete?.(bundlesCompleted, bundleTotal, filename, result);
             if (result) {
                 results.set(filename, result);
             }

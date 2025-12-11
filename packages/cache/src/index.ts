@@ -108,7 +108,9 @@ export interface PageScrapingCache {
     finalUrl?: string;
     /** Redirect detected during fetch (if any) */
     redirect?: {
+        /** Original requested URL (full URL) */
         from: string;
+        /** Final URL after redirect (full URL) */
         to: string;
         status: number;
     };

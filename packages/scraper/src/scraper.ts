@@ -24,9 +24,9 @@ export interface VendorBundle {
  * Represents a redirect detected during page scraping
  */
 export interface ScrapedRedirect {
-    /** Original requested path (without origin) */
+    /** Original requested URL (full URL) */
     from: string;
-    /** Final path after redirect (without origin) */
+    /** Final URL after redirect (full URL) */
     to: string;
     /** HTTP status code (inferred as 301 for fetch redirects) */
     status: number;
@@ -83,8 +83,8 @@ export async function extractBundleUrls(
         // Only record same-origin redirects (path changes)
         if (requestedUrlObj.origin === finalUrlObj.origin) {
             redirect = {
-                from: requestedUrlObj.pathname + requestedUrlObj.search,
-                to: finalUrlObj.pathname + finalUrlObj.search,
+                from: pageUrl,
+                to: finalUrl,
                 // fetch() doesn't expose the redirect status, assume 301 (most common)
                 status: 301,
             };

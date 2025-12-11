@@ -610,6 +610,16 @@ export async function runMain(options: CliOptions) {
                             depSpinner.text = `Vendor bundle fingerprinting... (${completed}/${total}) ${bundleFilename}`;
                             depSpinner.render();
                         },
+                        onVendorBundleDetailedProgress: (
+                            bundleFilename,
+                            packageName,
+                            version,
+                            versionIndex,
+                            versionTotal,
+                        ) => {
+                            depSpinner.text = `Vendor bundle fingerprinting... ${bundleFilename} [checking ${packageName}@${version} (${versionIndex}/${versionTotal})]`;
+                            depSpinner.render();
+                        },
                         onClassificationProgress: (
                             checked,
                             total,
