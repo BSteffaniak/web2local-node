@@ -76,7 +76,11 @@ export class CrawlQueue {
      */
     take(): QueueItem | null {
         // Check if we've hit the max pages limit
-        if (this.completedCount >= this.options.maxPages) {
+        // Include inProgress items to prevent overreach when multiple workers take() simultaneously
+        if (
+            this.completedCount + this.inProgress.size >=
+            this.options.maxPages
+        ) {
             this._maxPagesReached = true;
             return null;
         }
