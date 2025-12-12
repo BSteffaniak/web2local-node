@@ -1,5 +1,6 @@
 import { readFile, readdir, writeFile } from 'fs/promises';
 import { join, extname } from 'path';
+import { runConcurrent } from '@web2local/utils';
 import {
     detectVersions,
     getPackageFiles,
@@ -841,24 +842,22 @@ export async function fetchNpmVersions(
     ) => void,
 ): Promise<Map<string, string>> {
     const versions = new Map<string, string>();
-    let completed = 0;
 
-    // Process in batches
-    for (let i = 0; i < packageNames.length; i += concurrency) {
-        const batch = packageNames.slice(i, i + concurrency);
-        const results = await Promise.all(
-            batch.map(async (name) => {
-                const version = await fetchNpmVersion(name);
-                completed++;
-                onProgress?.(completed, packageNames.length, name);
-                return { name, version };
-            }),
-        );
+    const results = await runConcurrent(
+        packageNames,
+        concurrency,
+        async (name) => {
+            const version = await fetchNpmVersion(name);
+            return { name, version };
+        },
+        (result, _index, completed, total) => {
+            onProgress?.(completed, total, result.name);
+        },
+    );
 
-        for (const { name, version } of results) {
-            if (version) {
-                versions.set(name, version);
-            }
+    for (const { name, version } of results) {
+        if (version) {
+            versions.set(name, version);
         }
     }
 
@@ -957,26 +956,30 @@ export async function validateNpmVersionsBatch(
 }> {
     const validations = new Map<string, boolean>();
     const invalidPackages: string[] = [];
-    let completed = 0;
 
-    // Process validation in batches
-    for (let i = 0; i < packages.length; i += concurrency) {
-        const batch = packages.slice(i, i + concurrency);
-        const results = await Promise.all(
-            batch.map(async ({ name, version }) => {
-                const valid = await validateNpmVersion(name, version);
-                completed++;
-                onProgress?.(completed, packages.length, name, version, valid);
-                return { name, version, valid };
-            }),
-        );
+    const results = await runConcurrent(
+        packages,
+        concurrency,
+        async ({ name, version }) => {
+            const valid = await validateNpmVersion(name, version);
+            return { name, version, valid };
+        },
+        (result, _index, completed, total) => {
+            onProgress?.(
+                completed,
+                total,
+                result.name,
+                result.version,
+                result.valid,
+            );
+        },
+    );
 
-        for (const { name, version, valid } of results) {
-            const key = `${name}@${version}`;
-            validations.set(key, valid);
-            if (!valid) {
-                invalidPackages.push(name);
-            }
+    for (const { name, version, valid } of results) {
+        const key = `${name}@${version}`;
+        validations.set(key, valid);
+        if (!valid) {
+            invalidPackages.push(name);
         }
     }
 
@@ -1029,26 +1032,21 @@ export async function identifyInternalPackages(
 ): Promise<Set<string>> {
     const internalPackages = new Set<string>();
     const concurrency = 10;
-    let checked = 0;
 
-    // Process in batches
-    for (let i = 0; i < packageNames.length; i += concurrency) {
-        const batch = packageNames.slice(i, i + concurrency);
-        const results = await Promise.all(
-            batch.map(async (pkg) => {
-                const isPublic = await isPublicNpmPackage(pkg);
-                return { pkg, isPublic };
-            }),
-        );
-
-        for (const { pkg, isPublic } of results) {
-            checked++;
-            if (!isPublic) {
-                internalPackages.add(pkg);
+    await runConcurrent(
+        packageNames,
+        concurrency,
+        async (pkg) => {
+            const isPublic = await isPublicNpmPackage(pkg);
+            return { pkg, isPublic };
+        },
+        (result, _index, completed, total) => {
+            if (!result.isPublic) {
+                internalPackages.add(result.pkg);
             }
-            onProgress?.(checked, packageNames.length, pkg, !isPublic);
-        }
-    }
+            onProgress?.(completed, total, result.pkg, !result.isPublic);
+        },
+    );
 
     return internalPackages;
 }
@@ -1343,20 +1341,17 @@ export async function classifyDependencies(
 
     // Step 3: Check npm registry for packages that need it
     const concurrency = 10;
-    let checked = 0;
     const totalToCheck = packagesNeedingNpmCheck.length;
 
-    for (let i = 0; i < packagesNeedingNpmCheck.length; i += concurrency) {
-        const batch = packagesNeedingNpmCheck.slice(i, i + concurrency);
-        const results = await Promise.all(
-            batch.map(async (pkg) => {
-                const isPublic = await isPublicNpmPackage(pkg);
-                return { pkg, isPublic };
-            }),
-        );
-
-        for (const { pkg, isPublic } of results) {
-            checked++;
+    await runConcurrent(
+        packagesNeedingNpmCheck,
+        concurrency,
+        async (pkg) => {
+            const isPublic = await isPublicNpmPackage(pkg);
+            return { pkg, isPublic };
+        },
+        (checkResult, _index, completed, _total) => {
+            const { pkg, isPublic } = checkResult;
             const inNodeModules = packagesInNodeModules.has(pkg);
             const sourceLocation = inNodeModules
                 ? 'in-node-modules'
@@ -1370,7 +1365,7 @@ export async function classifyDependencies(
                         | 'in-node-modules'
                         | 'no-source',
                 });
-                onProgress?.(checked, totalToCheck, pkg, 'external');
+                onProgress?.(completed, totalToCheck, pkg, 'external');
             } else {
                 result.internal.add(pkg);
                 result.details.set(pkg, {
@@ -1381,10 +1376,10 @@ export async function classifyDependencies(
                         | 'in-node-modules'
                         | 'no-source',
                 });
-                onProgress?.(checked, totalToCheck, pkg, 'internal');
+                onProgress?.(completed, totalToCheck, pkg, 'internal');
             }
-        }
-    }
+        },
+    );
 
     // Also report workspace packages that were already classified
     const workspaceCount = packagesOutsideNodeModules.size;

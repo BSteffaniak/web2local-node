@@ -1595,89 +1595,75 @@ export async function findMatchingVersion(
     );
 
     let bestMatch: FingerprintResult | null = null;
-    let checkedCount = 0;
 
-    // Check versions in parallel batches for improved performance
-    for (let i = 0; i < versions.length; i += versionConcurrency) {
-        const batch = versions.slice(i, i + versionConcurrency);
+    // Check versions concurrently with incremental progress reporting
+    const versionResults = await runConcurrent(
+        versions,
+        versionConcurrency,
+        async (version) => {
+            return checkVersionSimilarity(
+                packageName,
+                version,
+                extractedFingerprint,
+                entryPoint.content,
+                isExtractedMinified,
+                packageFeatures,
+                metadata,
+                cache,
+                pathConcurrency,
+            );
+        },
+        (result, index, completed, total) => {
+            onVersionCheck?.(versions[index], completed, total);
+        },
+    );
 
-        // Check batch in parallel
-        const results = await Promise.all(
-            batch.map((version) =>
-                checkVersionSimilarity(
-                    packageName,
-                    version,
-                    extractedFingerprint,
-                    entryPoint.content,
-                    isExtractedMinified,
-                    packageFeatures,
-                    metadata,
-                    cache,
-                    pathConcurrency,
-                ),
-            ),
-        );
+    // Process all results to find the best match
+    for (const result of versionResults) {
+        if (!result) continue;
 
-        // Process results from this batch
-        for (let j = 0; j < results.length; j++) {
-            checkedCount++;
-            onVersionCheck?.(batch[j], checkedCount, versions.length);
+        // Exact match - cache and return immediately
+        if (result.similarity >= 0.99) {
+            const exactResult: FingerprintResult = {
+                version: result.version,
+                confidence: 'exact',
+                source: result.matchSource,
+                similarity: result.similarity,
+                matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
+                totalFiles: extractedFiles.length,
+            };
 
-            const result = results[j];
-            if (!result) continue;
+            // Cache the match result
+            await cache.setMatchResult({
+                packageName,
+                extractedContentHash: extractedFingerprint.normalizedHash,
+                matchedVersion: result.version,
+                similarity: result.similarity,
+                confidence: 'exact',
+                fetchedAt: Date.now(),
+            });
 
-            // Exact match - cache and return immediately
-            if (result.similarity >= 0.99) {
-                const exactResult: FingerprintResult = {
-                    version: result.version,
-                    confidence: 'exact',
-                    source: result.matchSource,
-                    similarity: result.similarity,
-                    matchedFiles: isMultiFilePackage
-                        ? extractedFiles.length
-                        : 1,
-                    totalFiles: extractedFiles.length,
-                };
-
-                // Cache the match result
-                await cache.setMatchResult({
-                    packageName,
-                    extractedContentHash: extractedFingerprint.normalizedHash,
-                    matchedVersion: result.version,
-                    similarity: result.similarity,
-                    confidence: 'exact',
-                    fetchedAt: Date.now(),
-                });
-
-                return exactResult;
-            }
-
-            // Track best match
-            if (
-                result.similarity >= minSimilarity &&
-                (!bestMatch || result.similarity > bestMatch.similarity)
-            ) {
-                bestMatch = {
-                    version: result.version,
-                    confidence:
-                        result.similarity >= 0.9
-                            ? 'high'
-                            : result.similarity >= 0.8
-                              ? 'medium'
-                              : 'low',
-                    source: result.matchSource,
-                    similarity: result.similarity,
-                    matchedFiles: isMultiFilePackage
-                        ? extractedFiles.length
-                        : 1,
-                    totalFiles: extractedFiles.length,
-                };
-            }
+            return exactResult;
         }
 
-        // If we found a very good match, we can stop early
-        if (bestMatch && bestMatch.similarity >= 0.95) {
-            break;
+        // Track best match
+        if (
+            result.similarity >= minSimilarity &&
+            (!bestMatch || result.similarity > bestMatch.similarity)
+        ) {
+            bestMatch = {
+                version: result.version,
+                confidence:
+                    result.similarity >= 0.9
+                        ? 'high'
+                        : result.similarity >= 0.8
+                          ? 'medium'
+                          : 'low',
+                source: result.matchSource,
+                similarity: result.similarity,
+                matchedFiles: isMultiFilePackage ? extractedFiles.length : 1,
+                totalFiles: extractedFiles.length,
+            };
         }
     }
 
@@ -1749,36 +1735,32 @@ export async function findMatchingVersions(
     const results = new Map<string, FingerprintResult>();
     const entries = Array.from(packages.entries());
 
-    // Process packages in batches for concurrency control
-    for (let i = 0; i < entries.length; i += concurrency) {
-        const batch = entries.slice(i, i + concurrency);
-        const batchResults = await Promise.all(
-            batch.map(async ([packageName, files]) => {
-                const result = await findMatchingVersion(packageName, files, {
-                    maxVersionsToCheck,
-                    minSimilarity,
-                    includePrereleases,
-                    versionConcurrency,
-                    pathConcurrency,
-                    cache,
-                    onVersionCheck: (version, index, total) => {
-                        onDetailedProgress?.(
-                            packageName,
-                            version,
-                            index,
-                            total,
-                        );
-                    },
-                });
-                onProgress?.(packageName, result);
-                return { packageName, result };
-            }),
-        );
+    // Process packages concurrently with incremental progress reporting
+    const packageResults = await runConcurrent(
+        entries,
+        concurrency,
+        async ([packageName, files]) => {
+            const result = await findMatchingVersion(packageName, files, {
+                maxVersionsToCheck,
+                minSimilarity,
+                includePrereleases,
+                versionConcurrency,
+                pathConcurrency,
+                cache,
+                onVersionCheck: (version, index, total) => {
+                    onDetailedProgress?.(packageName, version, index, total);
+                },
+            });
+            return { packageName, result };
+        },
+        (packageResult, _index, _completed, _total) => {
+            onProgress?.(packageResult.packageName, packageResult.result);
+        },
+    );
 
-        for (const { packageName, result } of batchResults) {
-            if (result) {
-                results.set(packageName, result);
-            }
+    for (const { packageName, result } of packageResults) {
+        if (result) {
+            results.set(packageName, result);
         }
     }
 
