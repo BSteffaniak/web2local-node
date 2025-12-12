@@ -31,7 +31,7 @@ const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
 
 /**
  * Fixed height for flush progress section.
- * This accommodates: 3 completed phases (1 line each) + current phase (1 line) + up to 5 active items (4 + "and X more") + completion message (1 line)
+ * Active items shown dynamically based on available space after completed phases.
  * Using a fixed height prevents layout jumps when transitioning between phases.
  */
 const FLUSH_SECTION_HEIGHT = 10;
@@ -771,7 +771,23 @@ export class ProgressDisplay {
 
                     // Show active items (multiple URLs being downloaded)
                     if (this.flushActiveItems.length > 0) {
-                        const maxToShow = 4;
+                        // Calculate available lines for active items dynamically
+                        // FLUSH_SECTION_HEIGHT minus: completed phases, current phase header, completion message reserve
+                        const completedPhasesShown =
+                            this.flushCompletedPhases.size;
+                        const reservedLines = completedPhasesShown + 1 + 1; // completed + current header + completion
+                        const availableLines =
+                            FLUSH_SECTION_HEIGHT - reservedLines;
+
+                        // If we'd show "... and 1 more", just show the item instead (same space used)
+                        const totalItems = this.flushActiveItems.length;
+                        const needsMoreLine =
+                            totalItems > availableLines &&
+                            totalItems - availableLines >= 2;
+                        const maxToShow = needsMoreLine
+                            ? availableLines - 1
+                            : Math.min(totalItems, availableLines);
+
                         const items = this.flushActiveItems.slice(0, maxToShow);
 
                         for (const item of items) {
@@ -813,8 +829,9 @@ export class ProgressDisplay {
                             );
                         }
 
-                        // Show "... and X more" if there are more items
-                        if (this.flushActiveItems.length > maxToShow) {
+                        // Show "... and X more" only when remaining >= 2
+                        // (showing "... and 1 more" is pointless - just show the item)
+                        if (needsMoreLine) {
                             const remaining =
                                 this.flushActiveItems.length - maxToShow;
                             lines.push(
