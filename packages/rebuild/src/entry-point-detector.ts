@@ -152,14 +152,13 @@ async function findSourceFiles(
         for (const entry of entries) {
             const fullPath = join(dir, entry.name);
 
-            // Skip node_modules, hidden dirs, and build outputs
+            // Skip node_modules, hidden dirs, build outputs, and internal dirs (like _bundles)
             if (
                 entry.name === 'node_modules' ||
                 entry.name.startsWith('.') ||
+                entry.name.startsWith('_') ||
                 entry.name === 'dist' ||
-                entry.name === 'build' ||
-                entry.name === '_server' ||
-                entry.name === '_rebuilt'
+                entry.name === 'build'
             ) {
                 continue;
             }

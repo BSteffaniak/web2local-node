@@ -113,7 +113,9 @@ export async function checkOutputDirectory(
         }
         console.log(
             chalk.cyan(
-                `-> Resuming from checkpoint (${resumeInfo.currentPhase}: ${resumeInfo.progress})`,
+                resumeInfo.currentPhase
+                    ? `-> Resuming from checkpoint (${resumeInfo.currentPhase}: ${resumeInfo.progress})`
+                    : `-> Resuming from checkpoint (${resumeInfo.progress})`,
             ),
         );
         return 'resume';
@@ -122,13 +124,17 @@ export async function checkOutputDirectory(
     // Interactive prompt
     if (resumeInfo) {
         // Show resume option
+        const resumeTitle = resumeInfo.currentPhase
+            ? `Resume (${resumeInfo.currentPhase}: ${resumeInfo.progress})`
+            : `Resume (${resumeInfo.progress})`;
+
         const response = await prompts({
             type: 'select',
             name: 'action',
             message: `Output directory '${outputDir}' exists with checkpoint.`,
             choices: [
                 {
-                    title: `Resume (${resumeInfo.currentPhase}: ${resumeInfo.progress})`,
+                    title: resumeTitle,
                     value: 'resume',
                 },
                 { title: 'Overwrite (start fresh)', value: 'overwrite' },

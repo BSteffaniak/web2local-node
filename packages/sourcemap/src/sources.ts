@@ -25,8 +25,11 @@ import { shouldIncludeSource } from './utils/filter.js';
  *
  * For each entry in sources/sourcesContent:
  * - Normalizes the path (handles webpack://, vite, etc.)
- * - Filters based on options (node_modules, internal packages, etc.)
+ * - Filters based on options (excludes webpack/vite internals, etc.)
  * - Skips entries with null/undefined content
+ *
+ * Note: node_modules paths are always included to ensure internal/workspace
+ * packages bundled from node_modules paths are properly extracted.
  *
  * @param sourceMap - The parsed and validated source map
  * @param bundleUrl - The URL of the bundle (for result metadata)
@@ -40,12 +43,7 @@ export function extractSources(
     sourceMapUrl: string,
     options?: ExtractSourceMapOptions,
 ): SourceMapExtractionResult {
-    const {
-        includeNodeModules = false,
-        internalPackages,
-        excludePatterns,
-        onSource,
-    } = options ?? {};
+    const { excludePatterns, onSource } = options ?? {};
 
     const sources: ExtractedSource[] = [];
     const errors: Error[] = [];
@@ -105,8 +103,6 @@ export function extractSources(
         // Apply filters
         if (
             !shouldIncludeSource(normalizedPath, {
-                includeNodeModules,
-                internalPackages,
                 excludePatterns,
             })
         ) {

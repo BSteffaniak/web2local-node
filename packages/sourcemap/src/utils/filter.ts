@@ -4,33 +4,12 @@
  * Functions for filtering source paths based on various criteria.
  */
 
-import {
-    VITE_VIRTUAL_PREFIX,
-    EXCLUDE_PATH_PATTERNS,
-    NODE_MODULES_PACKAGE_PATTERN,
-} from '../constants.js';
+import { VITE_VIRTUAL_PREFIX, EXCLUDE_PATH_PATTERNS } from '../constants.js';
 
 /**
  * Options for filtering source paths during extraction.
  */
 export interface FilterOptions {
-    /**
-     * Whether to include sources from node_modules.
-     * @default false
-     */
-    includeNodeModules?: boolean;
-
-    /**
-     * Package names that are considered "internal" and should always be included,
-     * even when includeNodeModules is false.
-     *
-     * @example
-     * ```typescript
-     * internalPackages: new Set(['@mycompany/shared', '@mycompany/utils'])
-     * ```
-     */
-    internalPackages?: ReadonlySet<string>;
-
     /**
      * Additional regex patterns to exclude from extraction.
      * Paths matching any pattern will be skipped.
@@ -43,9 +22,12 @@ export interface FilterOptions {
  *
  * Excludes:
  * - Paths containing virtual module markers (\0)
- * - node_modules (unless includeNodeModules is true or package is internal)
  * - Webpack/Vite internal paths
  * - Query strings and data URIs
+ *
+ * Note: node_modules paths are now always included to ensure internal/workspace
+ * packages bundled from node_modules paths are properly extracted. The dependency
+ * analyzer handles classification of internal vs external packages separately.
  *
  * @param path - The normalized source path
  * @param options - Filtering options
@@ -55,31 +37,10 @@ export function shouldIncludeSource(
     path: string,
     options: FilterOptions = {},
 ): boolean {
-    const {
-        includeNodeModules = false,
-        internalPackages,
-        excludePatterns,
-    } = options;
+    const { excludePatterns } = options;
 
     // Always exclude paths with virtual module marker
     if (path.includes(VITE_VIRTUAL_PREFIX)) {
-        return false;
-    }
-
-    // Handle node_modules filtering
-    if (path.includes('node_modules')) {
-        if (includeNodeModules) {
-            return true;
-        }
-
-        // Check if this is an internal package that should always be included
-        if (internalPackages && internalPackages.size > 0) {
-            const match = path.match(NODE_MODULES_PACKAGE_PATTERN);
-            if (match && internalPackages.has(match[1])) {
-                return true;
-            }
-        }
-
         return false;
     }
 

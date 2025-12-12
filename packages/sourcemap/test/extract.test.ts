@@ -211,7 +211,7 @@ describe('extractSourceMap', () => {
     // ============================================================================
 
     describe('filtering', () => {
-        it('excludes node_modules by default', async () => {
+        it('includes node_modules sources', async () => {
             server.use(
                 http.get('https://example.com/bundle.js', () => {
                     return new HttpResponse(createJsBundle('bundle.js.map'), {
@@ -235,74 +235,13 @@ describe('extractSourceMap', () => {
                 'https://example.com/bundle.js',
             );
 
-            expect(result.sources).toHaveLength(1);
+            // node_modules are now included by default (no filtering)
+            expect(result.sources).toHaveLength(2);
             expect(result.sources[0].path).toBe('src/index.ts');
-            expect(result.metadata.skippedCount).toBe(1);
-        });
-
-        it('includes node_modules when option is set', async () => {
-            server.use(
-                http.get('https://example.com/bundle.js', () => {
-                    return new HttpResponse(createJsBundle('bundle.js.map'), {
-                        headers: { 'Content-Type': 'application/javascript' },
-                    });
-                }),
-                http.get('https://example.com/bundle.js.map', () => {
-                    return HttpResponse.json(
-                        createSourceMap({
-                            sources: [
-                                'src/index.ts',
-                                'node_modules/lodash/lodash.js',
-                            ],
-                            sourcesContent: ['app code', 'lodash code'],
-                        }),
-                    );
-                }),
+            expect(result.sources[1].path).toBe(
+                'node_modules/lodash/lodash.js',
             );
-
-            const result = await extractSourceMap(
-                'https://example.com/bundle.js',
-                {
-                    includeNodeModules: true,
-                },
-            );
-
-            expect(result.sources).toHaveLength(2);
-        });
-
-        it('includes internal packages even without includeNodeModules', async () => {
-            server.use(
-                http.get('https://example.com/bundle.js', () => {
-                    return new HttpResponse(createJsBundle('bundle.js.map'), {
-                        headers: { 'Content-Type': 'application/javascript' },
-                    });
-                }),
-                http.get('https://example.com/bundle.js.map', () => {
-                    return HttpResponse.json(
-                        createSourceMap({
-                            sources: [
-                                'src/index.ts',
-                                'node_modules/@myorg/shared/index.ts',
-                                'node_modules/lodash/lodash.js',
-                            ],
-                            sourcesContent: ['app', 'internal', 'external'],
-                        }),
-                    );
-                }),
-            );
-
-            const result = await extractSourceMap(
-                'https://example.com/bundle.js',
-                {
-                    internalPackages: new Set(['@myorg/shared']),
-                },
-            );
-
-            expect(result.sources).toHaveLength(2);
-            expect(result.sources.map((s) => s.path)).toContain('src/index.ts');
-            expect(result.sources.map((s) => s.path)).toContain(
-                'node_modules/@myorg/shared/index.ts',
-            );
+            expect(result.metadata.skippedCount).toBe(0);
         });
 
         it('skips sources with null content', async () => {
@@ -501,8 +440,8 @@ describe('extractSourceMap', () => {
 
             expect(result.metadata.version).toBe(3);
             expect(result.metadata.totalSources).toBe(4);
-            expect(result.metadata.extractedCount).toBe(2); // a.ts and c.ts
-            expect(result.metadata.skippedCount).toBe(1); // node_modules
+            expect(result.metadata.extractedCount).toBe(3); // a.ts, c.ts, and node_modules/x/index.js
+            expect(result.metadata.skippedCount).toBe(0); // no filtering
             expect(result.metadata.nullContentCount).toBe(1); // b.ts
         });
 

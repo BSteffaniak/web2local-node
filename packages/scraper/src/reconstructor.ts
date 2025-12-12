@@ -9,9 +9,6 @@ import type { BundleWithContent } from './scraper.js';
 export interface ReconstructionOptions {
     /** The full output directory path (e.g., ./output/example.com) */
     outputDir: string;
-    includeNodeModules: boolean;
-    /** Internal packages (not on npm) that should always be extracted from node_modules */
-    internalPackages?: Set<string>;
     bundleName: string;
 }
 
@@ -90,12 +87,7 @@ export async function reconstructSources(
     for (const file of files) {
         try {
             // Check if we should include this file
-            if (
-                !shouldIncludeSource(file.path, {
-                    includeNodeModules: options.includeNodeModules,
-                    internalPackages: options.internalPackages,
-                })
-            ) {
+            if (!shouldIncludeSource(file.path)) {
                 result.filesSkipped++;
                 continue;
             }

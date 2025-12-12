@@ -73,7 +73,7 @@ describe('extractSources', () => {
         expect(result.metadata.extractedCount).toBe(2);
     });
 
-    it('filters out node_modules by default', () => {
+    it('includes node_modules sources by default', () => {
         const mapWithNodeModules: SourceMapV3 = {
             version: 3,
             sources: ['src/index.ts', 'node_modules/react/index.js'],
@@ -87,54 +87,11 @@ describe('extractSources', () => {
             'https://example.com/bundle.js.map',
         );
 
-        expect(result.sources).toHaveLength(1);
+        // node_modules are now included by default (no filtering)
+        expect(result.sources).toHaveLength(2);
         expect(result.sources[0].path).toBe('src/index.ts');
-        expect(result.metadata.skippedCount).toBe(1);
-    });
-
-    it('includes node_modules when option is set', () => {
-        const mapWithNodeModules: SourceMapV3 = {
-            version: 3,
-            sources: ['src/index.ts', 'node_modules/react/index.js'],
-            sourcesContent: ['app code', 'react code'],
-            mappings: 'AAAA',
-        };
-
-        const result = extractSources(
-            mapWithNodeModules,
-            'https://example.com/bundle.js',
-            'https://example.com/bundle.js.map',
-            { includeNodeModules: true },
-        );
-
-        expect(result.sources).toHaveLength(2);
+        expect(result.sources[1].path).toBe('node_modules/react/index.js');
         expect(result.metadata.skippedCount).toBe(0);
-    });
-
-    it('includes internal packages from node_modules', () => {
-        const mapWithInternalPkg: SourceMapV3 = {
-            version: 3,
-            sources: [
-                'src/index.ts',
-                'node_modules/@myorg/shared/index.ts',
-                'node_modules/react/index.js',
-            ],
-            sourcesContent: ['app', 'shared', 'react'],
-            mappings: 'AAAA',
-        };
-
-        const result = extractSources(
-            mapWithInternalPkg,
-            'https://example.com/bundle.js',
-            'https://example.com/bundle.js.map',
-            { internalPackages: new Set(['@myorg/shared']) },
-        );
-
-        expect(result.sources).toHaveLength(2);
-        expect(result.sources.map((s) => s.path)).toContain('src/index.ts');
-        expect(result.sources.map((s) => s.path)).toContain(
-            'node_modules/@myorg/shared/index.ts',
-        );
     });
 
     it('applies custom exclude patterns', () => {

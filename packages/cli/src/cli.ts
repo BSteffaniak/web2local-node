@@ -29,7 +29,6 @@ export interface ExtractOptions {
     /** Resume from checkpoint if available */
     resume: boolean;
     verbose: boolean;
-    includeNodeModules: boolean;
     concurrency: number;
     noCache: boolean;
     /** Use browser crawling to discover bundles across multiple pages */
@@ -51,7 +50,6 @@ export interface CliOptions {
     /** Resume from checkpoint if available */
     resume: boolean;
     verbose: boolean;
-    includeNodeModules: boolean;
     concurrency: number;
     // Package.json generation (default: enabled)
     noPackageJson: boolean;
@@ -130,7 +128,6 @@ interface ExtractCliOptions {
     overwrite?: boolean;
     resume?: boolean;
     verbose?: boolean;
-    includeNodeModules?: boolean;
     concurrency: string;
     cache?: boolean;
     crawl?: boolean;
@@ -200,11 +197,6 @@ export function parseArgs(): CliOptions {
         )
         .option('--resume', 'Resume from checkpoint if available', false)
         .option('-v, --verbose', 'Enable verbose logging', false)
-        .option(
-            '-n, --include-node-modules',
-            'Include node_modules in output',
-            false,
-        )
         .option(
             '-c, --concurrency <number>',
             'Number of concurrent downloads',
@@ -389,7 +381,6 @@ export function parseArgs(): CliOptions {
                 overwrite: options.overwrite || false,
                 resume: options.resume || false,
                 verbose: options.verbose || false,
-                includeNodeModules: options.includeNodeModules || false,
                 concurrency: parseInt(options.concurrency, 10),
                 // Package.json options (--no-X sets to false, so we check !== false for enabled)
                 noPackageJson: options.packageJson === false,
@@ -502,11 +493,6 @@ export function parseArgs(): CliOptions {
         )
         .option('-v, --verbose', 'Enable verbose logging', false)
         .option(
-            '-n, --include-node-modules',
-            'Include node_modules in output',
-            false,
-        )
-        .option(
             '-c, --concurrency <number>',
             'Number of concurrent downloads',
             '5',
@@ -537,7 +523,6 @@ export function parseArgs(): CliOptions {
                 overwrite: opts.overwrite || false,
                 resume: opts.resume || false,
                 verbose: opts.verbose || false,
-                includeNodeModules: opts.includeNodeModules || false,
                 concurrency: parseInt(opts.concurrency, 10),
                 noCache: opts.cache === false,
                 // Crawl options
@@ -559,7 +544,6 @@ export function parseArgs(): CliOptions {
         overwrite: options.overwrite || false,
         resume: options.resume || false,
         verbose: options.verbose || false,
-        includeNodeModules: options.includeNodeModules || false,
         concurrency: parseInt(options.concurrency, 10),
         // Package.json options
         noPackageJson: options.packageJson === false,

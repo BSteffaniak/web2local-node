@@ -7,6 +7,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import type { Framework, PackageEnhanceOptions } from './types.js';
 import { getFrameworkPluginPackage } from './vite-config-generator.js';
+import { isPublicNpmPackage } from '@web2local/analyzer';
 
 /**
  * Get build scripts for the project
@@ -237,14 +238,46 @@ export async function addDependency(
 }
 
 /**
- * Remove the '*' version placeholder for unknown packages
- * and replace with 'latest' for npm install compatibility
+ * Result of fixing unknown versions
+ */
+export interface FixUnknownVersionsResult {
+    /** Packages that were converted to 'latest' (exist on npm) */
+    fixed: string[];
+    /** Packages that were moved to _internalDependencies (don't exist on npm) */
+    movedToInternal: string[];
+}
+
+/**
+ * Remove the '*' version placeholder for unknown packages.
+ *
+ * For each package with '*' version:
+ * - If it exists on npm: replace with 'latest'
+ * - If it doesn't exist on npm: move to _internalDependencies with 'workspace:*'
+ *
+ * This prevents pnpm install from failing on internal packages that don't exist on npm.
  */
 export async function fixUnknownVersions(
     packageJsonPath: string,
 ): Promise<string[]> {
+    const result = await fixUnknownVersionsDetailed(packageJsonPath);
+    return result.fixed;
+}
+
+/**
+ * Detailed version that returns both fixed and moved-to-internal packages
+ */
+export async function fixUnknownVersionsDetailed(
+    packageJsonPath: string,
+): Promise<FixUnknownVersionsResult> {
     const pkg = await readPackageJson(packageJsonPath);
     const fixed: string[] = [];
+    const movedToInternal: string[] = [];
+
+    // Collect all packages with '*' version
+    const packagesToCheck: Array<{
+        key: 'dependencies' | 'devDependencies';
+        name: string;
+    }> = [];
 
     for (const key of ['dependencies', 'devDependencies'] as const) {
         const deps = pkg[key] as Record<string, string> | undefined;
@@ -252,13 +285,55 @@ export async function fixUnknownVersions(
 
         for (const [name, version] of Object.entries(deps)) {
             if (version === '*') {
-                deps[name] = 'latest';
-                fixed.push(name);
+                packagesToCheck.push({ key, name });
             }
         }
     }
 
-    if (fixed.length > 0) {
+    if (packagesToCheck.length === 0) {
+        return { fixed: [], movedToInternal: [] };
+    }
+
+    // Check npm existence in parallel
+    const npmChecks = await Promise.all(
+        packagesToCheck.map(async ({ key, name }) => ({
+            key,
+            name,
+            existsOnNpm: await isPublicNpmPackage(name),
+        })),
+    );
+
+    // Process results
+    for (const { key, name, existsOnNpm } of npmChecks) {
+        const deps = pkg[key] as Record<string, string>;
+
+        if (existsOnNpm) {
+            // Package exists on npm - use 'latest'
+            deps[name] = 'latest';
+            fixed.push(name);
+        } else {
+            // Package doesn't exist on npm - move to _internalDependencies
+            delete deps[name];
+
+            // Initialize _internalDependencies if needed
+            if (!pkg._internalDependencies) {
+                pkg._internalDependencies = {};
+            }
+            (pkg._internalDependencies as Record<string, string>)[name] =
+                'workspace:*';
+            movedToInternal.push(name);
+        }
+    }
+
+    // Clean up empty dependency objects
+    for (const key of ['dependencies', 'devDependencies'] as const) {
+        const deps = pkg[key] as Record<string, string> | undefined;
+        if (deps && Object.keys(deps).length === 0) {
+            delete pkg[key];
+        }
+    }
+
+    if (fixed.length > 0 || movedToInternal.length > 0) {
         await writeFile(
             packageJsonPath,
             JSON.stringify(pkg, null, 2) + '\n',
@@ -266,5 +341,5 @@ export async function fixUnknownVersions(
         );
     }
 
-    return fixed;
+    return { fixed, movedToInternal };
 }

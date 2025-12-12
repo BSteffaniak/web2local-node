@@ -119,9 +119,7 @@ async function extractFromSourceMapUrl(
 
     try {
         // Use the convenience function from @web2local/sourcemap
-        const result = await extractSourceMap(options.url, {
-            includeNodeModules: options.includeNodeModules,
-        });
+        const result = await extractSourceMap(options.url);
 
         if (result.errors.length > 0 && result.sources.length === 0) {
             spinner.fail('Failed to extract sources');
@@ -140,11 +138,7 @@ async function extractFromSourceMapUrl(
 
         for (const source of result.sources) {
             // Check if we should include this file
-            if (
-                !shouldIncludeSource(source.path, {
-                    includeNodeModules: options.includeNodeModules,
-                })
-            ) {
+            if (!shouldIncludeSource(source.path)) {
                 filesSkipped++;
                 continue;
             }
@@ -201,18 +195,10 @@ async function extractFromSourceMapUrl(
         );
         if (filesSkipped > 0) {
             console.log(
-                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(filesSkipped)} (node_modules)`,
+                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(filesSkipped)}`,
             );
         }
         console.log(`    ${chalk.blue('→')} Output: ${chalk.cyan(outputDir)}`);
-
-        if (!options.includeNodeModules && filesSkipped > 0) {
-            console.log(
-                chalk.gray(
-                    '\n  Tip: Use --include-node-modules to include dependency source files',
-                ),
-            );
-        }
         console.log();
     } catch (error) {
         spinner.fail(
@@ -403,7 +389,6 @@ async function extractFromPageUrl(
             // Reconstruct files on disk
             const reconstructResult = await reconstructSources(result.sources, {
                 outputDir,
-                includeNodeModules: options.includeNodeModules,
                 bundleName,
             });
 
@@ -470,7 +455,7 @@ async function extractFromPageUrl(
     }
     if (totalFilesSkipped > 0) {
         console.log(
-            `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)} (node_modules)`,
+            `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)}`,
         );
     }
     if (bundlesWithoutMaps.length > 0) {
@@ -479,14 +464,6 @@ async function extractFromPageUrl(
         );
     }
     console.log(`    ${chalk.blue('→')} Output: ${chalk.cyan(outputDir)}`);
-
-    if (!options.includeNodeModules && totalFilesSkipped > 0) {
-        console.log(
-            chalk.gray(
-                '\n  Tip: Use --include-node-modules to include dependency source files',
-            ),
-        );
-    }
     console.log();
 }
 
@@ -754,7 +731,6 @@ async function extractWithCrawl(
                     result.sources,
                     {
                         outputDir,
-                        includeNodeModules: options.includeNodeModules,
                         bundleName,
                     },
                 );
@@ -820,7 +796,7 @@ async function extractWithCrawl(
         }
         if (totalFilesSkipped > 0) {
             console.log(
-                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)} (node_modules)`,
+                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)}`,
             );
         }
         if (bundlesWithoutMaps.length > 0) {
@@ -829,14 +805,6 @@ async function extractWithCrawl(
             );
         }
         console.log(`    ${chalk.blue('→')} Output: ${chalk.cyan(outputDir)}`);
-
-        if (!options.includeNodeModules && totalFilesSkipped > 0) {
-            console.log(
-                chalk.gray(
-                    '\n  Tip: Use --include-node-modules to include dependency source files',
-                ),
-            );
-        }
         console.log();
     } catch (error) {
         progress.stop();

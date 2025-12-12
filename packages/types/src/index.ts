@@ -237,10 +237,6 @@ export interface SourceMapDiscoveryResult {
  * Options for source map extraction
  */
 export interface ExtractSourceMapOptions {
-    /** Include node_modules sources (default: false) */
-    readonly includeNodeModules?: boolean;
-    /** Package names that are "internal" and should always be included */
-    readonly internalPackages?: ReadonlySet<string>;
     /** Additional path patterns to exclude */
     readonly excludePatterns?: readonly RegExp[];
     /** Callback for each extracted source (streaming) */

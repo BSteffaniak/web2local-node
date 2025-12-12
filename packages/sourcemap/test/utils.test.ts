@@ -202,32 +202,15 @@ describe('shouldIncludeSource', () => {
         expect(shouldIncludeSource('src/components/Button.tsx')).toBe(true);
     });
 
-    it('excludes node_modules by default', () => {
-        expect(shouldIncludeSource('node_modules/react/index.js')).toBe(false);
+    it('includes node_modules sources', () => {
+        // node_modules are now included by default (no filtering)
+        expect(shouldIncludeSource('node_modules/react/index.js')).toBe(true);
     });
 
-    it('includes node_modules when includeNodeModules is true', () => {
-        expect(
-            shouldIncludeSource('node_modules/react/index.js', {
-                includeNodeModules: true,
-            }),
-        ).toBe(true);
-    });
-
-    it('includes internal packages from node_modules', () => {
-        expect(
-            shouldIncludeSource('node_modules/@myorg/shared/index.ts', {
-                internalPackages: new Set(['@myorg/shared']),
-            }),
-        ).toBe(true);
-    });
-
-    it('includes scoped internal packages', () => {
-        expect(
-            shouldIncludeSource('node_modules/@company/ui-kit/Button.tsx', {
-                internalPackages: new Set(['@company/ui-kit']),
-            }),
-        ).toBe(true);
+    it('includes scoped packages from node_modules', () => {
+        expect(shouldIncludeSource('node_modules/@myorg/shared/index.ts')).toBe(
+            true,
+        );
     });
 
     it('excludes webpack internal modules', () => {

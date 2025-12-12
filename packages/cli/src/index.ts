@@ -142,6 +142,14 @@ export async function runMain(options: CliOptions) {
         truncateCorruptedWal: truncateWal,
     });
 
+    // Check if all phases were already complete at start (for skipping unnecessary work)
+    const allPhasesCompleteAtStart =
+        state.getPhaseStatus(PHASES.SCRAPE) === PHASE_STATUS.COMPLETED &&
+        state.getPhaseStatus(PHASES.EXTRACT) === PHASE_STATUS.COMPLETED &&
+        state.getPhaseStatus(PHASES.DEPENDENCIES) === PHASE_STATUS.COMPLETED &&
+        state.getPhaseStatus(PHASES.CAPTURE) === PHASE_STATUS.COMPLETED &&
+        state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED;
+
     console.log(chalk.bold.cyan('\n  web2local'));
     console.log(chalk.gray('  ' + '─'.repeat(12)));
     if (isResuming) {
@@ -400,6 +408,34 @@ export async function runMain(options: CliOptions) {
                 `  Resuming: Skipping extract phase (${totalFilesWritten} files already extracted)`,
             ),
         );
+
+        // Only scan files if dependencies phase still needs to run
+        // (scanning is needed for dependency classification)
+        const dependenciesAlreadyComplete =
+            state.getPhaseStatus(PHASES.DEPENDENCIES) ===
+            PHASE_STATUS.COMPLETED;
+
+        if (!dependenciesAlreadyComplete) {
+            // When resuming, scan extracted source files from disk for dependency classification
+            // This is needed so classifyDependencies can detect workspace packages
+            const scanSpinner = ora({
+                text: 'Scanning extracted source files...',
+                color: 'cyan',
+            }).start();
+            registry.register(scanSpinner);
+
+            try {
+                const scannedFiles = await scanExtractedSourceFiles(outputDir);
+                allExtractedFiles.push(...scannedFiles);
+                scanSpinner.succeed(
+                    `Scanned ${chalk.bold(scannedFiles.length)} source files for dependency analysis`,
+                );
+            } catch (error) {
+                scanSpinner.warn(
+                    `Failed to scan source files: ${error instanceof Error ? error.message : error}`,
+                );
+            }
+        }
     } else if (bundlesWithMaps.length > 0) {
         if (state.getPhaseStatus(PHASES.EXTRACT) !== PHASE_STATUS.IN_PROGRESS) {
             await state.startPhase(PHASES.EXTRACT);
@@ -537,8 +573,6 @@ export async function runMain(options: CliOptions) {
             // Reconstruct the files on disk
             const reconstructResult = await reconstructSources(files, {
                 outputDir,
-                includeNodeModules: options.includeNodeModules,
-                internalPackages,
                 bundleName,
             });
 
@@ -987,63 +1021,58 @@ export async function runMain(options: CliOptions) {
         }
     }
 
-    // Summary
-    console.log(chalk.gray('\n  ' + '─'.repeat(20)));
-    console.log(chalk.bold('\n  Summary:'));
-    if (totalFilesWritten > 0) {
+    // Only show summary if we did work this run (not all phases were already complete)
+    if (!allPhasesCompleteAtStart) {
+        // Summary
+        console.log(chalk.gray('\n  ' + '─'.repeat(20)));
+        console.log(chalk.bold('\n  Summary:'));
+        if (totalFilesWritten > 0) {
+            console.log(
+                `    ${chalk.green('✓')} Files extracted: ${chalk.bold(totalFilesWritten)}`,
+            );
+        }
+        if (savedBundles.length > 0) {
+            const totalBundleSize = savedBundles.reduce(
+                (sum, b) => sum + b.size,
+                0,
+            );
+            console.log(
+                `    ${chalk.yellow('○')} Minified bundles saved: ${chalk.bold(savedBundles.length)} (${formatBytes(totalBundleSize)})`,
+            );
+        }
+        if (totalFilesSkipped > 0) {
+            console.log(
+                `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)}`,
+            );
+        }
+        if (dependencyStats) {
+            console.log(
+                `    ${chalk.green('✓')} Dependencies found: ${chalk.bold(dependencyStats.totalDependencies)}`,
+            );
+        }
         console.log(
-            `    ${chalk.green('✓')} Files extracted: ${chalk.bold(totalFilesWritten)}`,
+            `    ${chalk.blue('→')} Output directory: ${chalk.cyan(outputDir)}`,
         );
-    }
-    if (savedBundles.length > 0) {
-        const totalBundleSize = savedBundles.reduce(
-            (sum, b) => sum + b.size,
-            0,
-        );
-        console.log(
-            `    ${chalk.yellow('○')} Minified bundles saved: ${chalk.bold(savedBundles.length)} (${formatBytes(totalBundleSize)})`,
-        );
-    }
-    if (totalFilesSkipped > 0) {
-        console.log(
-            `    ${chalk.gray('○')} Files skipped: ${chalk.gray(totalFilesSkipped)}`,
-        );
-    }
-    if (dependencyStats) {
-        console.log(
-            `    ${chalk.green('✓')} Dependencies found: ${chalk.bold(dependencyStats.totalDependencies)}`,
-        );
-    }
-    console.log(
-        `    ${chalk.blue('→')} Output directory: ${chalk.cyan(outputDir)}`,
-    );
 
-    if (!options.includeNodeModules && totalFilesSkipped > 0) {
-        console.log(
-            chalk.gray(
-                '\n  Tip: Use --include-node-modules to include dependency source files',
-            ),
-        );
-    }
+        if (
+            options.noPackageJson &&
+            (totalFilesWritten > 0 || savedBundles.length > 0)
+        ) {
+            console.log(
+                chalk.gray(
+                    '  Note: Package.json generation was skipped (--no-package-json)',
+                ),
+            );
+        }
 
-    if (
-        options.noPackageJson &&
-        (totalFilesWritten > 0 || savedBundles.length > 0)
-    ) {
-        console.log(
-            chalk.gray(
-                '  Note: Package.json generation was skipped (--no-package-json)',
-            ),
-        );
-    }
+        if (options.noCapture) {
+            console.log(
+                chalk.gray('  Note: API capture was skipped (--no-capture)'),
+            );
+        }
 
-    if (options.noCapture) {
-        console.log(
-            chalk.gray('  Note: API capture was skipped (--no-capture)'),
-        );
+        console.log();
     }
-
-    console.log();
 
     // Mark capture as successful if we extracted files, saved bundles, or will capture API
     captureSuccess =
@@ -1384,7 +1413,8 @@ export async function runMain(options: CliOptions) {
 
     // Step 6.5: Sync dynamically loaded bundles from _server/static to _bundles
     // This ensures bundles loaded via dynamic imports during API capture are available for rebuild
-    if (!options.noCapture && !options.noRebuild) {
+    // Skip if capture was already completed (resuming) - sync was done in previous run
+    if (!options.noCapture && !options.noRebuild && !skipCapture) {
         const sourceDir = outputDir;
         const syncSpinner = ora({
             text: 'Syncing dynamically loaded bundles...',
@@ -1650,6 +1680,87 @@ function formatBytes(bytes: number): string {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+/**
+ * Scan extracted source files from disk.
+ *
+ * When resuming, we need to reload the source files so that dependency
+ * classification can detect workspace packages (packages outside node_modules).
+ *
+ * This function scans the output directory for source files, skipping:
+ * - _server/ (API fixtures)
+ * - _bundles/ (minified bundles)
+ * - _rebuilt/ (build output)
+ * - node_modules/ (installed dependencies)
+ *
+ * @param outputDir - The site output directory (e.g., output/example.com)
+ * @returns Array of ExtractedSource objects with path and content
+ */
+async function scanExtractedSourceFiles(
+    outputDir: string,
+): Promise<ExtractedSource[]> {
+    const sources: ExtractedSource[] = [];
+    const sourceExtensions = [
+        '.ts',
+        '.tsx',
+        '.js',
+        '.jsx',
+        '.mjs',
+        '.cjs',
+        '.json',
+        '.css',
+        '.scss',
+        '.sass',
+        '.less',
+    ];
+
+    // Directories to skip (internal/generated)
+    const skipDirs = new Set([
+        '_server',
+        '_bundles',
+        '_rebuilt',
+        'node_modules',
+    ]);
+
+    async function scanDir(dir: string, relativePath: string): Promise<void> {
+        try {
+            const entries = await readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = join(dir, entry.name);
+                const entryRelativePath = relativePath
+                    ? `${relativePath}/${entry.name}`
+                    : entry.name;
+
+                if (entry.isDirectory()) {
+                    // Skip internal directories at the root level
+                    if (relativePath === '' && skipDirs.has(entry.name)) {
+                        continue;
+                    }
+                    await scanDir(fullPath, entryRelativePath);
+                } else if (
+                    entry.isFile() &&
+                    sourceExtensions.some((ext) => entry.name.endsWith(ext))
+                ) {
+                    try {
+                        const content = await readFile(fullPath, 'utf-8');
+                        sources.push({
+                            path: entryRelativePath,
+                            content,
+                            originalPath: entryRelativePath,
+                        });
+                    } catch {
+                        // Skip files that can't be read
+                    }
+                }
+            }
+        } catch {
+            // Directory doesn't exist or can't be read
+        }
+    }
+
+    await scanDir(outputDir, '');
+    return sources;
 }
 
 /**

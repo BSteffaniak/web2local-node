@@ -32,7 +32,10 @@ import {
 
 import { writeHtml } from './html-generator.js';
 
-import { enhancePackageJson, fixUnknownVersions } from './package-enhancer.js';
+import {
+    enhancePackageJson,
+    fixUnknownVersionsDetailed,
+} from './package-enhancer.js';
 
 import { runBuild, hasBuildOutput } from './build-runner.js';
 
@@ -433,10 +436,16 @@ export async function prepareRebuild(
             }
         }
 
-        // Fix unknown versions
-        const fixed = await fixUnknownVersions(packageJsonPath);
+        // Fix unknown versions - check npm existence before converting '*' to 'latest'
+        const { fixed, movedToInternal } =
+            await fixUnknownVersionsDetailed(packageJsonPath);
         if (fixed.length > 0 && verbose) {
             onProgress?.(`Fixed unknown versions for: ${fixed.join(', ')}`);
+        }
+        if (movedToInternal.length > 0) {
+            onProgress?.(
+                `Detected internal packages (not on npm): ${movedToInternal.join(', ')}`,
+            );
         }
     } catch (error) {
         errors.push(`Failed to update package.json: ${error}`);

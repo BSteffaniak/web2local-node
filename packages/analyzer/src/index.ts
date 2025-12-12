@@ -20,6 +20,7 @@ export {
     writeTsConfig,
     extractNodeModulesPackages,
     identifyInternalPackages,
+    isPublicNpmPackage,
     validateNpmVersion,
     validateNpmVersionsBatch,
     type AliasMap,
