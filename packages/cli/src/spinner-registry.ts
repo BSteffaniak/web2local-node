@@ -29,21 +29,21 @@ export class SpinnerRegistry {
             ? chalk.gray(`[${timestamp}] ${message}`)
             : chalk.cyan(`[${timestamp}] ${message}`);
 
-        // Stop all active spinners
-        const stoppedSpinners: Ora[] = [];
+        // Clear spinner lines without stopping them (avoids flicker)
         for (const spinner of this.spinners) {
             if (spinner.isSpinning) {
-                spinner.stop();
-                stoppedSpinners.push(spinner);
+                spinner.clear();
             }
         }
 
         // Print message
         console.log(formattedMessage);
 
-        // Restart stopped spinners
-        for (const spinner of stoppedSpinners) {
-            spinner.start();
+        // Re-render spinners immediately (they're still running)
+        for (const spinner of this.spinners) {
+            if (spinner.isSpinning) {
+                spinner.render();
+            }
         }
     }
 

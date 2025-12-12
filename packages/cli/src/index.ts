@@ -1547,6 +1547,26 @@ export async function runMain(options: CliOptions) {
         options.noRebuild ||
         state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED;
 
+    /**
+     * Check if a line from package manager or build output is a warning or error.
+     * Uses patterns specific to npm, pnpm, yarn, and common build tools.
+     */
+    function isWarningOrError(line: string): boolean {
+        // Package manager specific prefixes
+        if (line.startsWith('npm WARN') || line.startsWith('npm ERR')) {
+            return true;
+        }
+        // pnpm/yarn WARN or ERR at start (with word boundary)
+        if (/^\s*WARN\b/i.test(line) || /^\s*ERR\b/i.test(line)) {
+            return true;
+        }
+        // Generic patterns with word boundaries
+        if (/\bwarning[:\s]/i.test(line)) return true;
+        if (/\berror[:\s]/i.test(line)) return true;
+        if (/\bdeprecated\b/i.test(line)) return true;
+        return false;
+    }
+
     if (!skipRebuild) {
         // Start rebuild phase if not already in progress
         if (state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.PENDING) {
@@ -1564,6 +1584,9 @@ export async function runMain(options: CliOptions) {
         }).start();
         registry.register(rebuildSpinner);
 
+        // Track current phase for output prefixing
+        let currentPhase: 'install' | 'build' = 'install';
+
         try {
             // Full rebuild (install + build)
             const result = await runRebuild({
@@ -1577,7 +1600,28 @@ export async function runMain(options: CliOptions) {
                         : options.packageManager,
                 sourceFiles: allExtractedFiles,
                 onProgress: (message) => {
+                    // Track phase transitions
+                    if (message.includes('Installing dependencies')) {
+                        currentPhase = 'install';
+                    } else if (
+                        message.includes('Running') ||
+                        message.includes('Building')
+                    ) {
+                        currentPhase = 'build';
+                    }
                     rebuildSpinner.text = message;
+                },
+                onOutput: (line, stream) => {
+                    const prefix =
+                        currentPhase === 'install' ? '[install]' : '[build]';
+
+                    if (options.verbose) {
+                        // Verbose: log everything
+                        registry.safeLog(`${prefix} ${line}`, true);
+                    } else if (stream === 'stderr' || isWarningOrError(line)) {
+                        // Default: stderr + stdout warnings/errors
+                        registry.safeLog(`${prefix} ${line}`, false);
+                    }
                 },
             });
 

@@ -61,7 +61,8 @@ async function runCommand(
     command: string,
     args: string[],
     cwd: string,
-    onOutput?: (line: string) => void,
+    onProgress?: (line: string) => void,
+    onOutput?: (line: string, stream: 'stdout' | 'stderr') => void,
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         const proc = spawn(command, args, {
@@ -76,21 +77,23 @@ async function runCommand(
         proc.stdout?.on('data', (data) => {
             const text = data.toString();
             stdout += text;
-            if (onOutput) {
-                text.split('\n').forEach((line: string) => {
-                    if (line.trim()) onOutput(line);
-                });
-            }
+            text.split('\n').forEach((line: string) => {
+                if (line.trim()) {
+                    onProgress?.(line);
+                    onOutput?.(line, 'stdout');
+                }
+            });
         });
 
         proc.stderr?.on('data', (data) => {
             const text = data.toString();
             stderr += text;
-            if (onOutput) {
-                text.split('\n').forEach((line: string) => {
-                    if (line.trim()) onOutput(line);
-                });
-            }
+            text.split('\n').forEach((line: string) => {
+                if (line.trim()) {
+                    onProgress?.(line);
+                    onOutput?.(line, 'stderr');
+                }
+            });
         });
 
         proc.on('close', (code) => {
@@ -172,6 +175,7 @@ export async function installDependencies(
     projectDir: string,
     onProgress?: (message: string) => void,
     explicitPackageManager?: PackageManager | 'auto',
+    onOutput?: (line: string, stream: 'stdout' | 'stderr') => void,
 ): Promise<{
     success: boolean;
     error?: string;
@@ -194,6 +198,7 @@ export async function installDependencies(
         installArgs,
         projectDir,
         onProgress,
+        onOutput,
     );
 
     if (exitCode !== 0) {
@@ -214,6 +219,7 @@ export async function runViteBuild(
     projectDir: string,
     onProgress?: (message: string) => void,
     explicitPackageManager?: PackageManager | 'auto',
+    onOutput?: (line: string, stream: 'stdout' | 'stderr') => void,
 ): Promise<{ success: boolean; output: string; errors: RecoverableError[] }> {
     const packageManager = await resolvePackageManager(
         projectDir,
@@ -228,6 +234,7 @@ export async function runViteBuild(
         ['build'],
         projectDir,
         onProgress,
+        onOutput,
     );
 
     const combinedOutput = stdout + '\n' + stderr;
@@ -278,6 +285,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
         maxRecoveryAttempts = 3,
         verbose = false,
         onProgress,
+        onOutput,
         packageManager: explicitPackageManager,
     } = options;
 
@@ -292,6 +300,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
         projectDir,
         onProgress,
         explicitPackageManager,
+        onOutput,
     );
 
     if (!installResult.success) {
@@ -321,6 +330,7 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
             projectDir,
             onProgress,
             explicitPackageManager,
+            onOutput,
         );
 
         if (buildResult.success) {

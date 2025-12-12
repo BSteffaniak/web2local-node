@@ -98,6 +98,8 @@ export interface BuildOptions extends PrepareRebuildOptions {
     lenient?: boolean;
     /** Package manager to use (auto-detected if not specified) */
     packageManager?: PackageManager | 'auto';
+    /** Callback for command output lines (for logging warnings/errors) */
+    onOutput?: (line: string, stream: 'stdout' | 'stderr') => void;
 }
 
 /**
