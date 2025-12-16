@@ -1,3 +1,11 @@
+/**
+ * Package.json generation for reconstructed projects.
+ *
+ * Generates a package.json file from detected dependencies, including
+ * version confidence metadata, workspace package hints, and bundler alias
+ * configuration.
+ */
+
 import { writeFile } from 'fs/promises';
 import type {
     DependencyInfo,
@@ -6,7 +14,41 @@ import type {
 } from '@web2local/types';
 
 /**
- * Generates a package.json object from analysis results
+ * Generates a package.json object from dependency analysis results.
+ *
+ * Creates a complete package.json structure including:
+ * - Regular dependencies with version ranges based on confidence level
+ * - Dev dependencies for TypeScript and type definitions
+ * - Internal/workspace package references
+ * - Version confidence metadata for debugging
+ * - Import alias configuration hints for bundlers
+ *
+ * Version handling:
+ * - Exact versions (from fingerprinting) are used as-is
+ * - Other versions use caret ranges (^) for flexibility
+ * - Unknown versions are marked with '*' for manual resolution
+ * - Private packages use 'workspace:*' references
+ *
+ * @param name - The package name for the generated package.json
+ * @param dependencies - Map of package names to their dependency info
+ * @param aliasMap - Optional map of import aliases detected from source maps
+ * @param projectConfig - Optional detected project configuration
+ * @returns A package.json object ready to be serialized to JSON
+ *
+ * @example
+ * ```typescript
+ * const deps = new Map<string, DependencyInfo>([
+ *   ['react', { version: '18.2.0', confidence: 'exact', versionSource: 'fingerprint' }],
+ *   ['lodash', { version: '4.17.21', confidence: 'high', versionSource: 'comment' }],
+ * ]);
+ *
+ * const packageJson = generatePackageJson('my-reconstructed-app', deps, undefined, {
+ *   hasTypeScript: true,
+ *   jsxFramework: 'react',
+ * });
+ * ```
+ *
+ * @see {@link writePackageJson} for writing the result to disk
  */
 export function generatePackageJson(
     name: string,
@@ -174,7 +216,22 @@ export function generatePackageJson(
 }
 
 /**
- * Writes the generated package.json to disk
+ * Writes the generated package.json to disk.
+ *
+ * Serializes the package.json object with pretty-printing (2-space indentation)
+ * and a trailing newline for POSIX compliance.
+ *
+ * @param outputPath - Absolute path where the package.json should be written
+ * @param packageJson - The package.json object to serialize
+ * @throws {Error} When the file cannot be written (permissions, disk full, etc.)
+ *
+ * @example
+ * ```typescript
+ * const packageJson = generatePackageJson('my-app', dependencies);
+ * await writePackageJson('/output/my-app/package.json', packageJson);
+ * ```
+ *
+ * @see {@link generatePackageJson} for creating the package.json object
  */
 export async function writePackageJson(
     outputPath: string,
