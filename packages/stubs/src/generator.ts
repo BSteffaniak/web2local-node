@@ -94,7 +94,16 @@ const UNIVERSAL_STUB_FILENAME = '__universal-stub__.ts';
 
 /**
  * Writes the universal stub runtime file to the specified directory.
- * Returns the path to the written file.
+ *
+ * The runtime provides a Proxy-based stub that handles any operation
+ * without throwing errors, making it work regardless of how the missing
+ * export is used.
+ *
+ * @param targetDir - The directory where the stub runtime should be written
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't actually write the file
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns The path to the written (or would-be-written) file
  */
 export async function writeUniversalStubRuntime(
     targetDir: string,
@@ -119,7 +128,12 @@ export async function writeUniversalStubRuntime(
 
 /**
  * Computes the relative import path from a source file to the universal stub.
- * Always returns a path starting with './' or '../'
+ *
+ * Always returns a path starting with './' or '../' for use in import statements.
+ *
+ * @param fromFilePath - The file that will contain the import statement
+ * @param stubDir - The directory where the universal stub file is located
+ * @returns The relative import path to the universal stub (without extension)
  */
 export function getUniversalStubImportPath(
     fromFilePath: string,
@@ -195,8 +209,12 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 /**
  * Extracts exported identifiers from a TypeScript/JavaScript file.
+ *
  * Uses SWC for robust AST-based parsing that handles all export patterns correctly,
  * including destructured exports like RTK Query hooks.
+ *
+ * @param filePath - The absolute path to the source file
+ * @returns Object containing named exports, type exports, default export info, and defaultName
  */
 export async function extractExports(filePath: string): Promise<FileExports> {
     try {
@@ -209,7 +227,13 @@ export async function extractExports(filePath: string): Promise<FileExports> {
 }
 
 /**
- * Analyzes a package directory and determines what exports it provides
+ * Analyzes a package directory and determines what exports it provides.
+ *
+ * Checks for existing index files, scans all source files, and extracts
+ * all exported identifiers.
+ *
+ * @param packagePath - The absolute path to the package directory
+ * @returns Package information including name, path, hasIndex, and exportedModules
  */
 export async function analyzePackage(
     packagePath: string,
@@ -287,7 +311,17 @@ function detectNamespaceExport(
 }
 
 /**
- * Generates an index.ts file that re-exports all found modules
+ * Generates an index.ts file that re-exports all found modules.
+ *
+ * Scans the package directory for source files, extracts exports from each,
+ * and creates a barrel file that re-exports everything. Also generates
+ * a package.json if one doesn't exist.
+ *
+ * @param packagePath - The absolute path to the package directory
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Object indicating if file was generated, the content, and list of exports
  */
 export async function generateIndexFile(
     packagePath: string,
@@ -863,7 +897,14 @@ async function looksLikePackage(
 }
 
 /**
- * Finds all internal packages that need index files generated
+ * Finds all internal packages that need index files generated.
+ *
+ * Searches the source directory and node_modules for packages that have
+ * exported modules but no index file to serve as the package entry point.
+ *
+ * @param sourceDir - The root source directory to search
+ * @param internalPackages - Set of package names to consider as internal
+ * @returns Array of absolute paths to packages needing index files
  */
 export async function findPackagesNeedingIndex(
     sourceDir: string,
@@ -995,9 +1036,15 @@ export interface ImportInfo {
 /**
  * Scans source files for imports and categorizes them.
  *
+ * Analyzes all TypeScript/JavaScript files in the source directory and
+ * categorizes imports into directory imports, CSS modules, external packages,
+ * and missing type files.
+ *
  * @param sourceDir - Root directory to scan
+ * @param options - Configuration options
  * @param options.internalPackages - Set of package names that should be scanned
  *                                   even if they're in node_modules (e.g., '@fp/sarsaparilla')
+ * @returns Categorized import information for further processing
  */
 export async function scanImports(
     sourceDir: string,
@@ -1238,7 +1285,14 @@ export async function scanImports(
 }
 
 /**
- * Generates index.ts files for directories that are imported as modules but lack an index
+ * Generates index.ts files for directories that are imported as modules but lack an index.
+ *
+ * @param sourceDir - The root source directory (used for relative path display)
+ * @param directoryImports - Array of directory imports that need index files
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Number of index files generated
  */
 export async function generateDirectoryIndexFiles(
     sourceDir: string,
@@ -1275,8 +1329,17 @@ export async function generateDirectoryIndexFiles(
 
 /**
  * Generates stub CSS module files for imports that don't exist.
+ *
  * If captured CSS bundles are provided, attempts to use them as fallback content
- * instead of generating empty stubs.
+ * instead of generating empty stubs. Also creates corresponding .d.ts files.
+ *
+ * @param sourceDir - The root source directory
+ * @param cssModuleImports - Array of CSS module imports that need stub files
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @param options.capturedCssBundles - Optional captured bundles to use for stub content
+ * @returns Number of CSS module stubs generated
  */
 export async function generateMissingCssModuleStubs(
     sourceDir: string,
@@ -1394,12 +1457,19 @@ export interface CssStubUpdateResult {
 
 /**
  * Updates existing CSS stub files with content from captured CSS bundles.
+ *
  * This is called after API/static capture to enhance previously generated
  * empty CSS stubs with actual minified CSS content.
  *
  * Returns detailed information about matched/unmatched stubs and bundles,
  * which can be used to determine if global CSS injection is needed
  * (when source maps aren't available, bundles won't match individual module stubs).
+ *
+ * @param sourceDir - The root source directory containing CSS stubs
+ * @param capturedCssBundles - Array of captured CSS bundles to match against stubs
+ * @param options - Configuration options
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Detailed result including updated count, unmatched stubs, and unused bundles
  */
 export async function updateCssStubsWithCapturedBundles(
     sourceDir: string,
@@ -1535,8 +1605,17 @@ export async function updateCssStubsWithCapturedBundles(
 
 /**
  * Generates stub type files for missing .types.ts imports.
- * These are typically type definition files that were erased during TypeScript compilation
- * and thus not included in the source maps.
+ *
+ * These are typically type definition files that were erased during TypeScript
+ * compilation and thus not included in the source maps. The function analyzes
+ * importing files to determine what types are expected and generates appropriate stubs.
+ *
+ * @param sourceDir - The root source directory
+ * @param missingTypeFileImports - Array of missing type file imports
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Number of type file stubs generated
  */
 export async function generateMissingTypeFileStubs(
     sourceDir: string,
@@ -1654,6 +1733,14 @@ interface EnvPropertyAccess {
 /**
  * Scans source files for process.env property accesses and generates env.d.ts
  * to declare the types for these custom environment variables.
+ *
+ * Also generates assets.d.ts for common static asset imports (images, fonts, etc.).
+ *
+ * @param sourceDir - The root source directory to scan
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Object indicating if files were generated and list of environment variables found
  */
 export async function generateEnvDeclarations(
     sourceDir: string,
@@ -1921,7 +2008,18 @@ export async function generateEnvDeclarations(
 }
 
 /**
- * Generates stub type declarations for external packages that aren't installed
+ * Generates stub type declarations for external packages that aren't installed.
+ *
+ * Creates an @types directory with stub declaration files that provide
+ * basic type coverage for uninstalled dependencies.
+ *
+ * @param sourceDir - The root source directory
+ * @param externalPackageImports - Array of external package imports found
+ * @param installedPackages - Set of package names that are already installed
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Number of external package stubs generated
  */
 export async function generateExternalPackageStubs(
     sourceDir: string,
@@ -2382,13 +2480,19 @@ function fixDuplicateExportsInSource(
  * Fixes duplicate export identifiers in an index file using SWC for robust parsing.
  *
  * This handles cases where both a type and value export have the same name:
- * - export type { LocationSuggestion } from './types';
- * - export { LocationSuggestion } from './component';
+ * - `export type { LocationSuggestion } from './types';`
+ * - `export { LocationSuggestion } from './component';`
  *
  * TypeScript doesn't allow duplicate identifiers, so we keep only the first occurrence.
  *
  * Uses SWC to parse the AST and identify export spans, then rebuilds the file
  * with duplicates removed while preserving comments and formatting.
+ *
+ * @param filePath - The absolute path to the index file to fix
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write the file
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Object indicating if fixes were applied and which duplicates were removed
  */
 export async function fixDuplicateExports(
     filePath: string,
@@ -2420,7 +2524,17 @@ export async function fixDuplicateExports(
 }
 
 /**
- * Finds and fixes duplicate exports in all generated index files
+ * Finds and fixes duplicate exports in all generated index files.
+ *
+ * Recursively scans the source directory and node_modules (for internal packages)
+ * to find generated index files and remove any duplicate export identifiers.
+ *
+ * @param sourceDir - The root source directory to scan
+ * @param options - Configuration options
+ * @param options.internalPackages - Set of internal package names to process in node_modules
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Number of files that had duplicate exports fixed
  */
 export async function fixAllDuplicateExports(
     sourceDir: string,
@@ -2533,8 +2647,17 @@ export interface AliasMapping {
 
 /**
  * Scans all source files and finds imports that point to missing files.
+ *
  * Handles both relative imports and aliased imports.
- * Collects all the export requirements from every importer.
+ * Collects all the export requirements from every importer to determine
+ * what exports each missing file needs to provide.
+ *
+ * @param sourceDir - The root source directory to scan
+ * @param options - Configuration options
+ * @param options.internalPackages - Set of internal package names to process in node_modules
+ * @param options.aliases - Array of alias mappings for resolving non-relative imports
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Map of file paths to their required exports
  */
 export async function findMissingSourceFiles(
     sourceDir: string,
@@ -2799,7 +2922,16 @@ export async function findMissingSourceFiles(
 
 /**
  * Generates stub files for missing source imports.
+ *
  * Uses universal stub (Proxy-based) for value exports to handle any usage pattern.
+ * Type exports are stubbed as `any` to allow TypeScript compilation.
+ *
+ * @param sourceDir - The root source directory
+ * @param missingFiles - Map of file paths to their required exports (from findMissingSourceFiles)
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Number of stub files generated
  */
 export async function generateMissingSourceStubs(
     sourceDir: string,
@@ -3009,11 +3141,20 @@ async function extractProvidedExports(
 
 /**
  * Finds missing exports from generated barrel/index files.
+ *
  * Scans source files for imports from directories with generated index files,
  * extracts what named exports they expect, and compares against what the
  * generated index actually exports.
  *
  * Supports both relative imports and aliased imports (e.g., 'sarsaparilla').
+ *
+ * @param sourceDir - The root source directory to scan
+ * @param generatedIndexPaths - Array of paths to generated index files
+ * @param options - Configuration options
+ * @param options.internalPackages - Set of internal package names to process in node_modules
+ * @param options.aliases - Array of alias mappings for resolving non-relative imports
+ * @param options.onProgress - Optional progress callback for status updates
+ * @returns Map of directory paths to their missing export information
  */
 export async function findMissingBarrelExports(
     sourceDir: string,
@@ -3263,6 +3404,16 @@ export async function findMissingBarrelExports(
  * 3. Fall back to stub with warning
  *
  * Uses universal stub (Proxy-based) for value exports when no resolution is found.
+ *
+ * @param sourceDir - The root source directory
+ * @param missingExports - Map of directory paths to their missing export information
+ * @param options - Configuration options
+ * @param options.dryRun - If true, don't write files
+ * @param options.onProgress - Optional progress callback for status updates
+ * @param options.onWarning - Optional callback for warning messages
+ * @param options.verbose - If true, provide detailed progress information
+ * @param options.aliases - Alias mappings to determine package import source for usage analysis
+ * @returns Number of index files that were modified
  */
 export async function appendMissingBarrelExports(
     sourceDir: string,
@@ -3469,7 +3620,23 @@ export async function appendMissingBarrelExports(
 }
 
 /**
- * Generates all necessary stub files for a reconstructed project
+ * Generates all necessary stub files for a reconstructed project.
+ *
+ * This is the main entry point for the stub generation pipeline. It orchestrates
+ * all stub generation tasks including:
+ * - Universal stub runtime
+ * - Package index files
+ * - SCSS declarations and variable stubs
+ * - CSS module stubs
+ * - External package stubs
+ * - Type file stubs
+ * - Environment declarations
+ * - Missing source stubs
+ * - Barrel export fixes
+ *
+ * @param sourceDir - The root source directory containing the reconstructed project
+ * @param options - Configuration options for controlling which stubs to generate
+ * @returns Detailed results of all stub generation operations
  */
 export async function generateStubFiles(
     sourceDir: string,
