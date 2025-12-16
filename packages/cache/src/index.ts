@@ -1,7 +1,12 @@
 /**
- * Fingerprint caching system
- * Caches npm package metadata and content fingerprints to disk
- * to speed up repeated fingerprinting operations
+ * Fingerprint caching system for web2local-node.
+ *
+ * This module provides a multi-layer caching system (memory + disk) for npm package
+ * metadata, content fingerprints, source maps, and extraction results. Caching
+ * significantly speeds up repeated operations by avoiding redundant network requests
+ * and expensive computations.
+ *
+ * @packageDocumentation
  */
 
 import { createHash } from 'crypto';
@@ -13,9 +18,15 @@ import { stripComments, extractDeclarationNames } from '@web2local/ast';
 // Cache TTL in milliseconds (7 days)
 const DEFAULT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * Cached npm package metadata including available versions and package.json fields.
+ */
 export interface PackageMetadataCache {
+    /** Package name (e.g., "react" or "@scope/package") */
     name: string;
+    /** List of all published versions */
     versions: string[];
+    /** Version-specific package.json fields for each version */
     versionDetails: Record<
         string,
         {
@@ -27,25 +38,44 @@ export interface PackageMetadataCache {
             dependencies?: Record<string, string>;
         }
     >;
+    /** Distribution tags (e.g., "latest", "next") mapped to versions */
     distTags: Record<string, string>;
     /** Version publish timestamps (version -> timestamp in ms) for smart version ordering */
     versionTimes?: Record<string, number>;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
+/**
+ * Cached content fingerprint for a specific package version.
+ *
+ * Contains multiple hash types to support both exact and fuzzy matching
+ * of package content against extracted source code.
+ */
 export interface ContentFingerprintCache {
+    /** Package name (e.g., "react" or "@scope/package") */
     packageName: string;
+    /** Semver version string */
     version: string;
+    /** Entry point path within the package */
     entryPath: string;
+    /** Raw MD5 hash of the file content */
     contentHash: string;
+    /** MD5 hash of normalized content (whitespace/comments stripped) */
     normalizedHash: string;
+    /** Extracted code signature for fuzzy matching */
     signature: string;
+    /** File size in bytes */
     contentLength: number;
     /** Whether this fingerprint is from a minified/production build */
     isMinified?: boolean;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
+/**
+ * Cached result of matching extracted content against a package.
+ */
 export interface MatchResultCache {
     /** Package name */
     packageName: string;
@@ -60,6 +90,9 @@ export interface MatchResultCache {
     fetchedAt: number;
 }
 
+/**
+ * Cached source map data fetched from a URL.
+ */
 export interface SourceMapCache {
     /** Original URL of the source map */
     url: string;
@@ -72,11 +105,19 @@ export interface SourceMapCache {
     fetchedAt: number;
 }
 
+/**
+ * A file extracted from a source map.
+ */
 export interface ExtractedFile {
+    /** Relative file path from the source map's sourceRoot */
     path: string;
+    /** File content */
     content: string;
 }
 
+/**
+ * Cached result of extracting source files from a source map.
+ */
 export interface ExtractionResultCache {
     /** Source map URL */
     sourceMapUrl: string;
@@ -91,12 +132,21 @@ export interface ExtractionResultCache {
     fetchedAt: number;
 }
 
+/**
+ * Information about a discovered JavaScript or CSS bundle.
+ */
 export interface BundleInfo {
+    /** URL of the bundle file */
     url: string;
+    /** Type of bundle */
     type: 'script' | 'stylesheet';
+    /** Source map URL if referenced in the bundle (via sourceMappingURL) */
     sourceMapUrl?: string;
 }
 
+/**
+ * Cached result of scraping a web page for bundle references.
+ */
 export interface PageScrapingCache {
     /** Original page URL */
     pageUrl: string;
@@ -117,6 +167,9 @@ export interface PageScrapingCache {
     fetchedAt: number;
 }
 
+/**
+ * Cached result of discovering a source map URL from a bundle.
+ */
 export interface SourceMapDiscoveryCache {
     /** Bundle URL */
     bundleUrl: string;
@@ -131,6 +184,9 @@ export interface SourceMapDiscoveryCache {
 import type { DependencyInfo } from '@web2local/types';
 export type { DependencyInfo } from '@web2local/types';
 
+/**
+ * Cached result of analyzing dependencies from extracted source files.
+ */
 export interface DependencyAnalysisCache {
     /** Hash of extracted files (paths + content hashes) */
     extractionHash: string;
@@ -141,15 +197,27 @@ export interface DependencyAnalysisCache {
     fetchedAt: number;
 }
 
+/**
+ * Statistics about dependency version detection results.
+ */
 export interface VersionStats {
+    /** Total number of dependencies analyzed */
     totalDependencies: number;
+    /** Count of dependencies with a detected version */
     withVersion: number;
+    /** Count of dependencies without a detected version */
     withoutVersion: number;
+    /** Count of private/internal packages (not on npm) */
     privatePackages: number;
+    /** Breakdown by detection source (e.g., "fingerprint", "comment") */
     bySource: Record<string, number>;
+    /** Breakdown by confidence level */
     byConfidence: Record<string, number>;
 }
 
+/**
+ * Cached generated dependency manifest (package.json) result.
+ */
 export interface DependencyManifestCache {
     /** Hash of page URL */
     urlHash: string;
@@ -198,12 +266,43 @@ export interface NpmVersionValidationCache {
     fetchedAt: number;
 }
 
+/**
+ * Configuration options for the fingerprint cache.
+ */
 export interface CacheOptions {
+    /**
+     * Custom directory path for cache storage.
+     * @defaultValue ~/.cache/web2local-node
+     */
     cacheDir?: string;
+    /**
+     * Time-to-live for cache entries in milliseconds.
+     * @defaultValue 604800000 (7 days)
+     */
     ttl?: number;
+    /** Set to true to disable all caching (useful for testing) */
     disabled?: boolean;
 }
 
+/**
+ * Multi-layer cache for fingerprinting operations.
+ *
+ * Implements a two-tier caching strategy:
+ * 1. In-memory cache for fast repeated lookups within a session
+ * 2. Disk cache for persistence across sessions
+ *
+ * Cache entries are automatically invalidated based on TTL (default 7 days).
+ *
+ * @example
+ * ```typescript
+ * const cache = new FingerprintCache({ ttl: 86400000 }); // 1 day TTL
+ * await cache.init();
+ *
+ * // Store and retrieve metadata
+ * await cache.setMetadata({ name: 'react', versions: ['18.0.0'], ... });
+ * const metadata = await cache.getMetadata('react');
+ * ```
+ */
 export class FingerprintCache {
     private cacheDir: string;
     private ttl: number;
@@ -224,6 +323,11 @@ export class FingerprintCache {
         | NpmVersionValidationCache
     > = new Map();
 
+    /**
+     * Creates a new FingerprintCache instance.
+     *
+     * @param options - Configuration options for the cache
+     */
     constructor(options: CacheOptions = {}) {
         this.cacheDir =
             options.cacheDir || join(homedir(), '.cache', 'web2local-node');
@@ -232,7 +336,10 @@ export class FingerprintCache {
     }
 
     /**
-     * Initializes the cache directory structure
+     * Initializes the cache directory structure.
+     *
+     * Creates all necessary subdirectories for different cache types.
+     * Should be called once before using the cache.
      */
     async init(): Promise<void> {
         if (this.disabled) return;
@@ -369,7 +476,10 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached package metadata
+     * Gets cached package metadata.
+     *
+     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @returns Cached metadata if found and not expired, null otherwise
      */
     async getMetadata(
         packageName: string,
@@ -406,7 +516,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves package metadata to cache
+     * Saves package metadata to cache.
+     *
+     * @param metadata - Package metadata to cache
      */
     async setMetadata(metadata: PackageMetadataCache): Promise<void> {
         if (this.disabled) return;
@@ -427,7 +539,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached content fingerprint
+     * Gets cached content fingerprint.
+     *
+     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param version - Semver version string
+     * @returns Cached fingerprint if found and not expired, null otherwise
      */
     async getFingerprint(
         packageName: string,
@@ -465,7 +581,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves content fingerprint to cache
+     * Saves content fingerprint to cache.
+     *
+     * @param fingerprint - Content fingerprint to cache
      */
     async setFingerprint(fingerprint: ContentFingerprintCache): Promise<void> {
         if (this.disabled) return;
@@ -495,7 +613,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached minified content fingerprint
+     * Gets cached minified content fingerprint.
+     *
+     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param version - Semver version string
+     * @returns Cached minified fingerprint if found and not expired, null otherwise
      */
     async getMinifiedFingerprint(
         packageName: string,
@@ -536,7 +658,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves minified content fingerprint to cache
+     * Saves minified content fingerprint to cache.
+     *
+     * @param fingerprint - Minified content fingerprint to cache
      */
     async setMinifiedFingerprint(
         fingerprint: ContentFingerprintCache,
@@ -568,7 +692,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached match result for a package + extracted content hash
+     * Gets cached match result for a package and extracted content hash combination.
+     *
+     * @param packageName - Package name to look up
+     * @param extractedContentHash - MD5 hash of the extracted source content
+     * @returns Cached match result if found and not expired, null otherwise
      */
     async getMatchResult(
         packageName: string,
@@ -607,7 +735,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves match result to cache
+     * Saves match result to cache.
+     *
+     * @param result - Match result to cache
      */
     async setMatchResult(result: MatchResultCache): Promise<void> {
         if (this.disabled) return;
@@ -627,7 +757,10 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached source map by URL
+     * Gets cached source map by URL.
+     *
+     * @param url - Source map URL
+     * @returns Cached source map if found and not expired, null otherwise
      */
     async getSourceMap(url: string): Promise<SourceMapCache | null> {
         if (this.disabled) return null;
@@ -662,7 +795,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves source map to cache
+     * Saves source map to cache.
+     *
+     * @param url - Source map URL
+     * @param content - Raw source map JSON content
+     * @returns The created cache entry
      */
     async setSourceMap(url: string, content: string): Promise<SourceMapCache> {
         const urlHash = createHash('md5').update(url).digest('hex');
@@ -692,7 +829,10 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached extraction result by source map URL
+     * Gets cached extraction result by source map URL.
+     *
+     * @param sourceMapUrl - Source map URL used as cache key
+     * @returns Cached extraction result if found and not expired, null otherwise
      */
     async getExtractionResult(
         sourceMapUrl: string,
@@ -731,7 +871,13 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves extraction result to cache
+     * Saves extraction result to cache.
+     *
+     * @param sourceMapUrl - Source map URL used as cache key
+     * @param bundleUrl - URL of the associated bundle file
+     * @param files - Array of extracted source files
+     * @param errors - Array of error messages encountered during extraction
+     * @returns The created cache entry
      */
     async setExtractionResult(
         sourceMapUrl: string,
@@ -770,7 +916,10 @@ export class FingerprintCache {
     // ============================================
 
     /**
-     * Gets cached page scraping result by URL
+     * Gets cached page scraping result by URL.
+     *
+     * @param pageUrl - Page URL used as cache key
+     * @returns Cached page scraping result if found and not expired, null otherwise
      */
     async getPageScraping(pageUrl: string): Promise<PageScrapingCache | null> {
         if (this.disabled) return null;
@@ -805,7 +954,13 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves page scraping result to cache
+     * Saves page scraping result to cache.
+     *
+     * @param pageUrl - Original page URL used as cache key
+     * @param bundles - Array of discovered bundle references
+     * @param finalUrl - Final URL after any redirects
+     * @param redirect - Redirect information if a redirect occurred
+     * @returns The created cache entry
      */
     async setPageScraping(
         pageUrl: string,
@@ -844,7 +999,10 @@ export class FingerprintCache {
     // ============================================
 
     /**
-     * Gets cached source map discovery result by bundle URL
+     * Gets cached source map discovery result by bundle URL.
+     *
+     * @param bundleUrl - Bundle URL used as cache key
+     * @returns Cached discovery result if found and not expired, null otherwise
      */
     async getSourceMapDiscovery(
         bundleUrl: string,
@@ -883,7 +1041,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves source map discovery result to cache
+     * Saves source map discovery result to cache.
+     *
+     * @param bundleUrl - Bundle URL used as cache key
+     * @param sourceMapUrl - Discovered source map URL, or null if none found
+     * @returns The created cache entry
      */
     async setSourceMapDiscovery(
         bundleUrl: string,
@@ -918,7 +1080,10 @@ export class FingerprintCache {
     // ============================================
 
     /**
-     * Gets cached dependency analysis result
+     * Gets cached dependency analysis result.
+     *
+     * @param extractionHash - Hash of the extraction result used as cache key
+     * @returns Cached dependency analysis if found and not expired, null otherwise
      */
     async getDependencyAnalysis(
         extractionHash: string,
@@ -956,7 +1121,12 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves dependency analysis result to cache
+     * Saves dependency analysis result to cache.
+     *
+     * @param extractionHash - Hash of the extraction result used as cache key
+     * @param dependencies - Map of discovered external dependencies
+     * @param localImports - Set of local/relative import paths
+     * @returns The created cache entry
      */
     async setDependencyAnalysis(
         extractionHash: string,
@@ -990,7 +1160,12 @@ export class FingerprintCache {
     // ============================================
 
     /**
-     * Gets cached dependency manifest result
+     * Gets cached dependency manifest result.
+     *
+     * @param urlHash - Hash of the page URL
+     * @param extractionHash - Hash of the extraction result
+     * @param optionsHash - Hash of the manifest generation options
+     * @returns Cached manifest if found and not expired, null otherwise
      */
     async getDependencyManifest(
         urlHash: string,
@@ -1034,7 +1209,14 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves dependency manifest result to cache
+     * Saves dependency manifest result to cache.
+     *
+     * @param urlHash - Hash of the page URL
+     * @param extractionHash - Hash of the extraction result
+     * @param optionsHash - Hash of the manifest generation options
+     * @param packageJson - Generated package.json content
+     * @param stats - Version detection statistics
+     * @returns The created cache entry
      */
     async setDependencyManifest(
         urlHash: string,
@@ -1072,7 +1254,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cache statistics
+     * Gets cache statistics including entry counts and total disk size.
+     *
+     * @returns Object containing metadata count, fingerprint count, and total size in bytes
      */
     async getStats(): Promise<{
         metadataCount: number;
@@ -1121,7 +1305,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Clears the entire cache
+     * Clears the entire cache (both memory and disk).
+     *
+     * Removes all cache directories and reinitializes them.
      */
     async clear(): Promise<void> {
         this.memoryCache.clear();
@@ -1146,7 +1332,11 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached package file list
+     * Gets cached package file list.
+     *
+     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param version - Semver version string
+     * @returns Cached file list if found and not expired, null otherwise
      */
     async getFileList(
         packageName: string,
@@ -1182,7 +1372,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves package file list to cache
+     * Saves package file list to cache.
+     *
+     * @param fileList - Package file list to cache
      */
     async setFileList(fileList: PackageFileListCache): Promise<void> {
         if (this.disabled) return;
@@ -1214,8 +1406,12 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached npm package existence check result
-     * Uses longer TTL (30 days) since package existence rarely changes
+     * Gets cached npm package existence check result.
+     *
+     * Uses a longer TTL (30 days) since package existence rarely changes.
+     *
+     * @param packageName - Package name to check
+     * @returns Cached existence check if found and not expired, null otherwise
      */
     async getNpmPackageExistence(
         packageName: string,
@@ -1256,7 +1452,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves npm package existence check result to cache
+     * Saves npm package existence check result to cache.
+     *
+     * @param cache - Existence check result to cache
      */
     async setNpmPackageExistence(
         cache: NpmPackageExistenceCache,
@@ -1295,8 +1493,13 @@ export class FingerprintCache {
     }
 
     /**
-     * Gets cached npm version validation check result
-     * Uses longer TTL (30 days) since version existence rarely changes
+     * Gets cached npm version validation check result.
+     *
+     * Uses a longer TTL (30 days) since version existence rarely changes.
+     *
+     * @param packageName - Package name to check
+     * @param version - Version string to validate
+     * @returns Cached validation result if found and not expired, null otherwise
      */
     async getNpmVersionValidation(
         packageName: string,
@@ -1341,7 +1544,9 @@ export class FingerprintCache {
     }
 
     /**
-     * Saves npm version validation check result to cache
+     * Saves npm version validation check result to cache.
+     *
+     * @param cache - Version validation result to cache
      */
     async setNpmVersionValidation(
         cache: NpmVersionValidationCache,
@@ -1364,8 +1569,13 @@ export class FingerprintCache {
 }
 
 /**
- * Computes normalized content hash (strips whitespace and comments)
+ * Computes normalized content hash by stripping whitespace and comments.
+ *
  * Uses AST-based comment stripping that properly handles comments inside strings
+ * (e.g., "http://example.com" won't have "//example.com" removed).
+ *
+ * @param content - Source code content to hash
+ * @returns MD5 hash of the normalized content
  */
 export function computeNormalizedHash(content: string): string {
     // Use AST-based comment stripping that correctly handles comments inside strings
@@ -1377,8 +1587,13 @@ export function computeNormalizedHash(content: string): string {
 
 /**
  * Extracts a code signature from source content using AST parsing.
- * Used for fuzzy matching when exact hash doesn't match.
- * This properly extracts actual declaration names, not matches inside strings/comments.
+ *
+ * Used for fuzzy matching when exact hash doesn't match. This properly extracts
+ * actual declaration names (functions, classes, variables), not matches inside
+ * strings or comments.
+ *
+ * @param content - Source code content to analyze
+ * @returns Pipe-separated sorted list of declaration names (length > 2 chars)
  */
 export function extractCodeSignature(content: string): string {
     // Use AST-based extraction for accurate declaration names
@@ -1395,8 +1610,12 @@ let globalCache: FingerprintCache | null = null;
 
 /**
  * Gets or creates the global cache instance.
- * Options are only used when creating the initial instance.
- * To reconfigure, use initCache() instead.
+ *
+ * If no instance exists, creates one with default options. Options are only
+ * used when creating the initial instance. To reconfigure, use
+ * {@link initCache} instead.
+ *
+ * @returns The global FingerprintCache instance
  */
 export function getCache(): FingerprintCache {
     if (!globalCache) {
@@ -1407,7 +1626,12 @@ export function getCache(): FingerprintCache {
 
 /**
  * Initializes (or reinitializes) the global cache with specific options.
- * Call this once at startup before any fingerprinting operations.
+ *
+ * Call this once at startup before any fingerprinting operations. If called
+ * multiple times, replaces the existing cache instance.
+ *
+ * @param options - Optional cache configuration
+ * @returns The initialized FingerprintCache instance
  */
 export async function initCache(
     options?: CacheOptions,
@@ -1418,8 +1642,13 @@ export async function initCache(
 }
 
 /**
- * Computes a hash of extracted files for cache keying
- * Uses file paths and content lengths for fast comparison
+ * Computes a hash of extracted files for cache keying.
+ *
+ * Uses file paths and content lengths for fast comparison without hashing
+ * the full content.
+ *
+ * @param files - Array of extracted files to hash
+ * @returns MD5 hash of the file paths and lengths
  */
 export function computeExtractionHash(files: ExtractedFile[]): string {
     const data = files
@@ -1430,7 +1659,10 @@ export function computeExtractionHash(files: ExtractedFile[]): string {
 }
 
 /**
- * Computes a hash for options that affect the manifest result
+ * Computes a hash for options that affect the manifest result.
+ *
+ * @param options - Manifest generation options to hash
+ * @returns MD5 hash of the normalized options object
  */
 export function computeOptionsHash(options: {
     useFingerprinting?: boolean;
@@ -1446,7 +1678,10 @@ export function computeOptionsHash(options: {
 }
 
 /**
- * Computes URL hash for cache keying
+ * Computes URL hash for cache keying.
+ *
+ * @param url - URL to hash
+ * @returns MD5 hash of the URL
  */
 export function computeUrlHash(url: string): string {
     return createHash('md5').update(url).digest('hex');
