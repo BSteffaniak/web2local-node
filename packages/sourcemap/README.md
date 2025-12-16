@@ -34,7 +34,6 @@ High-level function that discovers, fetches, parses, and extracts in one call.
 
 ```typescript
 const result = await extractSourceMap('https://example.com/app.js', {
-    includeNodeModules: false,
     timeout: 30000,
 });
 
@@ -76,8 +75,7 @@ Extracts source files from a parsed source map with path normalization and filte
 
 ```typescript
 const result = extractSources(sourceMap, bundleUrl, sourceMapUrl, {
-    includeNodeModules: false,
-    internalPackages: new Set(['@mycompany/shared']),
+    excludePatterns: [/\.test\.ts$/],
     onSource: (source) => console.log(`Extracted: ${source.path}`),
 });
 ```
@@ -87,16 +85,14 @@ const result = extractSources(sourceMap, bundleUrl, sourceMapUrl, {
 
 ### ExtractSourceMapOptions
 
-| Option               | Type                     | Default     | Description                                               |
-| -------------------- | ------------------------ | ----------- | --------------------------------------------------------- |
-| `includeNodeModules` | `boolean`                | `false`     | Include sources from node_modules                         |
-| `internalPackages`   | `Set<string>`            | —           | Package names to always include (even if in node_modules) |
-| `excludePatterns`    | `RegExp[]`               | —           | Additional patterns to exclude                            |
-| `onSource`           | `(source) => void`       | —           | Callback for each extracted source (streaming)            |
-| `maxSize`            | `number`                 | `104857600` | Maximum source map size in bytes (100MB)                  |
-| `timeout`            | `number`                 | `30000`     | Fetch timeout in milliseconds                             |
-| `headers`            | `Record<string, string>` | —           | Custom HTTP headers                                       |
-| `signal`             | `AbortSignal`            | —           | For cancellation support                                  |
+| Option            | Type                     | Default     | Description                                    |
+| ----------------- | ------------------------ | ----------- | ---------------------------------------------- |
+| `excludePatterns` | `RegExp[]`               | —           | Additional patterns to exclude                 |
+| `onSource`        | `(source) => void`       | —           | Callback for each extracted source (streaming) |
+| `maxSize`         | `number`                 | `104857600` | Maximum source map size in bytes (100MB)       |
+| `timeout`         | `number`                 | `30000`     | Fetch timeout in milliseconds                  |
+| `headers`         | `Record<string, string>` | —           | Custom HTTP headers                            |
+| `signal`          | `AbortSignal`            | —           | For cancellation support                       |
 
 ### DiscoverSourceMapOptions
 
