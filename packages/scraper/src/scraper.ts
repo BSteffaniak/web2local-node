@@ -1,20 +1,37 @@
+/**
+ * Web page scraping for bundle discovery
+ *
+ * Fetches HTML pages and extracts JavaScript/CSS bundle URLs
+ * for source map discovery.
+ */
+
 import { parse as parseHTML } from 'node-html-parser';
 import { getCache } from '@web2local/cache';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 
+/**
+ * Information about a discovered bundle on a web page.
+ */
 export interface BundleInfo {
+    /** Full URL of the bundle */
     url: string;
+    /** Type of bundle asset */
     type: 'script' | 'stylesheet';
+    /** URL of associated source map (if discovered) */
     sourceMapUrl?: string;
 }
 
 /**
- * Represents a vendor bundle (minified JS) without a source map
- * These typically contain third-party libraries bundled into a single file
+ * Represents a vendor bundle (minified JS) without a source map.
+ *
+ * These typically contain third-party libraries bundled into a single file.
  */
 export interface VendorBundle {
+    /** Full URL of the bundle */
     url: string;
+    /** Filename extracted from the URL */
     filename: string;
+    /** Raw content of the bundle */
     content: string;
     /** Inferred package name from filename (e.g., "lodash" from "lodash-Dhg5Ny8x.js") */
     inferredPackage?: string;
@@ -46,8 +63,13 @@ export interface ExtractBundleUrlsResult {
 
 /**
  * Fetches HTML from a URL and extracts all JS/CSS bundle URLs.
+ *
  * Also detects redirects and returns the final URL for proper path resolution.
  * Results are cached to avoid re-fetching on subsequent runs.
+ *
+ * @param pageUrl - The URL of the page to scrape
+ * @returns Result containing discovered bundles and redirect information
+ * @throws {Error} When the HTTP request fails
  */
 export async function extractBundleUrls(
     pageUrl: string,
@@ -163,9 +185,10 @@ function resolveUrl(url: string, baseUrl: URL): string {
 }
 
 /**
- * Result of checking a bundle for source maps
+ * Result of checking a bundle for source maps.
  */
 export interface SourceMapCheckResult {
+    /** URL of the discovered source map, or null if none found */
     sourceMapUrl: string | null;
     /** The bundle content (only populated if no source map found and bundle looks like vendor) */
     bundleContent?: string;
@@ -173,8 +196,13 @@ export interface SourceMapCheckResult {
 
 /**
  * Checks if a bundle has an associated source map and returns its URL.
+ *
+ * Looks for source maps via HTTP headers, inline comments, and URL probing.
  * Also returns the bundle content for vendor bundles without source maps.
  * Results are cached to avoid re-fetching on subsequent runs.
+ *
+ * @param bundleUrl - URL of the bundle to check
+ * @returns Result containing source map URL (if found) and bundle content
  */
 export async function findSourceMapUrl(
     bundleUrl: string,

@@ -1,12 +1,21 @@
 /**
  * Box rendering utilities for the progress display
+ *
+ * Provides functions to render Unicode box-drawing characters for
+ * progress displays in the terminal.
  */
 
 import chalk from 'chalk';
 
+/**
+ * Content to display inside a progress box.
+ */
 export interface BoxContent {
+    /** Title displayed in the top border of the box */
     title: string;
+    /** Statistics line shown below the title */
     statsLine: string;
+    /** Status lines for each worker (one per line) */
     workerLines: string[];
     /** Recent log lines to display at the bottom of the box */
     recentLogs: string[];
@@ -21,21 +30,31 @@ export interface BoxContent {
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 
 /**
- * Strip ANSI escape codes from a string to get visible length
+ * Strips ANSI escape codes from a string.
+ *
+ * @param str - The string potentially containing ANSI codes
+ * @returns The string with all ANSI escape codes removed
  */
 export function stripAnsi(str: string): string {
     return str.replace(ANSI_REGEX, '');
 }
 
 /**
- * Get the visible length of a string (excluding ANSI codes)
+ * Gets the visible length of a string (excluding ANSI codes).
+ *
+ * @param str - The string to measure
+ * @returns The number of visible characters
  */
 export function visibleLength(str: string): number {
     return stripAnsi(str).length;
 }
 
 /**
- * Truncate a string to a maximum visible length, adding ellipsis if needed
+ * Truncates a string to a maximum visible length, adding ellipsis if needed.
+ *
+ * @param str - The string to truncate
+ * @param maxLen - Maximum visible length
+ * @returns The truncated string with "..." suffix if truncation occurred
  */
 export function truncate(str: string, maxLen: number): string {
     const visible = stripAnsi(str);
@@ -51,7 +70,13 @@ export function truncate(str: string, maxLen: number): string {
 }
 
 /**
- * Pad a string to a fixed visible length (right-padded with spaces)
+ * Pads a string to a fixed visible length (right-padded with spaces).
+ *
+ * If the string exceeds the target length, it will be truncated.
+ *
+ * @param str - The string to pad
+ * @param len - Target visible length
+ * @returns The padded (or truncated) string
  */
 export function padRight(str: string, len: number): string {
     const visible = visibleLength(str);

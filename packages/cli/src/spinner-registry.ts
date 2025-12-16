@@ -1,18 +1,50 @@
+/**
+ * CLI spinner management utilities
+ *
+ * Provides safe concurrent spinner management and signal handling
+ * for CLI progress indicators.
+ */
+
 import type { Ora } from 'ora';
 import chalk from 'chalk';
 
+/**
+ * Manages multiple CLI spinners and provides safe logging that doesn't
+ * interfere with spinner output.
+ *
+ * Handles signal cleanup to ensure spinners are properly cleared on exit.
+ */
 export class SpinnerRegistry {
     private spinners: Set<Ora> = new Set();
     private signalHandlers: Array<() => void> = [];
 
+    /**
+     * Registers a spinner for management.
+     *
+     * @param spinner - The ora spinner instance to track
+     */
     register(spinner: Ora) {
         this.spinners.add(spinner);
     }
 
+    /**
+     * Unregisters a spinner from management.
+     *
+     * @param spinner - The ora spinner instance to remove
+     */
     unregister(spinner: Ora) {
         this.spinners.delete(spinner);
     }
 
+    /**
+     * Logs a message while preserving spinner display.
+     *
+     * Temporarily clears spinners, prints the message with timestamp,
+     * then re-renders spinners to avoid visual artifacts.
+     *
+     * @param message - The message to log
+     * @param isVerbose - If true, uses gray styling for verbose output
+     */
     safeLog(message: string, isVerbose: boolean = false) {
         const now = new Date();
         const timestamp =
@@ -47,6 +79,12 @@ export class SpinnerRegistry {
         }
     }
 
+    /**
+     * Installs signal handlers to clean up spinners on process exit.
+     *
+     * Listens for SIGINT and SIGTERM to ensure spinners are cleared
+     * before the process terminates.
+     */
     setupSignalHandlers() {
         const cleanup = () => {
             this.clearAll();
@@ -62,12 +100,21 @@ export class SpinnerRegistry {
         });
     }
 
+    /**
+     * Clears all registered spinners from the terminal.
+     */
     clearAll() {
         for (const spinner of this.spinners) {
             spinner.clear();
         }
     }
 
+    /**
+     * Cleans up all spinners and removes signal handlers.
+     *
+     * Should be called when the CLI operation completes to restore
+     * normal terminal state.
+     */
     cleanup() {
         this.clearAll();
         this.signalHandlers.forEach((remove) => remove());
