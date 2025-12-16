@@ -5,7 +5,7 @@
  * 1. HTTP headers (SourceMap, X-SourceMap)
  * 2. JS comments (//# source + MappingURL=...)
  * 3. CSS comments (multi-line comment with # source + MappingURL=...)
- * 4. URL probing ({bundleUrl}.map)
+ * 4. URL probing (\{bundleUrl\}.map)
  */
 
 import type {
@@ -77,7 +77,7 @@ const LINE_TERMINATORS = /\r\n|\n|\r|\u2028|\u2029/;
 
 /**
  * Pattern to match sourceMappingURL directive content.
- * Matches: [@#] sourceMappingURL=<url>
+ * Matches: `[@#] sourceMappingURL=<url>`
  * Uses multiline flag to match within multi-line comment content.
  */
 const SOURCE_MAPPING_URL_PATTERN = /[@#]\s*sourceMappingURL=(\S*?)\s*$/m;
@@ -335,7 +335,7 @@ export function isValidSourceMapContentType(contentType: string): boolean {
 }
 
 /**
- * Probes for a source map at {bundleUrl}.map.
+ * Probes for a source map at \{bundleUrl\}.map.
  *
  * Uses HEAD request to avoid downloading the full file.
  * Validates Content-Type to avoid false positives from SPAs.
@@ -388,7 +388,7 @@ export async function probeSourceMapUrl(
  * Strategy order:
  * 1. Check HTTP headers (fastest, most reliable)
  * 2. Check inline/external comments in content
- * 3. Probe {url}.map as fallback
+ * 3. Probe \{url\}.map as fallback
  *
  * @param bundleUrl - The URL of the bundle
  * @param options - Discovery options

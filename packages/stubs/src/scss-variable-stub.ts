@@ -16,7 +16,7 @@ import { readFile, writeFile, readdir } from 'fs/promises';
 /**
  * Regex to match SCSS variable references in values
  * Matches: $variable-name, $_private-var, $var123
- * Does not match: #{$interpolated} (handled separately)
+ * Does not match: `#{$interpolated}` (handled separately)
  */
 const SCSS_VARIABLE_REGEX = /\$([a-zA-Z_][a-zA-Z0-9_-]*)/g;
 
@@ -407,9 +407,7 @@ async function findScssFiles(dir: string): Promise<string[]> {
  * generates stub files for undefined variables, and injects imports into source files.
  *
  * @param projectDir - The root directory to scan for SCSS files
- * @param options - Configuration options
- * @param options.onProgress - Optional progress callback for status updates
- * @param options.dryRun - If true, analyze only without writing files
+ * @param options - Configuration options: `onProgress` callback and `dryRun` (analyze only without writing)
  * @returns Result containing counts of generated stubs and any errors
  */
 export async function generateScssVariableStubs(

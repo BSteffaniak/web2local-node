@@ -53,13 +53,13 @@ export interface GlobalCssInjectionOptions {
 /**
  * Generates the content for the _captured-styles.css file.
  *
- * Creates CSS content that imports all captured CSS bundles using @import
+ * Creates CSS content that imports all captured CSS bundles using `@import`
  * directives with appropriate relative paths.
  *
  * @param bundles - Array of captured CSS bundles to include
  * @param projectDir - Project root directory
  * @param capturedStylesDir - Directory where _captured-styles.css will be written
- * @returns Generated CSS content with @import statements
+ * @returns Generated CSS content with `@import` statements
  */
 export function generateCapturedStylesContent(
     bundles: CapturedCssBundle[],

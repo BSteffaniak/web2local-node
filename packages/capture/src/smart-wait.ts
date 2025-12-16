@@ -159,13 +159,7 @@ async function waitForNetworkIdleWithTimeout(
  * - Optimized scroll delays
  *
  * @param page - Playwright page instance to wait on
- * @param options - Wait configuration options
- * @param options.networkIdleTimeout - Network idle wait timeout in ms (default: 5000)
- * @param options.networkIdleTime - Consider idle after this many ms without requests (default: 1000)
- * @param options.scrollDelay - Delay between scroll steps in ms (default: 50)
- * @param options.pageSettleTime - Additional settle time after scrolling in ms (default: 1000)
- * @param options.autoScroll - Enable auto-scroll to trigger lazy loading (default: true)
- * @param options.onPhase - Callback when entering a new phase
+ * @param options - Wait configuration options including networkIdleTimeout (default: 5000), networkIdleTime (default: 1000), scrollDelay (default: 50), pageSettleTime (default: 1000), autoScroll (default: true), and onPhase callback
  *
  * @example
  * ```typescript
@@ -214,9 +208,7 @@ export async function smartWaitForPage(
  * Uses shorter timeouts than {@link smartWaitForPage}.
  *
  * @param page - Playwright page instance to wait on
- * @param options - Wait configuration options
- * @param options.networkIdleTimeout - Network idle wait timeout in ms (default: 3000)
- * @param options.networkIdleTime - Additional idle buffer in ms (default: 500)
+ * @param options - Wait configuration options including networkIdleTimeout (default: 3000) and networkIdleTime (additional idle buffer in ms, default: 500)
  */
 export async function quickWaitForPage(
     page: Page,

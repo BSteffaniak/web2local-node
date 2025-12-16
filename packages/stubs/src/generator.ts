@@ -100,9 +100,7 @@ const UNIVERSAL_STUB_FILENAME = '__universal-stub__.ts';
  * export is used.
  *
  * @param targetDir - The directory where the stub runtime should be written
- * @param options - Configuration options
- * @param options.dryRun - If true, don't actually write the file
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options including `dryRun` (skip writing) and `onProgress` callback
  * @returns The path to the written (or would-be-written) file
  */
 export async function writeUniversalStubRuntime(
@@ -318,9 +316,7 @@ function detectNamespaceExport(
  * a package.json if one doesn't exist.
  *
  * @param packagePath - The absolute path to the package directory
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options including `dryRun` (skip writing) and `onProgress` callback
  * @returns Object indicating if file was generated, the content, and list of exports
  */
 export async function generateIndexFile(
@@ -662,10 +658,7 @@ export async function generateIndexFile(
  * Generates type declaration stubs for SCSS/CSS modules.
  *
  * @param sourceDir - Root directory to scan
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Progress callback
- * @param options.internalPackages - Set of internal package names that should be processed
- *                                   even if they're in node_modules (e.g., '@fp/sarsaparilla')
+ * @param options - Configuration options: `dryRun` (skip writing), `onProgress` callback, and `internalPackages` set of internal package names to process in node_modules
  */
 export async function generateScssModuleDeclarations(
     sourceDir: string,
@@ -1041,9 +1034,7 @@ export interface ImportInfo {
  * and missing type files.
  *
  * @param sourceDir - Root directory to scan
- * @param options - Configuration options
- * @param options.internalPackages - Set of package names that should be scanned
- *                                   even if they're in node_modules (e.g., '@fp/sarsaparilla')
+ * @param options - Configuration options: `internalPackages` set of package names to scan in node_modules
  * @returns Categorized import information for further processing
  */
 export async function scanImports(
@@ -1289,9 +1280,7 @@ export async function scanImports(
  *
  * @param sourceDir - The root source directory (used for relative path display)
  * @param directoryImports - Array of directory imports that need index files
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Number of index files generated
  */
 export async function generateDirectoryIndexFiles(
@@ -1335,10 +1324,7 @@ export async function generateDirectoryIndexFiles(
  *
  * @param sourceDir - The root source directory
  * @param cssModuleImports - Array of CSS module imports that need stub files
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
- * @param options.capturedCssBundles - Optional captured bundles to use for stub content
+ * @param options - Configuration options: `dryRun` (skip writing), `onProgress` callback, and `capturedCssBundles` for stub content
  * @returns Number of CSS module stubs generated
  */
 export async function generateMissingCssModuleStubs(
@@ -1467,8 +1453,7 @@ export interface CssStubUpdateResult {
  *
  * @param sourceDir - The root source directory containing CSS stubs
  * @param capturedCssBundles - Array of captured CSS bundles to match against stubs
- * @param options - Configuration options
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `onProgress` callback for status updates
  * @returns Detailed result including updated count, unmatched stubs, and unused bundles
  */
 export async function updateCssStubsWithCapturedBundles(
@@ -1612,9 +1597,7 @@ export async function updateCssStubsWithCapturedBundles(
  *
  * @param sourceDir - The root source directory
  * @param missingTypeFileImports - Array of missing type file imports
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Number of type file stubs generated
  */
 export async function generateMissingTypeFileStubs(
@@ -1737,9 +1720,7 @@ interface EnvPropertyAccess {
  * Also generates assets.d.ts for common static asset imports (images, fonts, etc.).
  *
  * @param sourceDir - The root source directory to scan
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Object indicating if files were generated and list of environment variables found
  */
 export async function generateEnvDeclarations(
@@ -2010,15 +1991,13 @@ export async function generateEnvDeclarations(
 /**
  * Generates stub type declarations for external packages that aren't installed.
  *
- * Creates an @types directory with stub declaration files that provide
+ * Creates an `@types` directory with stub declaration files that provide
  * basic type coverage for uninstalled dependencies.
  *
  * @param sourceDir - The root source directory
  * @param externalPackageImports - Array of external package imports found
  * @param installedPackages - Set of package names that are already installed
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Number of external package stubs generated
  */
 export async function generateExternalPackageStubs(
@@ -2212,9 +2191,9 @@ interface ExportStatementInfo {
  * For UTF-8 text with multi-byte characters, we also need to convert byte
  * positions to character positions.
  *
- * @param source The source string being parsed
- * @param swcOffset The raw span offset from SWC
- * @param moduleStart The ast.span.start value
+ * @param source - The source string being parsed
+ * @param swcOffset - The raw span offset from SWC
+ * @param moduleStart - The ast.span.start value
  */
 function swcOffsetToCharIndex(
     source: string,
@@ -2489,9 +2468,7 @@ function fixDuplicateExportsInSource(
  * with duplicates removed while preserving comments and formatting.
  *
  * @param filePath - The absolute path to the index file to fix
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write the file
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Object indicating if fixes were applied and which duplicates were removed
  */
 export async function fixDuplicateExports(
@@ -2530,10 +2507,7 @@ export async function fixDuplicateExports(
  * to find generated index files and remove any duplicate export identifiers.
  *
  * @param sourceDir - The root source directory to scan
- * @param options - Configuration options
- * @param options.internalPackages - Set of internal package names to process in node_modules
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `internalPackages` set, `dryRun` (skip writing), and `onProgress` callback
  * @returns Number of files that had duplicate exports fixed
  */
 export async function fixAllDuplicateExports(
@@ -2641,7 +2615,7 @@ export interface MissingFileRequirements {
 export interface AliasMapping {
     /** Import alias (e.g., "sarsaparilla") */
     alias: string;
-    /** Resolved path relative to source dir (e.g., "./navigation/node_modules/@fp/sarsaparilla") */
+    /** Resolved path relative to source dir (e.g., `./navigation/node_modules/@fp/sarsaparilla`) */
     path: string;
 }
 
@@ -2653,10 +2627,7 @@ export interface AliasMapping {
  * what exports each missing file needs to provide.
  *
  * @param sourceDir - The root source directory to scan
- * @param options - Configuration options
- * @param options.internalPackages - Set of internal package names to process in node_modules
- * @param options.aliases - Array of alias mappings for resolving non-relative imports
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `internalPackages` set, `aliases` array for resolving imports, and `onProgress` callback
  * @returns Map of file paths to their required exports
  */
 export async function findMissingSourceFiles(
@@ -2928,9 +2899,7 @@ export async function findMissingSourceFiles(
  *
  * @param sourceDir - The root source directory
  * @param missingFiles - Map of file paths to their required exports (from findMissingSourceFiles)
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `dryRun` (skip writing) and `onProgress` callback
  * @returns Number of stub files generated
  */
 export async function generateMissingSourceStubs(
@@ -3150,10 +3119,7 @@ async function extractProvidedExports(
  *
  * @param sourceDir - The root source directory to scan
  * @param generatedIndexPaths - Array of paths to generated index files
- * @param options - Configuration options
- * @param options.internalPackages - Set of internal package names to process in node_modules
- * @param options.aliases - Array of alias mappings for resolving non-relative imports
- * @param options.onProgress - Optional progress callback for status updates
+ * @param options - Configuration options: `internalPackages` set, `aliases` array for resolving imports, and `onProgress` callback
  * @returns Map of directory paths to their missing export information
  */
 export async function findMissingBarrelExports(
@@ -3407,12 +3373,7 @@ export async function findMissingBarrelExports(
  *
  * @param sourceDir - The root source directory
  * @param missingExports - Map of directory paths to their missing export information
- * @param options - Configuration options
- * @param options.dryRun - If true, don't write files
- * @param options.onProgress - Optional progress callback for status updates
- * @param options.onWarning - Optional callback for warning messages
- * @param options.verbose - If true, provide detailed progress information
- * @param options.aliases - Alias mappings to determine package import source for usage analysis
+ * @param options - Configuration options: `dryRun` (skip writing), `onProgress` callback, `onWarning` callback, `verbose` flag, and `aliases` for usage analysis
  * @returns Number of index files that were modified
  */
 export async function appendMissingBarrelExports(

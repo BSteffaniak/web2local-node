@@ -503,12 +503,12 @@ export function rewriteCss(
 }
 
 /**
- * Rewrite @import URLs in CSS
+ * Rewrite `\@import` URLs in CSS
  *
  * @param css - The CSS content
  * @param urlMap - Map from original URLs to local paths
  * @param baseUrl - Base URL for resolving relative URLs
- * @returns The CSS with @import URLs rewritten
+ * @returns The CSS with `\@import` URLs rewritten
  */
 export function rewriteCssImports(
     css: string,
@@ -554,7 +554,7 @@ export function rewriteCssImports(
 }
 
 /**
- * Rewrite all URLs in CSS content (both url() and @import)
+ * Rewrite all URLs in CSS content (both `url()` and `\@import`)
  *
  * @param css - The CSS content to rewrite
  * @param urlMap - Map from original URLs to local paths

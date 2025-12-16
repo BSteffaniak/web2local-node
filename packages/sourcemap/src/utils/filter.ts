@@ -21,7 +21,7 @@ export interface FilterOptions {
  * Determines if a source path should be included in extraction results.
  *
  * Excludes:
- * - Paths containing virtual module markers (\0)
+ * - Paths containing virtual module markers (`\0`)
  * - Webpack/Vite internal paths
  * - Query strings and data URIs
  *

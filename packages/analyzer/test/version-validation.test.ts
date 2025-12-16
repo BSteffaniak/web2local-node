@@ -3,7 +3,7 @@
  *
  * These tests verify that:
  * - Valid package versions are correctly validated
- * - Invalid package versions (like @firebase/app@11.3.1) are rejected
+ * - Invalid package versions (like \@firebase/app\@11.3.1) are rejected
  * - Batch validation works correctly
  * - Invalid versions are replaced with latest from npm
  */

@@ -71,7 +71,7 @@ export function padRight(str: string, len: number): string {
  * │ Worker lines...                         │
  * ├─────────────────────────────────────────┤
  * │ Recent log lines...                     │
- * │                          [+N more logs] │  (only if moreLogsCount > 0)
+ * │                          [+N more logs] │  (only if moreLogsCount \> 0)
  * └─────────────────────────────────────────┘
  *
  * @param content - The content to render

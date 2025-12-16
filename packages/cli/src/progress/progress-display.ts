@@ -24,7 +24,7 @@ export const LINES_PER_WORKER = 2;
 
 /**
  * Fixed lines in TUI chrome (top border, stats, separator after stats, separator before logs, bottom border)
- * Note: separator before logs is only shown when recentLogsHeight > 0
+ * Note: separator before logs is only shown when recentLogsHeight \> 0
  */
 const TUI_CHROME_LINES = 4; // top border + stats + separator after stats + bottom border
 const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
@@ -515,7 +515,7 @@ export class ProgressDisplay {
 
     /**
      * Set the flushing state - shows a flushing indicator instead of worker status
-     * @param count Number of pending assets being flushed (0 to clear)
+     * @param count - Number of pending assets being flushed (0 to clear)
      */
     setFlushing(count: number): void {
         const wasInFlushMode = this.flushingCount > 0;
@@ -537,13 +537,13 @@ export class ProgressDisplay {
 
     /**
      * Set the flush progress state for granular progress display
-     * @param phase Current flush phase
-     * @param completed Number of items completed (unified across all phases)
-     * @param total Total number of items (unified across all phases)
-     * @param failed Number of failed items (optional)
-     * @param completedItem Item that just completed (optional, for logging)
-     * @param totalTimeMs Total elapsed time (only for 'complete' phase)
-     * @param activeItems Currently active downloads (optional)
+     * @param phase - Current flush phase
+     * @param completed - Number of items completed (unified across all phases)
+     * @param total - Total number of items (unified across all phases)
+     * @param failed - Number of failed items (optional)
+     * @param completedItem - Item that just completed (optional, for logging)
+     * @param totalTimeMs - Total elapsed time (only for 'complete' phase)
+     * @param activeItems - Currently active downloads (optional)
      */
     setFlushProgress(
         phase:
@@ -880,9 +880,9 @@ export class ProgressDisplay {
 
     /**
      * Render a progress bar for flush phases
-     * @param completed Number of items completed
-     * @param total Total number of items
-     * @param width Width of the progress bar in characters
+     * @param completed - Number of items completed
+     * @param total - Total number of items
+     * @param width - Width of the progress bar in characters
      */
     private renderFlushProgressBar(
         completed: number,
@@ -1198,9 +1198,9 @@ export class ProgressDisplay {
 
     /**
      * Get phase label for display
-     * @param phase The current phase
-     * @param full Whether to use full label (true) or short label (false)
-     * @param state Optional worker state for dynamic labels (e.g., backing-off countdown)
+     * @param phase - The current phase
+     * @param full - Whether to use full label (true) or short label (false)
+     * @param state - Optional worker state for dynamic labels (e.g., backing-off countdown)
      */
     private getPhaseLabel(
         phase?: WorkerPhase,

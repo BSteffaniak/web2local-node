@@ -21,8 +21,8 @@ import type { ExtractedSource } from '@web2local/types';
  *
  * Unlike extractExportsFromSource() which only extracts locally-defined exports,
  * this function also includes symbols exported via re-exports like:
- *   export { X } from './other';
- *   export * from './module';
+ *   `export \{ X \} from './other';`
+ *   `export * from './module';`
  *
  * This is needed for index file reconstruction to know what an index already exports.
  */
@@ -116,7 +116,7 @@ function extractAllExportedSymbols(
  * Alias mapping from alias name to file system path
  */
 export interface AliasMapping {
-    /** The alias (e.g., '@excalidraw/common') */
+    /** The alias (e.g., '\@excalidraw/common') */
     alias: string;
     /** The path relative to project root (e.g., './assets/packages/common/src') */
     path: string;
@@ -267,7 +267,7 @@ function resolveModulePath(
 /**
  * Resolve an aliased import to a filesystem path
  *
- * @param importSource - The import source (e.g., '@excalidraw/common')
+ * @param importSource - The import source (e.g., '\@excalidraw/common')
  * @param aliases - The alias mappings
  * @param projectDir - The project root directory
  * @returns The resolved absolute path, or null if not an alias
@@ -301,7 +301,7 @@ function resolveAliasedImport(
  * Scans all source files, finds imports from relative paths AND aliased imports,
  * and aggregates what symbols are expected from each module.
  *
- * @returns Map of module directory path -> Map of symbol name -> ExpectedImport
+ * @returns Map of module directory path to Map of symbol name to ExpectedImport
  */
 export async function collectExpectedImports(
     options: IndexReconstructionOptions,
@@ -486,7 +486,7 @@ interface ExportSourceResult {
  *
  * Also handles the common pattern where a file exports a default that should
  * be re-exported as a named export (e.g., StaticCanvas.tsx exports default,
- * and index.ts should export { default as StaticCanvas } from './StaticCanvas')
+ * and index.ts should `export \{ default as StaticCanvas \} from './StaticCanvas'`)
  */
 async function findExportSource(
     symbolName: string,

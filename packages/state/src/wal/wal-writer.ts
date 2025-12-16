@@ -58,8 +58,8 @@ export class WALWriter {
      * Open the WAL file for appending.
      *
      * @param startSeq - Starting sequence number (from last compacted state)
-     * @throws {StateIOError} When the file cannot be opened
-     * @throws {Error} When the writer is already open
+     * @throws \{StateIOError\} When the file cannot be opened
+     * @throws \{Error\} When the writer is already open
      */
     async open(startSeq: number = 0): Promise<void> {
         if (this.fd) {
@@ -81,8 +81,8 @@ export class WALWriter {
      *
      * @param event - Event payload (without timestamp and seq)
      * @returns The sequence number assigned to this event
-     * @throws {Error} When the writer is not open
-     * @throws {StateIOError} When the write operation fails
+     * @throws \{Error\} When the writer is not open
+     * @throws \{StateIOError\} When the write operation fails
      */
     async append(event: Omit<WALEvent, 'timestamp' | 'seq'>): Promise<number> {
         if (!this.fd) {
@@ -213,7 +213,7 @@ export class WALWriter {
      *
      * Processes any remaining queued writes before closing.
      *
-     * @throws {StateIOError} When the file cannot be closed
+     * @throws \{StateIOError\} When the file cannot be closed
      */
     async close(): Promise<void> {
         if (!this.fd) {
@@ -238,8 +238,8 @@ export class WALWriter {
      *
      * This clears all events from the file.
      *
-     * @throws {Error} When the writer is not open
-     * @throws {StateIOError} When the truncate operation fails
+     * @throws \{Error\} When the writer is not open
+     * @throws \{StateIOError\} When the truncate operation fails
      */
     async truncate(): Promise<void> {
         if (!this.fd) {

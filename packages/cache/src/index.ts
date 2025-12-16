@@ -22,7 +22,7 @@ const DEFAULT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
  * Cached npm package metadata including available versions and package.json fields.
  */
 export interface PackageMetadataCache {
-    /** Package name (e.g., "react" or "@scope/package") */
+    /** Package name (e.g., "react" or "\@scope/package") */
     name: string;
     /** List of all published versions */
     versions: string[];
@@ -40,7 +40,7 @@ export interface PackageMetadataCache {
     >;
     /** Distribution tags (e.g., "latest", "next") mapped to versions */
     distTags: Record<string, string>;
-    /** Version publish timestamps (version -> timestamp in ms) for smart version ordering */
+    /** Version publish timestamps (version -\> timestamp in ms) for smart version ordering */
     versionTimes?: Record<string, number>;
     /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
@@ -53,7 +53,7 @@ export interface PackageMetadataCache {
  * of package content against extracted source code.
  */
 export interface ContentFingerprintCache {
-    /** Package name (e.g., "react" or "@scope/package") */
+    /** Package name (e.g., "react" or `@scope/package`) */
     packageName: string;
     /** Semver version string */
     version: string;
@@ -478,7 +478,7 @@ export class FingerprintCache {
     /**
      * Gets cached package metadata.
      *
-     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param packageName - Package name (e.g., "react" or `@scope/package`)
      * @returns Cached metadata if found and not expired, null otherwise
      */
     async getMetadata(
@@ -541,7 +541,7 @@ export class FingerprintCache {
     /**
      * Gets cached content fingerprint.
      *
-     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param packageName - Package name (e.g., "react" or `@scope/package`)
      * @param version - Semver version string
      * @returns Cached fingerprint if found and not expired, null otherwise
      */
@@ -615,7 +615,7 @@ export class FingerprintCache {
     /**
      * Gets cached minified content fingerprint.
      *
-     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param packageName - Package name (e.g., "react" or `@scope/package`)
      * @param version - Semver version string
      * @returns Cached minified fingerprint if found and not expired, null otherwise
      */
@@ -1334,7 +1334,7 @@ export class FingerprintCache {
     /**
      * Gets cached package file list.
      *
-     * @param packageName - Package name (e.g., "react" or "@scope/package")
+     * @param packageName - Package name (e.g., "react" or `@scope/package`)
      * @param version - Semver version string
      * @returns Cached file list if found and not expired, null otherwise
      */
@@ -1593,7 +1593,7 @@ export function computeNormalizedHash(content: string): string {
  * strings or comments.
  *
  * @param content - Source code content to analyze
- * @returns Pipe-separated sorted list of declaration names (length > 2 chars)
+ * @returns Pipe-separated sorted list of declaration names (length \> 2 chars)
  */
 export function extractCodeSignature(content: string): string {
     // Use AST-based extraction for accurate declaration names

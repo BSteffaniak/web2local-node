@@ -25,7 +25,7 @@ import type {
  *
  * @param dir - Path to the captured site directory
  * @returns The parsed server manifest
- * @throws {Error} When no manifest can be found in the directory
+ * @throws \{Error\} When no manifest can be found in the directory
  *
  * @example
  * ```typescript
@@ -65,7 +65,7 @@ export async function loadManifest(dir: string): Promise<ServerManifest> {
  *
  * @param dir - Path to the captured site directory
  * @returns The parsed fixture index
- * @throws {Error} When the fixture index cannot be found or parsed
+ * @throws \{Error\} When the fixture index cannot be found or parsed
  *
  * @example
  * ```typescript
@@ -90,7 +90,7 @@ export async function loadFixtureIndex(dir: string): Promise<FixtureIndex> {
  * @param dir - Path to the captured site directory
  * @param relativePath - Relative path to the fixture file within `_server/fixtures/`
  * @returns The loaded fixture with its file path
- * @throws {Error} When the fixture file cannot be read or parsed
+ * @throws \{Error\} When the fixture file cannot be read or parsed
  *
  * @example
  * ```typescript
@@ -236,7 +236,7 @@ export async function fileExists(path: string): Promise<boolean> {
  *
  * @param input - Path to resolve (may be relative or absolute)
  * @returns Resolved absolute path to the site directory
- * @throws {Error} When the input is not a valid captured site directory
+ * @throws \{Error\} When the input is not a valid captured site directory
  *
  * @example
  * ```typescript

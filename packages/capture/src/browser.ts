@@ -45,7 +45,7 @@ export class BrowserManager {
      *
      * If the browser is already launched, this method returns immediately.
      *
-     * @throws {Error} If the browser fails to launch
+     * @throws Error if the browser fails to launch
      */
     async launch(): Promise<void> {
         if (this.browser) {
@@ -76,7 +76,7 @@ export class BrowserManager {
      * Automatically launches the browser if not already running.
      *
      * @returns A new Playwright page instance
-     * @throws {Error} If page creation fails
+     * @throws Error if page creation fails
      */
     async newPage(): Promise<Page> {
         if (!this.context) {
@@ -116,10 +116,7 @@ export class BrowserManager {
  * Automatically scrolls back to the top when finished.
  *
  * @param page - The Playwright page to scroll
- * @param options - Scroll configuration options
- * @param options.step - Scroll step in pixels (default: 500)
- * @param options.delay - Delay between scrolls in ms (default: 100)
- * @param options.maxScrolls - Maximum scroll attempts (default: 50)
+ * @param options - Scroll configuration options including step (scroll step in pixels, default: 500), delay (delay between scrolls in ms, default: 100), and maxScrolls (maximum scroll attempts, default: 50)
  */
 export async function autoScrollPage(
     page: Page,
@@ -190,9 +187,7 @@ export async function autoScrollPage(
  * idle time buffer for any trailing requests.
  *
  * @param page - The Playwright page to wait on
- * @param options - Wait configuration options
- * @param options.timeout - Maximum wait time in ms (default: 30000)
- * @param options.idleTime - Additional idle buffer in ms (default: 500)
+ * @param options - Wait configuration options including timeout (maximum wait time in ms, default: 30000) and idleTime (additional idle buffer in ms, default: 500)
  */
 export async function waitForNetworkIdle(
     page: Page,

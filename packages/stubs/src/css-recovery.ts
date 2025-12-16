@@ -889,7 +889,7 @@ export function matchCssImportToBundle(
  *
  * @param importInfo - Information about the CSS import
  * @param capturedBundle - The matched captured CSS bundle
- * @param useInlineContent - If true, use the CSS content directly. If false, generate an @import.
+ * @param useInlineContent - If true, use the CSS content directly. If false, generate an `@import`.
  * @param relativePathToStatic - Relative path from stub location to _server/static directory
  * @returns The stub file content
  */

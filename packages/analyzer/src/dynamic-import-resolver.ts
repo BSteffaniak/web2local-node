@@ -3,7 +3,7 @@
  *
  * Resolves missing dynamic imports by:
  * 1. Parsing JS bundles with SWC to extract import("...") calls
- * 2. Parsing CSS files to extract @import URLs
+ * 2. Parsing CSS files to extract CSS \@import URLs
  * 3. Checking if referenced files exist locally
  * 4. Fetching missing files from the original server
  * 5. Optionally fetching source maps (.map files)
@@ -82,7 +82,7 @@ export interface DynamicImportResolverResult {
  * - Static imports (`import x from "..."`)
  * - Package imports (`import("react")`)
  * - Absolute URLs (`import("https://...")`)
- * - Template literals (`import(\`./dynamic-${x}.js\`)`)
+ * - Template literals (dynamic paths like `import(`...`)`)
  *
  * @param sourceCode - The JavaScript source code to parse
  * @param filename - Optional filename for better error messages
@@ -209,14 +209,14 @@ export function extractAllImportPaths(
 }
 
 /**
- * Extract @import URLs from CSS content.
+ * Extract CSS \@import URLs from CSS content.
  *
  * Matches:
- * - `@import url("./path.css")`
- * - `@import url('./path.css')`
- * - `@import url(./path.css)`
- * - `@import "./path.css"`
- * - `@import '../path.css'`
+ * - `\@import url("./path.css")`
+ * - `\@import url('./path.css')`
+ * - `\@import url(./path.css)`
+ * - `\@import "./path.css"`
+ * - `\@import '../path.css'`
  *
  * Only returns relative paths (starting with ./ or ../).
  *

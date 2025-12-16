@@ -14,7 +14,7 @@ import type { DetectedProjectConfig } from '@web2local/types';
  * @internal
  */
 interface AliasPathMapping {
-    /** The import alias (e.g., '@components'). */
+    /** The import alias (e.g., `@components`). */
     alias: string;
     /** The relative path to the aliased directory. */
     relativePath: string;
@@ -25,14 +25,14 @@ interface AliasPathMapping {
  * @internal
  */
 interface WorkspacePackageMapping {
-    /** The package name (e.g., '@myorg/shared'). */
+    /** The package name (e.g., `@myorg/shared`). */
     name: string;
     /** The relative path to the package directory. */
     relativePath: string;
 }
 
 /**
- * Represents a subpath import mapping (e.g., 'pkg/auth' -> './shared/auth').
+ * Represents a subpath import mapping (e.g., 'pkg/auth' -\> './shared/auth').
  * @internal
  */
 interface SubpathMapping {
@@ -278,7 +278,7 @@ export function generateTsConfig(
  *
  * @param outputPath - Absolute path where the tsconfig.json should be written
  * @param tsconfig - The tsconfig object to serialize
- * @throws {Error} When the file cannot be written (permissions, disk full, etc.)
+ * @throws \{Error\} When the file cannot be written (permissions, disk full, etc.)
  *
  * @example
  * ```typescript

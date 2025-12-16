@@ -16,7 +16,7 @@ import {
  *
  * Handles:
  * - webpack:// protocol (webpack://myapp/./src/... → src/...)
- * - Vite virtual modules (\0 prefix)
+ * - Vite virtual modules (`\0` prefix)
  * - sourceRoot prepending
  * - Leading ./ removal
  * - Safe .. segment resolution

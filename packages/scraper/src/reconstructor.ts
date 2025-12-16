@@ -1,5 +1,5 @@
 /**
- * File Reconstruction Module for @web2local/scraper
+ * File Reconstruction Module for `@web2local/scraper`
  *
  * This module handles the reconstruction of original source files from extracted
  * source map content. It provides functionality for writing files to disk, generating

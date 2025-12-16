@@ -53,7 +53,7 @@ interface KnownVersion {
 
 /**
  * Simple semver range checker
- * Supports: ^, ~, >=, >, <=, <, =, x.x.x, and || ranges
+ * Supports: ^, ~, \>=, \>, \<=, \<, =, x.x.x, and || ranges
  */
 function satisfiesRange(version: string, range: string): boolean {
     // Handle || (or) ranges
@@ -343,8 +343,8 @@ export async function inferFromKnownPeers(
  * Forward inference: Given a package's known version, infer related packages.
  *
  * @example
- * If we know react@18.2.0 and detect react-dom as a dependency,
- * we can check react-dom's versions to find one that has react@^18.2.0 as peer dep.
+ * If we know react\@18.2.0 and detect react-dom as a dependency,
+ * we can check react-dom's versions to find one that has react\@^18.2.0 as peer dep.
  *
  * @param unknownPackages - Package names without known versions
  * @param knownVersions - Map of package names to their known versions
@@ -473,8 +473,7 @@ export async function inferFromPeerRequirements(
  *
  * @param unknownPackages - Package names without known versions
  * @param knownVersions - Map of package names to their known versions
- * @param options - Configuration options
- * @param options.onProgress - Optional callback invoked for each package processed
+ * @param options - Configuration options (contains onProgress callback invoked for each package processed)
  * @returns Map of package names to their inferred version results
  */
 export async function inferPeerDependencyVersions(

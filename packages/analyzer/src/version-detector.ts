@@ -121,7 +121,7 @@ const VERSION_CONSTANT_PATTERNS = [
 
 /**
  * Strips URL-like content and JSDoc parameter defaults from text to avoid false positive version matches
- * (e.g., matching "version=1.1.1" in a WMS URL query string or @param {String} [options.version='1.1.1'])
+ * (e.g., matching "version=1.1.1" in a WMS URL query string or `\@param \{String\} [options.version='1.1.1']`)
  */
 function stripUrlContent(content: string): string {
     return (

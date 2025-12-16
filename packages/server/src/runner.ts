@@ -19,7 +19,7 @@ import type { ServerOptions } from './types.js';
  * The server runs until the process is terminated (e.g., with Ctrl+C).
  *
  * @param options - Server configuration options
- * @throws {Error} When the server cannot be started (e.g., port in use, invalid directory)
+ * @throws \{Error\} When the server cannot be started (e.g., port in use, invalid directory)
  *
  * @example
  * ```typescript
