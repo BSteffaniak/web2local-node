@@ -1,5 +1,5 @@
 /**
- * @web2local/scraper
+ * `@web2local/scraper`
  *
  * Source map extraction and file reconstruction
  */

@@ -1,5 +1,5 @@
 /**
- * @web2local/state - Type definitions
+ * `@web2local/state` - Type definitions
  *
  * Defines the public API types for state management.
  */

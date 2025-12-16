@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import js from '@eslint/js';
 import { FlatCompat } from '@eslint/eslintrc';
 import globals from 'globals';
+import tsdoc from 'eslint-plugin-tsdoc';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +38,7 @@ export default [
     {
         plugins: {
             '@typescript-eslint': typescriptEslint,
+            tsdoc: tsdoc,
         },
         languageOptions: {
             parser: tsParser,
@@ -87,6 +89,7 @@ export default [
                         'Use const objects with `as const` instead of enums. See: https://www.typescriptlang.org/docs/handbook/enums.html#objects-vs-enums',
                 },
             ],
+            'tsdoc/syntax': 'error',
         },
         files: [...tsFiles],
     },

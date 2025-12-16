@@ -1,5 +1,5 @@
 /**
- * @web2local/state - WAL module exports
+ * `@web2local/state` - WAL module exports
  */
 
 export { WALWriter, type WALWriterOptions } from './wal-writer.js';

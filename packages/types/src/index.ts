@@ -1,5 +1,5 @@
 /**
- * @web2local/types
+ * `@web2local/types`
  *
  * Shared TypeScript types for web2local packages.
  * This module provides type definitions for source map operations,

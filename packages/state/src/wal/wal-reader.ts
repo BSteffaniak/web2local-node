@@ -1,5 +1,5 @@
 /**
- * @web2local/state - WAL Reader
+ * `@web2local/state` - WAL Reader
  *
  * Reads and parses write-ahead log events.
  * Detects corruption and provides recovery information.

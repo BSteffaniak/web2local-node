@@ -1,5 +1,5 @@
 /**
- * @web2local/state - WAL Event utilities
+ * `@web2local/state` - WAL Event utilities
  *
  * Helper functions for creating and validating WAL events.
  */

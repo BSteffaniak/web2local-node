@@ -1,5 +1,5 @@
 /**
- * @web2local/state - Error definitions
+ * `@web2local/state` - Error definitions
  *
  * Custom error classes for state management operations.
  */

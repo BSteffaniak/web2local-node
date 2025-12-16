@@ -1,5 +1,5 @@
 /**
- * @web2local/server - Serve captured API fixtures and static assets.
+ * `@web2local/server` - Serve captured API fixtures and static assets.
  *
  * This package provides a mock server that serves captured API responses and
  * static files from a web2local capture. It's useful for development, testing,

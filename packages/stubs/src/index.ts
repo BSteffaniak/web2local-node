@@ -1,5 +1,5 @@
 /**
- * @web2local/stubs
+ * `@web2local/stubs`
  *
  * Stub file generation for missing sources
  */
