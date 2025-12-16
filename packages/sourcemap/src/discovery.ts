@@ -393,6 +393,15 @@ export async function probeSourceMapUrl(
  * @param bundleUrl - The URL of the bundle
  * @param options - Discovery options
  * @returns Discovery result with source map URL (if found) and bundle content
+ *
+ * @example
+ * ```typescript
+ * const discovery = await discoverSourceMap('https://example.com/bundle.js');
+ * if (discovery.found) {
+ *     console.log(`Found source map at: ${discovery.sourceMapUrl}`);
+ *     console.log(`Location type: ${discovery.locationType}`);
+ * }
+ * ```
  */
 export async function discoverSourceMap(
     bundleUrl: string,

@@ -36,6 +36,19 @@ import { shouldIncludeSource } from './utils/filter.js';
  * @param sourceMapUrl - The URL of the source map (for result metadata)
  * @param options - Extraction options
  * @returns Extraction result with sources and metadata
+ *
+ * @example
+ * ```typescript
+ * const result = extractSources(
+ *     parsedMap,
+ *     'https://example.com/bundle.js',
+ *     'https://example.com/bundle.js.map'
+ * );
+ *
+ * for (const source of result.sources) {
+ *     console.log(`${source.path}: ${source.content.length} bytes`);
+ * }
+ * ```
  */
 export function extractSources(
     sourceMap: SourceMapV3,
@@ -160,8 +173,21 @@ export function hasExtractableContent(sourceMap: SourceMapV3): boolean {
 /**
  * Gets a summary of what's in a source map without fully extracting.
  *
+ * Useful for quickly inspecting a source map before committing to
+ * full extraction. Does not apply filtering or path normalization.
+ *
  * @param sourceMap - The parsed source map
- * @returns Summary information
+ * @returns Summary object containing:
+ *   - `totalSources`: Total number of source entries
+ *   - `withContent`: Number of sources with non-null content
+ *   - `nullContent`: Number of sources with null/undefined content
+ *   - `sourceRoot`: The sourceRoot value if present, null otherwise
+ *
+ * @example
+ * ```typescript
+ * const summary = getSourceMapSummary(parsedMap);
+ * console.log(`${summary.withContent}/${summary.totalSources} sources have content`);
+ * ```
  */
 export function getSourceMapSummary(sourceMap: SourceMapV3): {
     totalSources: number;

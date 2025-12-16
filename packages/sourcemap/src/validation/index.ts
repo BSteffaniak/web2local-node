@@ -46,6 +46,17 @@ export {
  *
  * @param raw - The parsed JSON object
  * @returns Validation result with structured errors (including error codes)
+ *
+ * @example
+ * ```typescript
+ * const parsed = JSON.parse(sourceMapJson);
+ * const result = validateSourceMap(parsed);
+ * if (!result.valid) {
+ *     for (const error of result.errors) {
+ *         console.error(`[${error.code}] ${error.message}`);
+ *     }
+ * }
+ * ```
  */
 export function validateSourceMap(raw: unknown): SourceMapValidationResult {
     if (typeof raw !== 'object' || raw === null) {
