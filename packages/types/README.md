@@ -26,6 +26,6 @@ import type { SourceMapV3, ExtractedSource, SourceMapExtractionResult, Dependenc
 | Discovery    | `SourceMapDiscoveryResult`, `SourceMapLocationType`                                |
 | Options      | `ExtractSourceMapOptions`, `DiscoverSourceMapOptions`                              |
 | Validation   | `SourceMapValidationResult`, `SourceMapValidationError`                            |
-| Dependencies | `DependencyInfo`, `AnalysisResult`, `AliasInfo`                                    |
+| Dependencies | `DependencyInfo`, `AnalysisResult`, `AliasMap`, `InferredAlias`                    |
 | Capture      | `ApiFixture`, `CapturedRequest`, `CapturedResponse`, `CapturedAsset`               |
 | Server       | `ServerManifest`, `FixtureIndex`, `FixtureIndexEntry`                              |
