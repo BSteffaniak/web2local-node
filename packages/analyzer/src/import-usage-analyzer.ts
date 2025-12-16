@@ -1,8 +1,26 @@
+/**
+ * Import Usage Analyzer
+ *
+ * Analyzes how imports are used in source code using SWC AST parsing.
+ * This module detects usage patterns like:
+ *
+ * - Member expressions: `Foo.bar`, `Foo.baz()`
+ * - JSX member expressions: `<Foo.Bar />`, `<Foo.Bar.Baz />`
+ * - Direct calls: `foo()`
+ * - Direct JSX usage: `<Foo />`
+ * - Constructor usage: `new Foo()`
+ *
+ * This information is useful for determining which exports are actually used
+ * from a package, enabling tree-shaking analysis and re-export generation.
+ *
+ * @module
+ */
+
 import { parseSync } from '@swc/core';
 import type { Module } from '@swc/types';
 
 /**
- * Information about how a specific named import is used in code
+ * Information about how a specific named import is used in code.
  */
 export interface NamedImportUsage {
     /** The local name of the import (what it's called in this file) */
@@ -190,14 +208,18 @@ function extractJSXMemberExpressionChain(
 }
 
 /**
- * Analyzes how imports are used in a source file using SWC AST.
+ * Analyzes how imports are used in a source file using SWC AST parsing.
  *
- * Detects:
- * - Member expressions: Foo.bar, Foo.baz()
- * - JSX member expressions: <Foo.Bar />, <Foo.Bar.Baz />
- * - Direct calls: foo()
- * - Direct JSX usage: <Foo />
- * - Constructor usage: new Foo()
+ * Detects the following usage patterns:
+ * - Member expressions: `Foo.bar`, `Foo.baz()`
+ * - JSX member expressions: `<Foo.Bar />`, `<Foo.Bar.Baz />`
+ * - Direct calls: `foo()`
+ * - Direct JSX usage: `<Foo />`
+ * - Constructor usage: `new Foo()`
+ *
+ * @param sourceCode - The source code content to analyze
+ * @param filename - The filename (used to determine syntax: TypeScript, JSX, etc.)
+ * @returns Array of usage information for each import source in the file
  */
 export function analyzeImportUsage(
     sourceCode: string,
@@ -402,7 +424,13 @@ export function analyzeImportUsage(
 
 /**
  * Aggregates import usage from multiple files for a specific package.
- * Returns a map of import name → aggregated usage across all files.
+ *
+ * Combines usage information from multiple source files to create a unified
+ * view of how each import from a package is used across the codebase.
+ *
+ * @param usageInfos - Array of usage info from multiple files (from analyzeImportUsage)
+ * @param packageSource - The package source to aggregate usage for (e.g., 'react')
+ * @returns Map of import name to aggregated usage across all files
  */
 export function aggregateImportUsage(
     usageInfos: ImportUsageInfo[],
@@ -503,7 +531,13 @@ export function aggregateImportUsage(
 
 /**
  * Filters usage infos to only include imports from a specific source.
- * Useful for analyzing imports from a particular package.
+ *
+ * Useful for analyzing imports from a particular package when you have
+ * usage data from multiple files importing from multiple sources.
+ *
+ * @param usageInfos - Array of import usage info objects to filter
+ * @param source - The import source to filter by (e.g., 'react', '@tanstack/react-query')
+ * @returns Filtered array containing only imports from the specified source
  */
 export function filterUsageBySource(
     usageInfos: ImportUsageInfo[],
@@ -513,7 +547,13 @@ export function filterUsageBySource(
 }
 
 /**
- * Gets all unique import sources from usage infos
+ * Gets all unique import sources from usage infos.
+ *
+ * Extracts and deduplicates all package sources that are imported
+ * across the analyzed files.
+ *
+ * @param usageInfos - Array of import usage info objects
+ * @returns Sorted array of unique import source strings
  */
 export function getUniqueImportSources(
     usageInfos: ImportUsageInfo[],
