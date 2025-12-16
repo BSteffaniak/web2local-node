@@ -136,6 +136,13 @@ export class CrawlWorker {
     private errors: string[] = [];
     private htmlCaptured = false;
 
+    /**
+     * Create a new crawl worker.
+     *
+     * @param workerId - Unique identifier for this worker (0-indexed)
+     * @param options - Configuration options for crawl behavior
+     * @param sharedState - Shared state for coordinating between workers
+     */
     constructor(
         private workerId: number,
         private options: CrawlWorkerOptions,

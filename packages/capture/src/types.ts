@@ -23,25 +23,32 @@ export type {
 } from '@web2local/types';
 
 /**
- * Server configuration in manifest
+ * Server configuration stored in the generated manifest.
  */
 export interface ServerConfig {
+    /** Port number the mock server listens on by default. */
     defaultPort: number;
+    /** Whether to enable CORS headers on responses. */
     cors: boolean;
+    /** Artificial response delay configuration for simulating network latency. */
     delay: {
+        /** Whether delay simulation is enabled. */
         enabled: boolean;
+        /** Minimum delay in milliseconds. */
         minMs: number;
+        /** Maximum delay in milliseconds. */
         maxMs: number;
     };
 }
 
 /**
- * Route configuration in manifest
+ * Route configuration stored in the generated manifest.
+ * Defines base paths for different types of captured content.
  */
 export interface RouteConfig {
-    /** Base path for API fixtures */
+    /** Base path for serving API fixture files. */
     api: string;
-    /** Base path for static assets */
+    /** Base path for serving static asset files. */
     static: string;
 }
 
@@ -78,12 +85,17 @@ export interface CapturedAssetInfo {
 
 /**
  * Callback fired when an asset is captured.
+ *
  * This is fire-and-forget - the capture process does not wait for the callback to complete.
+ *
+ * @param asset - Information about the captured asset including URL, content type, and raw content
  */
 export type OnAssetCaptured = (asset: CapturedAssetInfo) => void;
 
 /**
- * Options for API capture
+ * Configuration options for the capture operation.
+ *
+ * Controls browser behavior, asset filtering, crawling settings, and parallelization.
  */
 export interface CaptureOptions {
     /** Target URL to capture */

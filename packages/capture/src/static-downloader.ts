@@ -560,7 +560,10 @@ function guessResourceType(url: string): ResourceType {
 }
 
 /**
- * Static Asset Capturer - captures static assets via response events
+ * Captures static assets (HTML, CSS, JS, images, fonts) via Playwright response events.
+ *
+ * Provides request deduplication across multiple pages, asset filtering,
+ * truncation recovery, and URL rewriting for captured content.
  */
 export class StaticCapturer {
     private assets: CapturedAsset[] = [];
@@ -615,14 +618,22 @@ export class StaticCapturer {
         }
     > = new Map();
 
+    /**
+     * Create a new static asset capturer.
+     *
+     * @param options - Configuration options for asset capture behavior
+     */
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
     }
 
     /**
      * Set the current page URL.
+     *
      * Called by the capture orchestrator when navigating to a new page during crawling.
      * This URL is passed to the onAssetCaptured callback.
+     *
+     * @param url - The URL of the page currently being crawled
      */
     setCurrentPageUrl(url: string): void {
         this.currentPageUrl = url;
