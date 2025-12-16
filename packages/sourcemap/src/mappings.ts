@@ -154,10 +154,12 @@ function getFieldName(index: number): string {
 // ============================================================================
 
 /**
- * Result of mappings validation
+ * Result of mappings validation.
  */
 export interface MappingsValidationResult {
+    /** Whether the mappings string passed all validation checks. */
     valid: boolean;
+    /** Array of validation errors found (empty if valid). */
     errors: SourceMapValidationError[];
 }
 

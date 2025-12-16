@@ -62,28 +62,40 @@ const VLQ_ERROR_CODES = new Set<SourceMapErrorCode>([
 ]);
 
 /**
- * Check if an error code is a network-related error
+ * Check if an error code is a network-related error.
+ *
+ * @param code - The error code to check
+ * @returns true if the code represents a network error (fetch, timeout, DNS, etc.)
  */
 export function isNetworkError(code: SourceMapErrorCode): boolean {
     return NETWORK_ERROR_CODES.has(code);
 }
 
 /**
- * Check if an error code is a validation error
+ * Check if an error code is a validation error.
+ *
+ * @param code - The error code to check
+ * @returns true if the code represents a validation error (invalid version, missing fields, etc.)
  */
 export function isValidationError(code: SourceMapErrorCode): boolean {
     return VALIDATION_ERROR_CODES.has(code);
 }
 
 /**
- * Check if an error code is a parse error
+ * Check if an error code is a parse error.
+ *
+ * @param code - The error code to check
+ * @returns true if the code represents a parse error (invalid JSON, base64, data URI)
  */
 export function isParseError(code: SourceMapErrorCode): boolean {
     return PARSE_ERROR_CODES.has(code);
 }
 
 /**
- * Check if an error code is a VLQ/mapping error
+ * Check if an error code is a VLQ/mapping error.
+ *
+ * @param code - The error code to check
+ * @returns true if the code represents a VLQ decoding or mapping validation error
  */
 export function isVlqError(code: SourceMapErrorCode): boolean {
     return VLQ_ERROR_CODES.has(code);
@@ -96,10 +108,31 @@ export function isVlqError(code: SourceMapErrorCode): boolean {
 /**
  * Custom error class for source map operations.
  * Provides structured error information for debugging.
+ *
+ * @example
+ * ```typescript
+ * try {
+ *     const result = parseSourceMap(content);
+ * } catch (error) {
+ *     if (error instanceof SourceMapError) {
+ *         console.error(`[${error.code}] ${error.message}`);
+ *         if (error.url) console.error(`URL: ${error.url}`);
+ *     }
+ * }
+ * ```
  */
 export class SourceMapError extends Error {
     public readonly name = 'SourceMapError';
 
+    /**
+     * Creates a new SourceMapError.
+     *
+     * @param code - The structured error code for programmatic handling
+     * @param message - Human-readable error message
+     * @param url - Optional URL where the error occurred
+     * @param cause - Optional underlying error that caused this error
+     * @param details - Optional additional context as key-value pairs
+     */
     constructor(
         public readonly code: SourceMapErrorCode,
         message: string,
@@ -113,6 +146,8 @@ export class SourceMapError extends Error {
 
     /**
      * Create a detailed, formatted error message with all context.
+     *
+     * @returns A multi-line string with error code, message, URL, details, and cause
      */
     toDetailedString(): string {
         const parts = [`[${this.code}] ${this.message}`];
@@ -134,6 +169,11 @@ export class SourceMapError extends Error {
 /**
  * Create an error for HTTP failures.
  * Status code is available in error.details.status for programmatic handling.
+ *
+ * @param status - HTTP status code
+ * @param statusText - HTTP status text (e.g., "Not Found")
+ * @param url - The URL that returned the HTTP error
+ * @returns A SourceMapError with HTTP_ERROR code
  */
 export function createHttpError(
     status: number,
@@ -173,7 +213,13 @@ export function createParseError(
 }
 
 /**
- * Create an error for validation failures
+ * Create an error for validation failures.
+ *
+ * @param code - The specific validation error code
+ * @param message - Human-readable validation error message
+ * @param url - Optional URL of the source map being validated
+ * @param details - Optional additional context (e.g., validation errors array)
+ * @returns A SourceMapError with the specified validation error code
  */
 export function createValidationError(
     code: SourceMapErrorCode,
@@ -185,7 +231,12 @@ export function createValidationError(
 }
 
 /**
- * Create an error for network failures based on error type
+ * Create an error for network failures based on error type.
+ * Automatically classifies the error based on the error message content.
+ *
+ * @param error - The underlying network error
+ * @param url - The URL that failed to fetch
+ * @returns A SourceMapError with appropriate network error code (timeout, DNS, etc.)
  */
 export function createNetworkError(error: Error, url: string): SourceMapError {
     const message = error.message.toLowerCase();
@@ -211,7 +262,12 @@ export function createNetworkError(error: Error, url: string): SourceMapError {
 }
 
 /**
- * Create an error for source map size limit exceeded
+ * Create an error for source map size limit exceeded.
+ *
+ * @param actualSize - The actual size of the source map in bytes
+ * @param maxSize - The maximum allowed size in bytes
+ * @param url - Optional URL of the source map
+ * @returns A SourceMapError with SOURCE_MAP_TOO_LARGE code
  */
 export function createSizeError(
     actualSize: number,
@@ -228,7 +284,11 @@ export function createSizeError(
 }
 
 /**
- * Create an error for when no source map is found
+ * Create an error for when no source map is found.
+ *
+ * @param message - Description of the discovery failure
+ * @param url - The bundle URL that was searched
+ * @returns A SourceMapError with NO_SOURCE_MAP_FOUND code
  */
 export function createDiscoveryError(
     message: string,
@@ -242,7 +302,12 @@ export function createDiscoveryError(
 }
 
 /**
- * Create an error for no extractable sources
+ * Create an error for no extractable sources.
+ *
+ * @param code - The specific content error code
+ * @param message - Description of the content error
+ * @param url - Optional URL of the source map
+ * @returns A SourceMapError with the specified error code
  */
 export function createContentError(
     code: SourceMapErrorCode,
@@ -253,7 +318,12 @@ export function createContentError(
 }
 
 /**
- * Create an error for data URI issues
+ * Create an error for data URI issues.
+ *
+ * @param code - Either INVALID_DATA_URI or INVALID_BASE64
+ * @param message - Description of the data URI error
+ * @param url - Optional URL context
+ * @returns A SourceMapError with the specified data URI error code
  */
 export function createDataUriError(
     code:
@@ -275,6 +345,11 @@ export function createDataUriError(
  * Note: This is different from createValidationError() which creates a
  * SourceMapError for throwing. This creates a SourceMapValidationError
  * for inclusion in validation result arrays.
+ *
+ * @param code - The validation error code
+ * @param message - Human-readable error message
+ * @param field - Optional field name that failed validation
+ * @returns A SourceMapValidationError object for validation results
  */
 export function createValidationErrorResult(
     code: SourceMapErrorCode,

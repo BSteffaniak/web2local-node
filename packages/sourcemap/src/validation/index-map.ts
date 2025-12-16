@@ -22,9 +22,13 @@ import { validateRegularSourceMap } from './source-map.js';
 // TYPES
 // ============================================================================
 
-/** Validated offset with line and column */
+/**
+ * Represents a validated index map offset with line and column.
+ */
 export interface ValidatedOffset {
+    /** Zero-based line number in the generated code. */
     line: number;
+    /** Zero-based column number in the generated code. */
     column: number;
 }
 
@@ -35,6 +39,9 @@ export interface ValidatedOffset {
 /**
  * Checks if a raw source map object is an index map (has sections field).
  * Per ECMA-426, an index map has `sections` instead of `sources`/`mappings`.
+ *
+ * @param obj - The raw source map object to check
+ * @returns true if the object has a sections field
  */
 export function isIndexMap(obj: RawSourceMap): boolean {
     return 'sections' in obj;
@@ -43,6 +50,11 @@ export function isIndexMap(obj: RawSourceMap): boolean {
 /**
  * Validates section.offset field structure and values.
  * Returns the validated offset if valid, null otherwise.
+ *
+ * @param section - The raw section object to validate
+ * @param fieldPrefix - Prefix for error field paths (e.g., "sections[0]")
+ * @param errors - Array to push validation errors into
+ * @returns The validated offset if valid, null otherwise
  */
 export function validateSectionOffset(
     section: RawIndexMapSection,
@@ -137,6 +149,11 @@ export function validateSectionOffset(
 
 /**
  * Validates section ordering and overlap against previous section.
+ *
+ * @param current - The current section's validated offset
+ * @param prev - The previous section's validated offset, or null if first section
+ * @param fieldPrefix - Prefix for error field paths (e.g., "sections[1]")
+ * @param errors - Array to push validation errors into
  */
 export function validateSectionOrdering(
     current: ValidatedOffset,
@@ -173,6 +190,11 @@ export function validateSectionOrdering(
 
 /**
  * Validates section.map field.
+ *
+ * @param section - The raw section object to validate
+ * @param fieldPrefix - Prefix for error field paths (e.g., "sections[0]")
+ * @param errors - Array to push validation errors into
+ * @param warnings - Array to push validation warnings into
  */
 export function validateSectionMap(
     section: RawIndexMapSection,
