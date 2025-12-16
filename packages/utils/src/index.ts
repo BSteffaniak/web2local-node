@@ -32,10 +32,13 @@ export function toPosixPath(filePath: string): string {
  * Unlike Promise.all with batching, this uses a worker pool pattern that
  * immediately starts the next item when one completes, maximizing throughput.
  *
+ * @typeParam T - The type of items in the input array
+ * @typeParam R - The type of results returned by the async function
  * @param items - Array of items to process
  * @param concurrency - Maximum number of concurrent executions
- * @param fn - Async function to execute for each item
- * @param onItemComplete - Optional callback fired when each item completes
+ * @param fn - Async function to execute for each item, receives the item and its index
+ * @param onItemComplete - Optional callback fired when each item completes,
+ *   receives the result, index, completed count, and total count
  * @returns Array of results in the same order as input items
  *
  * @example
