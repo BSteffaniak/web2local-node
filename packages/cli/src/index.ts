@@ -1,3 +1,14 @@
+/**
+ * Main entry point and orchestration logic for the web2local CLI.
+ *
+ * This module coordinates the entire extraction pipeline:
+ * - Fetching web pages and discovering JavaScript/CSS bundles
+ * - Finding and extracting source maps
+ * - Analyzing dependencies and generating package.json
+ * - Capturing API calls via browser automation
+ * - Rebuilding the project from extracted sources
+ */
+
 import chalk from 'chalk';
 import ora from 'ora';
 import { parseArgs } from './cli.js';
@@ -10,7 +21,7 @@ import {
 import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
 
 /**
- * CLI options for server-related commands
+ * CLI options for server-related commands.
  */
 interface ServerCliOptions {
     port?: number;
@@ -99,6 +110,21 @@ import { StateManager, PHASES, PHASE_STATUS } from '@web2local/state';
 import { shouldTruncateCorruptedWal } from './output-dir.js';
 import type { CliOptions } from './cli.js';
 
+/**
+ * Main entry point for the web2local CLI.
+ *
+ * Orchestrates the complete source extraction and reconstruction pipeline:
+ * 1. Scrapes the target URL for JavaScript/CSS bundles
+ * 2. Discovers and fetches source maps
+ * 3. Extracts original source files from source maps
+ * 4. Analyzes imports and generates package.json with detected dependencies
+ * 5. Captures API calls via headless browser automation
+ * 6. Rebuilds the project using the extracted sources
+ *
+ * Supports resuming interrupted operations via state management.
+ *
+ * @param options - CLI options parsed from command line arguments
+ */
 export async function runMain(options: CliOptions) {
     // Initialize spinner registry for synchronized logging
     const registry = new SpinnerRegistry();
@@ -1717,7 +1743,10 @@ export async function runMain(options: CliOptions) {
 }
 
 /**
- * Format bytes to human readable string
+ * Formats a byte count to a human-readable string.
+ *
+ * @param bytes - The number of bytes to format
+ * @returns A formatted string like "1.5 KB" or "2.3 MB"
  */
 function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
@@ -1809,7 +1838,11 @@ async function scanExtractedSourceFiles(
 }
 
 /**
- * Recursively find all files matching given extensions in a directory
+ * Recursively finds all files matching given extensions in a directory.
+ *
+ * @param dir - The directory to search
+ * @param extensions - Array of file extensions to match (e.g., ['.js', '.css'])
+ * @returns Array of absolute file paths matching the extensions
  */
 async function findFilesRecursive(
     dir: string,
@@ -1839,7 +1872,10 @@ async function findFilesRecursive(
 }
 
 /**
- * Check if a file exists
+ * Checks if a file exists at the given path.
+ *
+ * @param path - The file path to check
+ * @returns True if the file exists, false otherwise
  */
 async function fileExists(path: string): Promise<boolean> {
     try {
@@ -1861,8 +1897,9 @@ async function fileExists(path: string): Promise<boolean> {
  * _bundles/ and copies them over.
  *
  * @param sourceDir - The site output directory (e.g., output/example.com)
- * @param verbose - Whether to log progress
- * @returns Object with counts of synced files
+ * @param verbose - Whether to log progress messages
+ * @param onVerbose - Optional callback for verbose log messages
+ * @returns Object with counts of synced JS files, CSS files, and any errors
  */
 async function syncDynamicBundles(
     sourceDir: string,
@@ -1912,6 +1949,9 @@ async function syncDynamicBundles(
     return { jsFiles, cssFiles, errors };
 }
 
+/**
+ * CLI entry point that parses command line arguments and executes the appropriate command.
+ */
 export async function main() {
     parseArgs();
 }
