@@ -162,14 +162,20 @@ export function findCssSourceMappingUrl(content: string): string | null {
 }
 
 /**
- * Checks if a URL is a data URI (inline source map)
+ * Checks if a URL is a data URI (inline source map).
+ *
+ * @param url - The URL to check
+ * @returns True if the URL starts with 'data:', false otherwise
  */
 export function isDataUri(url: string): boolean {
     return url.startsWith('data:');
 }
 
 /**
- * Extracts source map from a data URI
+ * Extracts and parses the source map JSON from a base64-encoded data URI.
+ *
+ * @param dataUri - A data URI in the format `data:application/json;base64,<encoded-json>`
+ * @returns The parsed source map object, or null if parsing fails
  */
 export function extractDataUriSourceMap(dataUri: string): object | null {
     try {
@@ -185,7 +191,13 @@ export function extractDataUriSourceMap(dataUri: string): object | null {
 }
 
 /**
- * Resolves a relative source map URL against a base CSS URL
+ * Resolves a relative source map URL against a base CSS URL.
+ *
+ * Handles absolute URLs (http/https), data URIs, and relative paths.
+ *
+ * @param cssUrl - The absolute URL of the CSS file
+ * @param sourceMapUrl - The source map URL (may be relative, absolute, or a data URI)
+ * @returns The fully resolved source map URL
  */
 export function resolveSourceMapUrl(
     cssUrl: string,
@@ -334,6 +346,10 @@ export async function extractCssSourceMap(
 
 /**
  * Processes multiple CSS bundles and extracts all available source maps.
+ *
+ * @param cssBundles - Array of CSS bundles to process, each with URL and optional content
+ * @param onProgress - Optional callback invoked after each bundle is processed
+ * @returns Array of all extracted CSS source files from the bundles
  */
 export async function extractAllCssSourceMaps(
     cssBundles: Array<{ url: string; content?: string }>,
@@ -358,13 +374,17 @@ export async function extractAllCssSourceMaps(
 
 /**
  * Scans source files for CSS module imports using AST parsing.
+ *
  * This properly handles imports in all contexts (not just top-level)
  * and ignores code inside strings/comments.
  *
  * Detects patterns like:
- *   import styles from './Button.module.scss'
- *   import * as css from './styles.module.css'
- *   const styles = require('./Component.module.sass')
+ * - `import styles from './Button.module.scss'`
+ * - `import * as css from './styles.module.css'`
+ * - `const styles = require('./Component.module.sass')`
+ *
+ * @param sourceFiles - Array of source files with their paths and content
+ * @returns Array of CSS module import information including used class names
  */
 export function findCssModuleImports(
     sourceFiles: Array<{ path: string; content: string }>,
@@ -458,12 +478,18 @@ export function findCssModuleImports(
 
 /**
  * Extracts class names used from a CSS module variable using AST parsing.
+ *
  * This properly handles code in all contexts and ignores strings/comments.
  *
  * Detects patterns like:
- *   styles.container
- *   styles['btn-text']
- *   styles["nav-item"]
+ * - `styles.container`
+ * - `styles['btn-text']`
+ * - `styles["nav-item"]`
+ *
+ * @param content - The source file content to analyze
+ * @param variableName - The CSS module variable name to track (e.g., 'styles')
+ * @param filename - The filename for parser syntax detection (defaults to 'file.tsx')
+ * @returns Set of class names extracted from the code
  */
 export function extractUsedClassNames(
     content: string,
@@ -493,7 +519,12 @@ export function extractUsedClassNames(
 
 /**
  * Resolves an import path relative to a source file.
+ *
  * Returns a normalized relative path (not absolute).
+ *
+ * @param sourceFile - The path of the file containing the import
+ * @param importPath - The import path to resolve (e.g., './styles.module.scss')
+ * @returns The normalized resolved path relative to the project root
  */
 export function resolveImportPath(
     sourceFile: string,
@@ -531,6 +562,12 @@ export function resolveImportPath(
 
 /**
  * Generates a stub CSS module file with placeholder styles.
+ *
+ * Creates a CSS file with empty class definitions for each class name
+ * that was detected in the source code usage.
+ *
+ * @param importInfo - Information about the CSS module import and its used class names
+ * @returns A CssSourceFile containing the stub content and metadata
  */
 export function generateCssModuleStub(
     importInfo: CssModuleImport,
@@ -567,7 +604,13 @@ export function generateCssModuleStub(
 }
 
 /**
- * Generates a TypeScript declaration file for a CSS module.
+ * Generates a TypeScript declaration file (.d.ts) for a CSS module.
+ *
+ * Creates type definitions that map class names to string values,
+ * enabling type-safe CSS module usage in TypeScript.
+ *
+ * @param importInfo - Information about the CSS module import and its used class names
+ * @returns A CssSourceFile containing the .d.ts declaration content
  */
 export function generateCssModuleDeclaration(
     importInfo: CssModuleImport,
@@ -608,6 +651,15 @@ export function generateCssModuleDeclaration(
 
 /**
  * Analyzes source files and generates stubs for missing CSS modules.
+ *
+ * Scans for CSS module imports, determines which ones need stub files
+ * (not already covered by source maps), and generates both CSS stubs
+ * and TypeScript declaration files.
+ *
+ * @param sourceFiles - Array of source files with their paths and content
+ * @param existingCssFiles - Set of CSS file paths that already exist (from source maps)
+ * @param onProgress - Optional progress callback for status updates
+ * @returns Analysis result containing imports found, stubs needed, and generated files
  */
 export async function generateCssModuleStubs(
     sourceFiles: Array<{ path: string; content: string }>,
@@ -672,6 +724,11 @@ export async function generateCssModuleStubs(
 
 /**
  * Generates a global.d.ts file with wildcard CSS module declarations.
+ *
+ * Creates TypeScript module declarations for all CSS/SCSS/SASS/LESS file types,
+ * allowing TypeScript to understand CSS module imports without individual .d.ts files.
+ *
+ * @returns A CssSourceFile containing the global declarations content
  */
 export function generateGlobalCssDeclarations(): CssSourceFile {
     const content = `// Auto-generated CSS module declarations
@@ -733,12 +790,16 @@ declare module '*.less' {
 
 /**
  * Extract base name from a hashed CSS filename.
+ *
  * Handles common bundler patterns:
- *   - "index-CPeWLd_6.css" -> "index"
- *   - "sarsaparilla-CAVT8XC2.css" -> "sarsaparilla"
- *   - "main.abc123.css" -> "main"
- *   - "styles.min.css" -> "styles"
- *   - "button.module.scss" -> "button"
+ * - `"index-CPeWLd_6.css"` → `"index"`
+ * - `"sarsaparilla-CAVT8XC2.css"` → `"sarsaparilla"`
+ * - `"main.abc123.css"` → `"main"`
+ * - `"styles.min.css"` → `"styles"`
+ * - `"button.module.scss"` → `"button"`
+ *
+ * @param filename - The CSS filename with potential hash suffix
+ * @returns The base name without extension, hash, or common suffixes
  */
 export function extractCssBaseName(filename: string): string {
     // Remove extension

@@ -17,6 +17,7 @@
 
 /**
  * Creates a universal stub that handles any operation without throwing.
+ *
  * Returns a Proxy that:
  * - Can be called as a function (returns another stub)
  * - Can be used with `new` (returns another stub)
@@ -24,7 +25,8 @@
  * - Can be assigned to (silently succeeds)
  * - Converts to primitive types safely
  *
- * @param name Optional name for debugging (will appear in console warnings)
+ * @param name - Optional name for debugging (will appear in console warnings)
+ * @returns A Proxy-based stub that gracefully handles any operation
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createUniversalStub(name?: string): any {
@@ -166,11 +168,21 @@ export function createUniversalStub(name?: string): any {
 }
 
 /**
- * Shorthand for createUniversalStub - use this in generated code
+ * Shorthand alias for {@link createUniversalStub}.
+ *
+ * Use this in generated stub code for more concise exports.
+ *
+ * @example
+ * ```typescript
+ * import { __stub__ } from './__universal-stub__';
+ * export const MissingExport = __stub__('MissingExport');
+ * ```
  */
 export const __stub__ = createUniversalStub;
 
 /**
- * Default export for convenience
+ * Default export for convenience.
+ *
+ * @see {@link createUniversalStub} for full documentation
  */
 export default createUniversalStub;

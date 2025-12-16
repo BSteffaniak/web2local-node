@@ -51,7 +51,11 @@ export interface ScssVariableStubResult {
 }
 
 /**
- * Parse an SCSS file and return the PostCSS AST
+ * Parse an SCSS file and return the PostCSS AST.
+ *
+ * @param content - The SCSS file content to parse
+ * @param filePath - The file path (used for error reporting)
+ * @returns The PostCSS Root AST node, or null if parsing fails
  */
 export function parseScss(content: string, filePath: string): Root | null {
     try {
@@ -63,8 +67,13 @@ export function parseScss(content: string, filePath: string): Root | null {
 }
 
 /**
- * Extract all SCSS variable definitions from an AST
- * Variables are defined as declarations with props starting with $
+ * Extract all SCSS variable definitions from an AST.
+ *
+ * Variables are defined as declarations with props starting with `$`,
+ * as well as loop variables from `@each` and `@for` rules.
+ *
+ * @param root - The PostCSS Root AST to analyze
+ * @returns Set of variable names (without the `$` prefix)
  */
 export function extractVariableDefinitions(root: Root): Set<string> {
     const definitions = new Set<string>();
@@ -108,8 +117,13 @@ export function extractVariableDefinitions(root: Root): Set<string> {
 }
 
 /**
- * Extract all SCSS variable usages from an AST
- * Looks for $variable references in declaration values, at-rule params, and selectors
+ * Extract all SCSS variable usages from an AST.
+ *
+ * Looks for `$variable` references in declaration values, at-rule params,
+ * and selectors (including interpolations like `#{$var}`).
+ *
+ * @param root - The PostCSS Root AST to analyze
+ * @returns Set of variable names (without the `$` prefix) that are used
  */
 export function extractVariableUsages(root: Root): Set<string> {
     const usages = new Set<string>();
@@ -148,7 +162,14 @@ export function extractVariableUsages(root: Root): Set<string> {
 }
 
 /**
- * Analyze a single SCSS file for variable definitions and usages
+ * Analyze a single SCSS file for variable definitions and usages.
+ *
+ * Attempts AST-based parsing first, falling back to regex-based
+ * extraction if parsing fails.
+ *
+ * @param content - The SCSS file content to analyze
+ * @param filePath - The file path (for reporting and parser context)
+ * @returns Analysis result with definitions, usages, and any parse errors
  */
 export function analyzeScssFile(
     content: string,
@@ -185,8 +206,13 @@ export function analyzeScssFile(
 }
 
 /**
- * Find all undefined variables across a set of SCSS files
- * Returns a map of file path -> Set of undefined variable names used in that file
+ * Find all undefined variables across a set of SCSS files.
+ *
+ * Compares variable usages against all definitions across all files
+ * to identify variables that are used but never defined.
+ *
+ * @param analyses - Array of SCSS file analysis results
+ * @returns Map of file path to set of undefined variable names used in that file
  */
 export function findUndefinedVariables(
     analyses: ScssVariableAnalysis[],
@@ -219,7 +245,13 @@ export function findUndefinedVariables(
 }
 
 /**
- * Generate SCSS variable stub content
+ * Generate SCSS variable stub content.
+ *
+ * Creates SCSS content with placeholder variable definitions using
+ * `unset !default` so real definitions take precedence.
+ *
+ * @param variables - Set of variable names (without `$` prefix) to stub
+ * @returns SCSS content string with stub variable definitions
  */
 export function generateVariableStubContent(variables: Set<string>): string {
     const sortedVars = Array.from(variables).sort();
@@ -240,7 +272,12 @@ export function generateVariableStubContent(variables: Set<string>): string {
 }
 
 /**
- * Generate stub filename for a given SCSS file
+ * Generate the stub filename for a given SCSS file.
+ *
+ * Creates a filename in the same directory with `._variables-stub.scss` suffix.
+ *
+ * @param scssFilePath - The path to the original SCSS file
+ * @returns The path for the stub file (e.g., `foo/bar._variables-stub.scss`)
  */
 export function getStubFilename(scssFilePath: string): string {
     const dir = dirname(scssFilePath);
@@ -249,7 +286,13 @@ export function getStubFilename(scssFilePath: string): string {
 }
 
 /**
- * Check if a file already has the stub import
+ * Check if a file already has the stub import.
+ *
+ * Checks for `@import` or `@use` statements that reference the stub file.
+ *
+ * @param content - The SCSS file content to check
+ * @param stubFilename - The stub filename to look for
+ * @returns True if the stub import already exists
  */
 export function hasStubImport(content: string, stubFilename: string): boolean {
     const stubBase = basename(stubFilename, '.scss');
@@ -271,7 +314,14 @@ export function hasStubImport(content: string, stubFilename: string): boolean {
 }
 
 /**
- * Inject the stub import at the top of an SCSS file
+ * Inject the stub import at the top of an SCSS file.
+ *
+ * Places the import after any `@charset` declaration or leading comments,
+ * or at the very top if neither exists.
+ *
+ * @param content - The original SCSS file content
+ * @param stubFilename - The stub filename to import
+ * @returns The modified content with the stub import injected
  */
 export function injectStubImport(
     content: string,
@@ -351,7 +401,16 @@ async function findScssFiles(dir: string): Promise<string[]> {
 }
 
 /**
- * Main function to generate SCSS variable stubs for a project directory
+ * Main function to generate SCSS variable stubs for a project directory.
+ *
+ * Scans all SCSS files in the project, analyzes variable definitions and usages,
+ * generates stub files for undefined variables, and injects imports into source files.
+ *
+ * @param projectDir - The root directory to scan for SCSS files
+ * @param options - Configuration options
+ * @param options.onProgress - Optional progress callback for status updates
+ * @param options.dryRun - If true, analyze only without writing files
+ * @returns Result containing counts of generated stubs and any errors
  */
 export async function generateScssVariableStubs(
     projectDir: string,
