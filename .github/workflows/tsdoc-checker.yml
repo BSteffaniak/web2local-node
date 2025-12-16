@@ -168,6 +168,13 @@ jobs:
                   ref: ${{ needs.create-branch.outputs.branch-name }}
                   fetch-depth: 0
 
+            - name: Generate GitHub App token
+              id: app-token
+              uses: actions/create-github-app-token@v1
+              with:
+                  app-id: ${{ secrets.APP_ID }}
+                  private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
             - name: Check for changes
               id: check_changes
               run: |
@@ -186,7 +193,7 @@ jobs:
               uses: MoosicBox/MoosicBox/.github/actions/claude-checker@master
               with:
                   command: create-pr
-                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  github_token: ${{ steps.app-token.outputs.token }}
                   branch_name: ${{ needs.create-branch.outputs.branch-name }}
                   pr_base_branch: master
                   pr_title: "📚 Automated TSDoc Updates"
