@@ -16,25 +16,25 @@ When source maps don't include all original files, this package generates stubs 
 ```typescript
 import { generateStubFiles } from '@web2local/stubs';
 
-const result = await generateStubFiles({
-    projectDir: './my-project',
-    sourceFiles: extractedFiles,
+const result = await generateStubFiles('./my-project', {
+    capturedCssBundles: cssBundles,
+    generateCssModuleStubs: true,
+    generateScssVariableStubs: true,
 });
 
-console.log(`Generated ${result.filesWritten} stub files`);
+console.log(`Generated ${result.indexFilesGenerated} stub files`);
 ```
 
 ## API
 
-### generateStubFiles(options)
+### generateStubFiles(sourceDir, options)
 
 Generates all necessary stub files for a project.
 
 ```typescript
-const result = await generateStubFiles({
-    projectDir: './project',
-    sourceFiles: files,
+const result = await generateStubFiles('./project', {
     capturedCssBundles: cssBundles, // For CSS module stub generation
+    generateCssModuleStubs: true,
 });
 ```
 
@@ -43,16 +43,15 @@ const result = await generateStubFiles({
 ```typescript
 import { generateCssModuleStubs, recoverCssSources } from '@web2local/stubs';
 
-// Generate stubs from captured CSS bundles
-const stubs = await generateCssModuleStubs({
-    projectDir: './project',
-    capturedBundles: cssBundles,
-});
+// Generate stubs for missing CSS modules
+const existingCssFiles = new Set<string>();
+const stubs = await generateCssModuleStubs(sourceFiles, existingCssFiles);
 
 // Recover CSS sources from source maps in bundles
 const recovered = await recoverCssSources({
-    projectDir: './project',
-    bundles: cssBundles,
+    cssBundles: [{ url: 'https://example.com/styles.css', content: cssContent }],
+    sourceFiles: [{ path: 'src/App.tsx', content: appCode }],
+    outputDir: './project',
 });
 ```
 
@@ -61,11 +60,12 @@ const recovered = await recoverCssSources({
 ```typescript
 import { generateScssVariableStubs, analyzeScssFile } from '@web2local/stubs';
 
-// Analyze a file for undefined variables
-const analysis = await analyzeScssFile('./styles.scss');
-console.log(analysis.undefined); // ['$primary-color', '$spacing']
+// Analyze a file for variable definitions and usages
+const analysis = analyzeScssFile(scssContent, './styles.scss');
+console.log(analysis.definitions); // Set of defined variables
+console.log(analysis.usages); // Set of used variables
 
-// Generate stub file with placeholder values
+// Generate stub files with placeholder values for undefined variables
 const result = await generateScssVariableStubs('./project');
 ```
 
