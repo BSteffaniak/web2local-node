@@ -1,5 +1,10 @@
 /**
- * Hono app factory - creates the mock server application
+ * Hono application factory for the mock server.
+ *
+ * This module provides functions to create and configure a Hono application
+ * that serves captured API fixtures and static assets from a web2local capture.
+ *
+ * @packageDocumentation
  */
 
 import { Hono } from 'hono';
@@ -20,7 +25,29 @@ import { delayMiddleware, fixedDelayMiddleware } from '../middleware/delay.js';
 import { loggerMiddleware } from '../middleware/logger.js';
 
 /**
- * Create a Hono app configured for serving captured fixtures
+ * Creates a Hono application configured to serve captured fixtures.
+ *
+ * Sets up middleware for CORS, logging, and delay simulation based on the
+ * server manifest and provided options. Configures routes for API fixtures
+ * and static file serving with SPA fallback support.
+ *
+ * @param options - Server configuration options
+ * @returns Object containing the configured Hono app, loaded manifest, and fixture count
+ * @throws {Error} When the manifest cannot be loaded from the specified directory
+ *
+ * @example
+ * ```typescript
+ * import { createApp } from '@web2local/server';
+ * import { serve } from '@hono/node-server';
+ *
+ * const { app, manifest, fixtureCount } = await createApp({
+ *     dir: './output/example.com',
+ *     port: 3000,
+ *     host: 'localhost',
+ * });
+ *
+ * serve({ fetch: app.fetch, port: 3000 });
+ * ```
  */
 export async function createApp(options: ServerOptions): Promise<{
     app: Hono;
@@ -218,7 +245,29 @@ export async function createApp(options: ServerOptions): Promise<{
 }
 
 /**
- * Get server info for display
+ * Generates formatted server information for display.
+ *
+ * Creates an array of strings containing server configuration details
+ * suitable for console output, including site name, source URL,
+ * fixture count, and listening address.
+ *
+ * @param manifest - The loaded server manifest
+ * @param options - Current server options
+ * @param fixtureCount - Number of loaded API fixtures
+ * @returns Array of strings, each representing a line of server info
+ *
+ * @example
+ * ```typescript
+ * const info = getServerInfo(manifest, options, 42);
+ * for (const line of info) {
+ *     console.log(line);
+ * }
+ * // Output:
+ * // Site: example.com
+ * // Source: https://example.com
+ * // Fixtures: 42
+ * // Listening on: http://localhost:3000
+ * ```
  */
 export function getServerInfo(
     manifest: ServerManifest,
