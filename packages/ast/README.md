@@ -33,10 +33,10 @@ import { extractImportsFromSource, categorizeImport } from '@web2local/ast';
 const imports = extractImportsFromSource(sourceCode, 'file.tsx');
 
 for (const imp of imports) {
-    const category = categorizeImport(imp.source);
-    console.log(`${imp.source} -> ${category}`);
-    // 'react' -> 'package'
+    const info = categorizeImport(imp.source);
+    // info: { isRelative, isExternal, packageName, isCssModule, isTypeFile }
+    console.log(`${imp.source} -> ${info.isRelative ? 'relative' : info.packageName}`);
+    // 'react' -> 'react'
     // './utils' -> 'relative'
-    // '@/components' -> 'alias'
 }
 ```
