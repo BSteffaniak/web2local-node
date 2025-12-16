@@ -1,3 +1,11 @@
+/**
+ * File Reconstruction Module for @web2local/scraper
+ *
+ * This module handles the reconstruction of original source files from extracted
+ * source map content. It provides functionality for writing files to disk, generating
+ * manifests, handling bundle stubs, and saving minified bundles as fallbacks.
+ */
+
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
@@ -6,35 +14,64 @@ import type { ExtractedSource } from '@web2local/types';
 import { shouldIncludeSource } from '@web2local/sourcemap';
 import type { BundleWithContent } from './scraper.js';
 
+/**
+ * Options for reconstructing source files from extracted content.
+ */
 export interface ReconstructionOptions {
-    /** The full output directory path (e.g., ./output/example.com) */
+    /** The full output directory path (e.g., ./output/example.com). */
     outputDir: string;
+    /** The name of the bundle being reconstructed, used to create a subdirectory. */
     bundleName: string;
 }
 
+/**
+ * Result of a source file reconstruction operation.
+ */
 export interface ReconstructionResult {
+    /** Number of files successfully written (includes unchanged files). */
     filesWritten: number;
+    /** Number of files skipped due to filtering or invalid paths. */
     filesSkipped: number;
+    /** Number of files that already existed with identical content. */
     filesUnchanged: number;
+    /** Error messages for any files that failed to write. */
     errors: string[];
+    /** The full path where files were written. */
     outputPath: string;
 }
 
+/**
+ * Manifest file that summarizes an extraction operation.
+ */
 export interface Manifest {
+    /** ISO timestamp of when extraction was performed. */
     extractedAt: string;
+    /** The original URL that was scraped. */
     sourceUrl: string;
+    /** Information about each bundle that was processed. */
     bundles: BundleManifest[];
+    /** Total number of files extracted across all bundles. */
     totalFiles: number;
+    /** Aggregate statistics about the extracted files. */
     stats: {
+        /** Count of files by file extension. */
         byExtension: Record<string, number>;
+        /** Count of files by top-level directory. */
         byDirectory: Record<string, number>;
     };
 }
 
+/**
+ * Manifest entry for a single bundle's extraction results.
+ */
 export interface BundleManifest {
+    /** The URL of the JavaScript or CSS bundle. */
     bundleUrl: string;
+    /** The URL of the source map used for extraction. */
     sourceMapUrl: string;
+    /** Number of source files extracted from this bundle. */
     filesExtracted: number;
+    /** List of relative paths for all extracted files. */
     files: string[];
 }
 
@@ -70,7 +107,15 @@ async function fileExistsWithSameContent(
 
 /**
  * Reconstructs the original file structure from extracted sources.
- * Skips writing files that already exist with the same content.
+ *
+ * Writes each extracted source file to disk, creating the necessary directory
+ * structure. Skips files that are filtered out (e.g., node_modules) or have
+ * unsafe paths. Also skips writing files that already exist with identical
+ * content to avoid unnecessary disk writes.
+ *
+ * @param files - The extracted source files to write
+ * @param options - Configuration including output directory and bundle name
+ * @returns Statistics about the reconstruction including counts and errors
  */
 export async function reconstructSources(
     files: readonly ExtractedSource[],
@@ -124,8 +169,13 @@ export async function reconstructSources(
 
 /**
  * Sanitizes a path to prevent directory traversal attacks and normalize it.
- * Resolves `..` segments and removes leading slashes/dots.
- * Returns null if the result would be empty.
+ *
+ * Resolves `..` segments, removes leading slashes/dots, strips null bytes,
+ * and replaces invalid filename characters with underscores. Prevents paths
+ * from escaping the base directory.
+ *
+ * @param path - The potentially unsafe path to sanitize
+ * @returns The sanitized path, or null if the result would be empty
  */
 export function sanitizePath(path: string): string | null {
     // Remove any null bytes
@@ -159,7 +209,15 @@ export function sanitizePath(path: string): string | null {
 }
 
 /**
- * Generates a manifest file summarizing what was extracted
+ * Generates a manifest file summarizing what was extracted.
+ *
+ * Creates a `manifest.json` file in the output directory containing metadata
+ * about the extraction, including timestamps, bundle information, file counts,
+ * and aggregate statistics by file extension and directory.
+ *
+ * @param outputDir - The directory where the manifest will be written
+ * @param sourceUrl - The original URL that was scraped
+ * @param bundles - Information about each processed bundle
  */
 export async function writeManifest(
     outputDir: string,
@@ -200,7 +258,20 @@ export async function writeManifest(
 }
 
 /**
- * Gets the bundle name from a URL for organizing output
+ * Gets the bundle name from a URL for organizing output.
+ *
+ * Extracts a meaningful name from a bundle URL by combining the parent
+ * directory with the filename (without extension). This helps maintain
+ * uniqueness when multiple bundles have the same filename.
+ *
+ * @param bundleUrl - The full URL of the bundle
+ * @returns A filesystem-safe bundle name derived from the URL path
+ *
+ * @example
+ * ```typescript
+ * getBundleName('https://example.com/assets/main-abc123.js');
+ * // Returns: 'assets/main-abc123'
+ * ```
  */
 export function getBundleName(bundleUrl: string): string {
     const url = new URL(bundleUrl);
@@ -226,23 +297,35 @@ export function getBundleName(bundleUrl: string): string {
 }
 
 /**
- * Result of saving minified bundles
+ * Result of saving a minified bundle to disk.
  */
 export interface SavedBundle {
+    /** The original URL of the bundle. */
     url: string;
+    /** The local filesystem path where the bundle was saved. */
     localPath: string;
+    /** The type of bundle (script for JS, stylesheet for CSS). */
     type: 'script' | 'stylesheet';
+    /** The size of the bundle content in bytes. */
     size: number;
 }
 
 /**
  * Saves minified bundles to disk when no source maps are available.
- * This is a fallback mode that preserves the original minified files.
+ *
+ * This is a fallback mode that preserves the original minified files in a
+ * `_bundles` subdirectory. The original URL path structure is maintained
+ * within the bundles directory. Files that already exist with identical
+ * content are not rewritten.
+ *
+ * @param bundlesWithoutMaps - The bundles to save along with their content
+ * @param options - Configuration containing the output directory path
+ * @returns The list of saved bundles with their local paths and any errors
  */
 export async function saveBundles(
     bundlesWithoutMaps: BundleWithContent[],
     options: {
-        /** The full output directory path (e.g., ./output/example.com) */
+        /** The full output directory path (e.g., ./output/example.com). */
         outputDir: string;
     },
 ): Promise<{ saved: SavedBundle[]; errors: string[] }> {
@@ -290,23 +373,26 @@ export async function saveBundles(
 }
 
 /**
- * Options for generating bundle stub entry point
+ * Options for generating bundle stub entry points.
  */
 export interface BundleStubOptions {
-    /** The full output directory path (e.g., ./output/example.com) */
+    /** The full output directory path (e.g., ./output/example.com). */
     outputDir: string;
-    /** Bundles saved to _bundles/ (no source maps available) */
+    /** Bundles saved to _bundles/ (no source maps available). */
     savedBundles: SavedBundle[];
-    /** Bundles that were extracted from source maps (to include re-exports) */
+    /** Bundles that were extracted from source maps (to include re-exports). */
     extractedBundles?: Array<{ bundleName: string; entryPoint?: string }>;
 }
 
 /**
- * Result of generating bundle stubs
+ * Result of generating bundle stub entry points.
  */
 export interface BundleStubResult {
+    /** Number of stub files generated. */
     stubsGenerated: number;
+    /** Path to the main entry point file. */
     entryPointPath: string;
+    /** Error messages for any failures during generation. */
     errors: string[];
 }
 
@@ -350,7 +436,12 @@ async function detectBundleEntryPoint(
  * extracted source entry points.
  *
  * This is used as a fallback when source maps are not available, creating
- * a project structure that can still be built/modified.
+ * a project structure that can still be built/modified. The generated stub
+ * creates a `src/index.ts` file that re-exports from extracted bundles and
+ * imports minified bundles without source maps.
+ *
+ * @param options - Configuration including output directory, saved bundles, and extracted bundles
+ * @returns Information about the generated stubs including the entry point path
  */
 export async function generateBundleStubs(
     options: BundleStubOptions,
