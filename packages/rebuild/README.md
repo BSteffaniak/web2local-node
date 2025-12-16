@@ -69,8 +69,8 @@ import { analyzeProject } from '@web2local/rebuild';
 
 const config = await analyzeProject('./my-project');
 console.log(config.framework); // 'react'
-console.log(config.entryPoints); // [{ path: 'src/main.tsx', type: 'main' }]
-console.log(config.aliases); // [{ pattern: '@/*', target: './src/*' }]
+console.log(config.entryPoints); // [{ path: 'src/main.tsx', framework: 'react', ... }]
+console.log(config.aliases); // [{ alias: '@/*', path: './src/*' }]
 ```
 
 ### Lower-Level Functions
