@@ -23,7 +23,28 @@ export interface FileExports {
 
 /**
  * Extracts exports from source code using SWC's parser.
- * This is a robust, AST-based approach that handles all export patterns correctly.
+ *
+ * This is a robust, AST-based approach that handles all export patterns correctly,
+ * including named exports, default exports, type exports, and destructured exports.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax (e.g., '.tsx' enables JSX)
+ * @returns Object containing named exports, type exports, and default export information
+ *
+ * @example
+ * ```typescript
+ * const exports = extractExportsFromSource(`
+ *   export const foo = 1;
+ *   export function bar() {}
+ *   export type Baz = string;
+ *   export default class MyComponent {}
+ * `, 'module.ts');
+ *
+ * // exports.named === ['foo', 'bar']
+ * // exports.types === ['Baz']
+ * // exports.hasDefault === true
+ * // exports.defaultName === 'MyComponent'
+ * ```
  */
 export function extractExportsFromSource(
     sourceCode: string,

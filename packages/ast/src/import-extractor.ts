@@ -33,6 +33,7 @@ export interface ImportDeclarationInfo {
 
 /**
  * Extracts import information from source code using SWC's parser.
+ *
  * This is more robust than regex-based approaches and handles:
  * - import X from 'mod'
  * - import { a, b } from 'mod'
@@ -42,6 +43,23 @@ export interface ImportDeclarationInfo {
  * - import type { X } from 'mod'
  * - Dynamic imports: import('mod')
  * - require('mod')
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax (e.g., '.tsx' enables JSX)
+ * @returns Array of import declarations found in the source code
+ *
+ * @example
+ * ```typescript
+ * const imports = extractImportsFromSource(`
+ *   import React from 'react';
+ *   import { useState, useEffect } from 'react';
+ *   import type { FC } from 'react';
+ * `, 'component.tsx');
+ *
+ * // imports[0].source === 'react'
+ * // imports[1].namedImports === ['useState', 'useEffect']
+ * // imports[2].isTypeOnly === true
+ * ```
  */
 export function extractImportsFromSource(
     sourceCode: string,
@@ -204,7 +222,22 @@ function findDynamicImports(
 }
 
 /**
- * Categorizes an import source path
+ * Categorizes an import source path into relative/external and detects special file types.
+ *
+ * @param source - The import source path (e.g., './Button', 'react', '@scope/package')
+ * @returns An object describing the import category and extracted metadata
+ *
+ * @example
+ * ```typescript
+ * categorizeImport('./Button');
+ * // { isRelative: true, isExternal: false, packageName: null, isCssModule: false, isTypeFile: false }
+ *
+ * categorizeImport('@fp/sarsaparilla');
+ * // { isRelative: false, isExternal: true, packageName: '@fp/sarsaparilla', isCssModule: false, isTypeFile: false }
+ *
+ * categorizeImport('./styles.module.css');
+ * // { isRelative: true, isExternal: false, packageName: null, isCssModule: true, isTypeFile: false }
+ * ```
  */
 export function categorizeImport(source: string): {
     isRelative: boolean;
@@ -241,7 +274,11 @@ export function categorizeImport(source: string): {
 }
 
 /**
- * Node.js built-in modules that should be skipped
+ * Set of Node.js built-in module names.
+ *
+ * This includes core modules like 'fs', 'path', 'http', etc. that are
+ * available in Node.js without installation. Use {@link isNodeBuiltin}
+ * to check if a module name is a built-in.
  */
 export const NODE_BUILTINS = new Set([
     'fs',
@@ -286,7 +323,19 @@ export const NODE_BUILTINS = new Set([
 ]);
 
 /**
- * Check if a package name is a Node.js built-in
+ * Checks if a package name is a Node.js built-in module.
+ *
+ * Handles both regular names ('fs') and prefixed names ('node:fs').
+ *
+ * @param packageName - The package/module name to check
+ * @returns True if the package is a Node.js built-in module
+ *
+ * @example
+ * ```typescript
+ * isNodeBuiltin('fs');       // true
+ * isNodeBuiltin('node:fs');  // true
+ * isNodeBuiltin('react');    // false
+ * ```
  */
 export function isNodeBuiltin(packageName: string): boolean {
     return NODE_BUILTINS.has(packageName) || packageName.startsWith('node:');
