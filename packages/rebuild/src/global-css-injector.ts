@@ -51,7 +51,15 @@ export interface GlobalCssInjectionOptions {
 }
 
 /**
- * Generates the content for _captured-styles.css
+ * Generates the content for the _captured-styles.css file.
+ *
+ * Creates CSS content that imports all captured CSS bundles using @import
+ * directives with appropriate relative paths.
+ *
+ * @param bundles - Array of captured CSS bundles to include
+ * @param projectDir - Project root directory
+ * @param capturedStylesDir - Directory where _captured-styles.css will be written
+ * @returns Generated CSS content with @import statements
  */
 export function generateCapturedStylesContent(
     bundles: CapturedCssBundle[],
@@ -92,7 +100,13 @@ export function generateCapturedStylesContent(
 
 /**
  * Injects a CSS import at the top of a source file.
- * Handles both ESM and CommonJS style files.
+ *
+ * Handles both ESM and CommonJS style files. Finds the appropriate
+ * insertion point after any hashbang, "use strict", or existing imports.
+ *
+ * @param sourceContent - Original file content
+ * @param cssImportPath - Relative path to the CSS file to import
+ * @returns Modified file content with the injected import
  */
 export function injectCssImport(
     sourceContent: string,
@@ -177,6 +191,9 @@ export function injectCssImport(
  * This is used as a fallback when CSS source maps are not available.
  * It creates a _captured-styles.css file that imports all captured bundles,
  * then injects an import of this file into the entry point.
+ *
+ * @param options - Configuration options for the injection
+ * @returns Result object with injection status, paths, and any errors
  */
 export async function injectGlobalCss(
     options: GlobalCssInjectionOptions,
@@ -287,6 +304,11 @@ export async function injectGlobalCss(
  * - There are CSS stubs that weren't matched to captured bundles
  * - There are captured CSS bundles that weren't used
  * - The unused bundles are significant (not just tiny utility files)
+ *
+ * @param unmatchedStubs - CSS stub files that weren't matched to bundles
+ * @param unusedBundles - Captured CSS bundles that weren't used
+ * @param minBundleSize - Minimum bundle size in bytes to be considered significant (default: 1000)
+ * @returns True if global CSS injection should be performed
  */
 export function needsGlobalCssInjection(
     unmatchedStubs: string[],

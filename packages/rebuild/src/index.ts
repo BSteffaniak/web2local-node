@@ -90,12 +90,16 @@ export {
 } from './global-css-injector.js';
 
 /**
- * Analyze a project and return its configuration
+ * Analyzes a project directory and returns its configuration.
  *
- * @param projectDir - Project root directory
+ * Detects entry points, framework, path aliases, environment variables,
+ * TypeScript usage, SASS/CSS modules, and bundle directories.
+ *
+ * @param projectDir - Project root directory containing package.json
  * @param sourceFiles - Optional source files for accurate alias detection.
  *                      When provided, enables detection of import aliases like
  *                      'sarsaparilla' -> '@fp/sarsaparilla' by analyzing actual imports.
+ * @returns The detected project configuration including entry points, framework, and aliases
  */
 export async function analyzeProject(
     projectDir: string,
@@ -137,7 +141,13 @@ export async function analyzeProject(
 }
 
 /**
- * Get bundle directories in the project
+ * Gets bundle directories in the project.
+ *
+ * Scans the project root for directories that may contain source bundles,
+ * excluding node_modules, hidden directories, and build output directories.
+ *
+ * @param projectDir - Project root directory to scan
+ * @returns Array of bundle directory names relative to project root
  */
 async function getBundleDirectories(projectDir: string): Promise<string[]> {
     const bundleDirs: string[] = [];
@@ -170,7 +180,10 @@ async function getBundleDirectories(projectDir: string): Promise<string[]> {
 }
 
 /**
- * Check if project uses TypeScript
+ * Checks if the project uses TypeScript.
+ *
+ * @param projectDir - Project root directory
+ * @returns True if tsconfig.json exists in the project root
  */
 async function hasTypeScript(projectDir: string): Promise<boolean> {
     try {
@@ -182,9 +195,16 @@ async function hasTypeScript(projectDir: string): Promise<boolean> {
 }
 
 /**
- * Read server manifest and check if global CSS injection is needed.
+ * Reads server manifest and performs global CSS injection if needed.
+ *
  * The server manifest is populated during capture with info about
- * unmatched CSS stubs and unused bundles.
+ * unmatched CSS stubs and unused bundles. This function checks if
+ * injection is needed and performs it.
+ *
+ * @param projectDir - Project root directory
+ * @param entryPoints - Detected entry points in the project
+ * @param onProgress - Optional callback for progress updates
+ * @returns Result of the CSS injection operation
  */
 async function checkAndInjectGlobalCss(
     projectDir: string,
@@ -257,12 +277,19 @@ async function checkAndInjectGlobalCss(
 }
 
 /**
- * Prepare a project for rebuilding
+ * Prepares a project for rebuilding.
  *
- * This generates all necessary configuration files:
- * - vite.config.ts
- * - index.html
+ * Generates all necessary configuration files:
+ * - vite.config.ts - Vite build configuration
+ * - index.html - Entry HTML for Vite
+ * - .env.example - Environment variable template (if env vars detected)
  * - Updates package.json with build dependencies
+ * - Reconstructs module index files
+ * - Generates CSS class name mappings
+ * - Injects global CSS if needed
+ *
+ * @param options - Configuration options for the rebuild preparation
+ * @returns Result object containing success status, generated files, and any warnings/errors
  */
 export async function prepareRebuild(
     options: PrepareRebuildOptions,
@@ -515,9 +542,14 @@ export async function prepareRebuild(
 }
 
 /**
- * Prepare and build a project
+ * Prepares and builds a project.
  *
- * This is the main entry point for the rebuild system
+ * This is the main entry point for the rebuild system. It first prepares
+ * the project (generating config files, updating package.json), then
+ * runs the actual build process.
+ *
+ * @param options - Configuration options for the build
+ * @returns Result object containing success status, output directory, bundle list, and any warnings/errors
  */
 export async function rebuild(options: BuildOptions): Promise<BuildResult> {
     const { projectDir, onProgress, verbose } = options;
@@ -549,7 +581,13 @@ export async function rebuild(options: BuildOptions): Promise<BuildResult> {
 }
 
 /**
- * Check if a project is ready for rebuilding
+ * Checks if a project is ready for rebuilding.
+ *
+ * Verifies that all required configuration files exist (package.json,
+ * vite.config.ts, index.html).
+ *
+ * @param projectDir - Project root directory to check
+ * @returns Object containing ready status and list of missing files
  */
 export async function isReadyForRebuild(projectDir: string): Promise<{
     ready: boolean;
@@ -575,7 +613,13 @@ export async function isReadyForRebuild(projectDir: string): Promise<{
 }
 
 /**
- * Get rebuild status for a project
+ * Gets the rebuild status for a project.
+ *
+ * Returns information about whether the project is prepared for building,
+ * whether a build output exists, and how many entry points were detected.
+ *
+ * @param projectDir - Project root directory to check
+ * @returns Status object with prepared state, built state, and entry point count
  */
 export async function getRebuildStatus(projectDir: string): Promise<{
     prepared: boolean;

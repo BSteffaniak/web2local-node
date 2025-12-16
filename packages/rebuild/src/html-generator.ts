@@ -33,7 +33,13 @@ export interface AssetMapping {
 }
 
 /**
- * Extract metadata from captured HTML if available
+ * Extracts metadata from captured HTML if available.
+ *
+ * Looks for captured HTML in _server/static/index.html or project root
+ * and extracts title, language, and useful head content (meta tags, icons).
+ *
+ * @param projectDir - Project root directory
+ * @returns Object with extracted title, headContent, and lang attributes
  */
 export async function extractHtmlMetadata(
     projectDir: string,
@@ -109,7 +115,13 @@ export async function extractHtmlMetadata(
 }
 
 /**
- * Generate index.html content for Vite
+ * Generates index.html content for Vite.
+ *
+ * Creates a minimal HTML document with the specified options,
+ * including mount element, entry script, and optional head content.
+ *
+ * @param options - HTML generation options
+ * @returns Complete HTML document as a string
  */
 export function generateHtml(options: HtmlOptions): string {
     const {
@@ -143,7 +155,16 @@ export function generateHtml(options: HtmlOptions): string {
 }
 
 /**
- * Generate HTML based on detected entry points
+ * Generates HTML based on detected entry points.
+ *
+ * Uses metadata from captured HTML (if available) combined with
+ * entry point information to create the final HTML document.
+ *
+ * @param projectDir - Project root directory
+ * @param entryPoints - Detected entry points (uses first/highest confidence)
+ * @param defaultTitle - Default page title if not found in captured HTML
+ * @returns Generated HTML document as a string
+ * @throws {Error} When no entry points are detected
  */
 export async function generateHtmlFromEntryPoints(
     projectDir: string,
@@ -172,7 +193,16 @@ export async function generateHtmlFromEntryPoints(
 }
 
 /**
- * Write index.html to the project directory
+ * Writes index.html to the project directory.
+ *
+ * Generates HTML from entry points and writes it to the project root.
+ * Skips writing if a Vite-compatible HTML already exists (unless overwrite=true).
+ *
+ * @param projectDir - Project root directory
+ * @param entryPoints - Detected entry points
+ * @param defaultTitle - Optional default page title
+ * @param overwrite - Whether to overwrite existing HTML (default: false)
+ * @returns True if HTML was written, false if skipped
  */
 export async function writeHtml(
     projectDir: string,
@@ -212,7 +242,14 @@ export async function writeHtml(
 }
 
 /**
- * Generate HTML for multiple entry points (multi-page app)
+ * Generates HTML for multiple entry points (multi-page app).
+ *
+ * Creates separate HTML files for each entry point, using the entry
+ * file name as the HTML filename (with index renamed to main).
+ *
+ * @param projectDir - Project root directory
+ * @param entryPoints - Array of detected entry points
+ * @returns Map of HTML filenames to their content
  */
 export async function generateMultiPageHtml(
     projectDir: string,

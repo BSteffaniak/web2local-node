@@ -16,7 +16,13 @@ import type {
 import { preserveHtmlIfServerRendered } from './html-generator.js';
 
 /**
- * Detect which package manager to use based on lock files
+ * Detects which package manager to use based on lock files.
+ *
+ * Checks for pnpm-lock.yaml, yarn.lock, and package-lock.json in order
+ * of preference. Defaults to pnpm if no lock file is found.
+ *
+ * @param projectDir - Project root directory to check
+ * @returns The detected package manager
  */
 async function detectPackageManager(
     projectDir: string,
@@ -42,7 +48,11 @@ async function detectPackageManager(
 }
 
 /**
- * Resolve the package manager to use, handling 'auto' detection
+ * Resolves the package manager to use, handling 'auto' detection.
+ *
+ * @param projectDir - Project root directory
+ * @param explicit - Explicitly specified package manager or 'auto' for detection
+ * @returns The resolved package manager to use
  */
 async function resolvePackageManager(
     projectDir: string,
@@ -55,7 +65,14 @@ async function resolvePackageManager(
 }
 
 /**
- * Run a command and capture output
+ * Runs a shell command and captures its output.
+ *
+ * @param command - The command to execute
+ * @param args - Arguments to pass to the command
+ * @param cwd - Working directory for the command
+ * @param onProgress - Optional callback for each output line
+ * @param onOutput - Optional callback with stream type (stdout/stderr)
+ * @returns Object containing exit code, stdout, and stderr
  */
 async function runCommand(
     command: string,
@@ -108,7 +125,13 @@ async function runCommand(
 }
 
 /**
- * Parse build errors from output
+ * Parses build errors from command output.
+ *
+ * Detects various error patterns including missing modules, TypeScript errors,
+ * missing type declarations, undefined environment variables, and syntax errors.
+ *
+ * @param output - Build command output (stdout + stderr combined)
+ * @returns Array of parsed recoverable errors with type, message, and suggested fixes
  */
 export function parseBuildErrors(output: string): RecoverableError[] {
     const errors: RecoverableError[] = [];
@@ -169,7 +192,16 @@ export function parseBuildErrors(output: string): RecoverableError[] {
 }
 
 /**
- * Install dependencies
+ * Installs project dependencies using the appropriate package manager.
+ *
+ * Automatically detects or uses the specified package manager to install
+ * dependencies defined in package.json.
+ *
+ * @param projectDir - Project root directory containing package.json
+ * @param onProgress - Optional callback for progress messages
+ * @param explicitPackageManager - Explicitly specified package manager or 'auto' for detection
+ * @param onOutput - Optional callback for command output with stream type
+ * @returns Object with success status, optional error message, and the package manager used
  */
 export async function installDependencies(
     projectDir: string,
@@ -213,7 +245,16 @@ export async function installDependencies(
 }
 
 /**
- * Run the Vite build
+ * Runs the Vite build process.
+ *
+ * Executes the build script using the appropriate package manager and
+ * captures any build errors for potential recovery.
+ *
+ * @param projectDir - Project root directory with vite.config.ts
+ * @param onProgress - Optional callback for progress messages
+ * @param explicitPackageManager - Explicitly specified package manager or 'auto' for detection
+ * @param onOutput - Optional callback for command output with stream type
+ * @returns Object with success status, combined output, and parsed errors
  */
 export async function runViteBuild(
     projectDir: string,
@@ -248,7 +289,13 @@ export async function runViteBuild(
 }
 
 /**
- * Get list of built files
+ * Gets a list of all files in the build output directory.
+ *
+ * Recursively scans the output directory and returns relative paths
+ * to all generated files.
+ *
+ * @param outputDir - Build output directory to scan
+ * @returns Array of relative file paths in the output directory
  */
 async function getBuiltFiles(outputDir: string): Promise<string[]> {
     const files: string[] = [];
@@ -276,7 +323,14 @@ async function getBuiltFiles(outputDir: string): Promise<string[]> {
 }
 
 /**
- * Run the full build process
+ * Runs the full build process including dependency installation.
+ *
+ * Installs dependencies, runs Vite build, and optionally attempts
+ * error recovery. After a successful build, preserves server-rendered
+ * HTML if available.
+ *
+ * @param options - Build configuration options
+ * @returns Build result with success status, output directory, bundles, and any warnings/errors
  */
 export async function runBuild(options: BuildOptions): Promise<BuildResult> {
     const {
@@ -411,7 +465,10 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
 }
 
 /**
- * Check if a build output exists
+ * Checks if a build output exists for the project.
+ *
+ * @param projectDir - Project root directory
+ * @returns True if the _rebuilt directory exists and contains files
  */
 export async function hasBuildOutput(projectDir: string): Promise<boolean> {
     try {
