@@ -18,26 +18,33 @@ import type { BoxContent } from './box-renderer.js';
 import { renderBox, truncate, visibleLength } from './box-renderer.js';
 
 /**
- * Number of lines each worker occupies in the TUI (main line + asset activity line)
+ * Number of lines each worker occupies in the TUI (main line + asset activity line).
  */
 export const LINES_PER_WORKER = 2;
 
 /**
- * Fixed lines in TUI chrome (top border, stats, separator after stats, separator before logs, bottom border)
- * Note: separator before logs is only shown when recentLogsHeight \> 0
+ * Fixed lines in TUI chrome (top border, stats, separator after stats, separator before logs, bottom border).
+ * Note: separator before logs is only shown when recentLogsHeight is greater than 0.
+ * @internal
  */
 const TUI_CHROME_LINES = 4; // top border + stats + separator after stats + bottom border
-const TUI_LOGS_SEPARATOR = 1; // Additional separator before logs section
+/**
+ * Additional separator line before logs section.
+ * @internal
+ */
+const TUI_LOGS_SEPARATOR = 1;
 
 /**
  * Fixed height for flush progress section.
  * Active items shown dynamically based on available space after completed phases.
  * Using a fixed height prevents layout jumps when transitioning between phases.
+ * @internal
  */
 const FLUSH_SECTION_HEIGHT = 10;
 
 /**
- * Worker phase types - matches the capture module phases
+ * Worker phase types representing the various stages of page capture.
+ * These match the phases emitted by the capture module.
  */
 export type WorkerPhase =
     | 'navigating'
