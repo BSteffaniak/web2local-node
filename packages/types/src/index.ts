@@ -250,14 +250,18 @@ export type SourceMap = SourceMapV3 | IndexMapV3;
 // ============================================================================
 
 /**
- * A source file extracted from a source map
+ * A source file extracted from a source map.
+ *
+ * Represents an individual source file whose content was embedded in
+ * a source map's `sourcesContent` array and has been extracted for
+ * reconstruction.
  */
 export interface ExtractedSource {
-    /** Normalized path (after webpack://, vite, etc. processing) */
+    /** Normalized file path after processing webpack://, vite, and similar URL schemes. */
     readonly path: string;
-    /** Original source content */
+    /** The original source code content from the source map. */
     readonly content: string;
-    /** Original path before normalization (for debugging) */
+    /** Original path before normalization, useful for debugging path resolution issues. */
     readonly originalPath?: string;
 }
 
