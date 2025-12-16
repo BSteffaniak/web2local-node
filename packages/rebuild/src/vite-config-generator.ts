@@ -31,7 +31,10 @@ interface WorkspacePackage {
 }
 
 /**
- * Check if a path exists
+ * Checks if a path exists on the filesystem.
+ *
+ * @param path - File or directory path to check
+ * @returns True if the path exists
  */
 async function pathExists(path: string): Promise<boolean> {
     try {
@@ -43,7 +46,10 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Get the Vite plugin import for a framework
+ * Gets the Vite plugin import statement and usage for a framework.
+ *
+ * @param framework - The detected framework
+ * @returns Object with import statement and plugin call, or null for unknown frameworks
  */
 function getFrameworkPlugin(
     framework: Framework,
@@ -80,7 +86,10 @@ function getFrameworkPlugin(
 }
 
 /**
- * Get the Vite plugin package name for a framework
+ * Gets the Vite plugin package name for a framework.
+ *
+ * @param framework - The detected framework
+ * @returns The npm package name for the Vite plugin, or null for unknown frameworks
  */
 export function getFrameworkPluginPackage(framework: Framework): string | null {
     switch (framework) {
@@ -100,13 +109,16 @@ export function getFrameworkPluginPackage(framework: Framework): string | null {
 }
 
 /**
- * Convert alias mappings to Vite resolve.alias format
+ * Converts alias mappings to Vite resolve.alias format.
  *
  * IMPORTANT: Aliases must be sorted by specificity (most specific first).
  * Vite's alias resolution is prefix-based and matches in order.
  * Without proper sorting, 'sarsaparilla' would match before 'sarsaparilla/auth',
  * causing 'sarsaparilla/auth' to resolve to 'sarsaparilla-path/auth' instead
  * of the correct dedicated path.
+ *
+ * @param aliases - Array of alias mappings
+ * @returns JavaScript object literal string for Vite's resolve.alias config
  */
 function generateAliasConfig(aliases: AliasMapping[]): string {
     if (aliases.length === 0) {
@@ -137,10 +149,13 @@ function generateAliasConfig(aliases: AliasMapping[]): string {
 }
 
 /**
- * Generate environment variable definitions for Vite (function-based config)
+ * Generates environment variable definitions for Vite (function-based config).
  *
  * Vite's define option requires values to be valid JSON or JS expressions.
  * This version uses loadEnv() to support .env files at runtime.
+ *
+ * @param envVariables - Array of detected environment variables
+ * @returns JavaScript object literal string for Vite's define config
  */
 function generateDefineConfigWithEnv(envVariables: EnvVariable[]): string {
     const defines: string[] = [
@@ -158,7 +173,12 @@ function generateDefineConfigWithEnv(envVariables: EnvVariable[]): string {
 }
 
 /**
- * Generate a .env.example file content listing all detected environment variables
+ * Generates a .env.example file content listing all detected environment variables.
+ *
+ * Creates a template file with comments showing where each variable is used.
+ *
+ * @param envVariables - Array of detected environment variables
+ * @returns Content for the .env.example file
  */
 export function generateEnvExample(envVariables: EnvVariable[]): string {
     const lines = [
@@ -181,7 +201,18 @@ export function generateEnvExample(envVariables: EnvVariable[]): string {
 }
 
 /**
- * Generate vite.config.ts content
+ * Generates vite.config.ts content.
+ *
+ * Creates a complete Vite configuration file with:
+ * - Framework-specific plugins
+ * - Path alias resolution
+ * - Environment variable definitions
+ * - Virtual module stub plugins
+ * - CSS module stub plugins
+ * - Build optimization settings
+ *
+ * @param options - Vite configuration options
+ * @returns Complete vite.config.ts file content
  */
 export function generateViteConfig(options: ViteConfigOptions): string {
     const {
@@ -553,10 +584,13 @@ export default defineConfig(({ mode }) => {
 }
 
 /**
- * Detect workspace packages by scanning directory structure.
+ * Detects workspace packages by scanning directory structure.
  *
  * Looks for directories that appear to be packages (have src/, index.ts, etc.)
  * that are NOT in node_modules and are imported by other code.
+ *
+ * @param projectDir - Project root directory to scan
+ * @returns Array of detected workspace packages with names and paths
  */
 async function detectWorkspacePackages(
     projectDir: string,
@@ -623,7 +657,12 @@ async function detectWorkspacePackages(
 }
 
 /**
- * Check if a directory has an index file (index.ts, index.tsx, index.js, etc.)
+ * Checks if a directory has an index file (index.ts, index.tsx, index.js, etc.).
+ *
+ * Also checks for index files in the src/ subdirectory.
+ *
+ * @param dir - Directory to check
+ * @returns True if an index file exists
  */
 async function hasIndexFile(dir: string): Promise<boolean> {
     const indexFiles = ['index.ts', 'index.tsx', 'index.js', 'index.jsx'];
@@ -635,15 +674,13 @@ async function hasIndexFile(dir: string): Promise<boolean> {
 }
 
 /**
- * Common package names that should NEVER be aliased.
- * These are real npm packages that happen to also exist as scoped versions.
- */
-
-/**
- * Detect subpath exports for an aliased package.
+ * Detects subpath exports for an aliased package.
  *
  * Scans the package directory for subdirectories that could be used as subpath imports.
  * For example, if sarsaparilla has src/auth/, we should allow imports like sarsaparilla/auth.
+ *
+ * @param packagePath - Absolute path to the package directory
+ * @returns Array of subpath names (e.g., ["auth", "legacy"])
  */
 async function detectSubpathExports(packagePath: string): Promise<string[]> {
     const subpaths: string[] = [];
@@ -965,8 +1002,14 @@ export async function extractAliasesFromTsConfig(
 }
 
 /**
- * Resolve the actual location of a subpath export within a package.
- * Checks src/, root, and file variants.
+ * Resolves the actual location of a subpath export within a package.
+ *
+ * Checks src/, root, and file variants (.ts, .tsx, .js, .jsx).
+ *
+ * @param absolutePackagePath - Absolute path to the package directory
+ * @param relativePackagePath - Relative path from project root
+ * @param subpath - Subpath name to resolve
+ * @returns Relative path to the subpath, or null if not found
  */
 async function resolveSubpathLocation(
     absolutePackagePath: string,
@@ -1004,7 +1047,15 @@ async function resolveSubpathLocation(
 }
 
 /**
- * Write vite.config.ts to the project directory
+ * Writes vite.config.ts to the project directory.
+ *
+ * Generates the configuration file and writes it to disk. Skips writing
+ * if the file already exists (unless overwrite=true).
+ *
+ * @param projectDir - Project root directory
+ * @param options - Vite configuration options
+ * @param overwrite - Whether to overwrite existing file (default: false)
+ * @returns True if file was written, false if skipped
  */
 export async function writeViteConfig(
     projectDir: string,

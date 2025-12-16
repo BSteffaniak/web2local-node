@@ -67,7 +67,13 @@ const ENTRY_FILE_NAMES = [
 const ENTRY_DIRECTORIES = ['src', 'dev', 'app', 'client', 'pages', ''];
 
 /**
- * Detect the framework from file content
+ * Detects the frontend framework from file content.
+ *
+ * Analyzes import statements and JSX patterns to determine which
+ * framework the file uses.
+ *
+ * @param content - File content to analyze
+ * @returns The detected framework, or 'unknown' if not recognized
  */
 function detectFrameworkFromContent(content: string): Framework {
     // Check imports first
@@ -96,7 +102,14 @@ function detectFrameworkFromContent(content: string): Framework {
 }
 
 /**
- * Try to extract mount element ID from content
+ * Extracts the DOM mount element ID from file content.
+ *
+ * Looks for framework-specific mount patterns (e.g., createRoot,
+ * Vue mount, Svelte target) and generic getElementById calls.
+ *
+ * @param content - File content to analyze
+ * @param framework - The detected framework to use appropriate patterns
+ * @returns The mount element ID (e.g., "root", "app"), or undefined if not found
  */
 function extractMountElement(
     content: string,
@@ -127,7 +140,10 @@ function extractMountElement(
 }
 
 /**
- * Check if file content contains a render/mount call
+ * Checks if file content contains a framework render/mount call.
+ *
+ * @param content - File content to check
+ * @returns True if the file contains any recognized framework render pattern
  */
 function hasRenderCall(content: string): boolean {
     const allPatterns = Object.values(FRAMEWORK_PATTERNS).flat();
@@ -135,7 +151,15 @@ function hasRenderCall(content: string): boolean {
 }
 
 /**
- * Recursively find all source files in a directory
+ * Recursively finds all source files in a directory.
+ *
+ * Scans for TypeScript and JavaScript files, excluding node_modules,
+ * hidden directories, and build outputs.
+ *
+ * @param dir - Directory to scan
+ * @param baseDir - Base directory for calculating relative paths
+ * @param maxDepth - Maximum recursion depth (default: 5)
+ * @returns Array of relative file paths
  */
 async function findSourceFiles(
     dir: string,
@@ -185,7 +209,13 @@ async function findSourceFiles(
 }
 
 /**
- * Get bundle directories in the project
+ * Gets bundle directories in the project.
+ *
+ * Scans for directories that contain source files, excluding
+ * node_modules, hidden directories, and build outputs.
+ *
+ * @param projectDir - Project root directory to scan
+ * @returns Array of bundle directory names
  */
 async function getBundleDirectories(projectDir: string): Promise<string[]> {
     const bundleDirs: string[] = [];
@@ -222,7 +252,12 @@ async function getBundleDirectories(projectDir: string): Promise<string[]> {
 }
 
 /**
- * Check if directory contains source files
+ * Checks if a directory contains source files.
+ *
+ * Recursively scans for .ts, .tsx, .js, or .jsx files.
+ *
+ * @param dir - Directory to check
+ * @returns True if the directory contains any source files
  */
 async function hasSourceFiles(dir: string): Promise<boolean> {
     try {
@@ -250,7 +285,16 @@ async function hasSourceFiles(dir: string): Promise<boolean> {
 }
 
 /**
- * Detect entry points in a project
+ * Detects entry points in a project.
+ *
+ * Scans the project to find where the application bootstraps using
+ * multiple detection strategies in order of confidence:
+ * 1. Files with explicit render/mount calls (highest confidence)
+ * 2. Main files (index.ts, main.ts) with framework imports
+ * 3. Any index/main file as fallback (lowest confidence)
+ *
+ * @param projectDir - Project root directory to scan
+ * @returns Array of detected entry points sorted by confidence (highest first)
  */
 export async function detectEntryPoints(
     projectDir: string,
@@ -424,7 +468,13 @@ export async function detectEntryPoints(
 }
 
 /**
- * Detect environment variables used in the project
+ * Detects environment variables used in the project.
+ *
+ * Scans source files for process.env.*, import.meta.env.*, and
+ * VITE_* patterns to identify environment variables the project uses.
+ *
+ * @param projectDir - Project root directory to scan
+ * @returns Array of detected environment variables with usage information
  */
 export async function detectEnvVariables(
     projectDir: string,
@@ -470,7 +520,13 @@ export async function detectEnvVariables(
 }
 
 /**
- * Detect the primary framework used in the project
+ * Detects the primary framework used in the project.
+ *
+ * First checks package.json dependencies, then falls back to
+ * scanning files for framework imports.
+ *
+ * @param projectDir - Project root directory
+ * @returns The detected framework, or 'unknown' if not recognized
  */
 export async function detectPrimaryFramework(
     projectDir: string,
@@ -504,7 +560,12 @@ export async function detectPrimaryFramework(
 }
 
 /**
- * Check if project uses SCSS/SASS
+ * Checks if the project uses SCSS/SASS.
+ *
+ * Scans for .scss and .sass files, and imports of .scss files.
+ *
+ * @param projectDir - Project root directory
+ * @returns True if the project uses SASS/SCSS
  */
 export async function usesSass(projectDir: string): Promise<boolean> {
     const files = await findSourceFiles(projectDir, projectDir);
@@ -529,7 +590,12 @@ export async function usesSass(projectDir: string): Promise<boolean> {
 }
 
 /**
- * Check if project uses CSS modules
+ * Checks if the project uses CSS modules.
+ *
+ * Scans for files with .module.css or .module.scss naming convention.
+ *
+ * @param projectDir - Project root directory
+ * @returns True if the project uses CSS modules
  */
 export async function usesCssModules(projectDir: string): Promise<boolean> {
     const files = await findSourceFiles(projectDir, projectDir);

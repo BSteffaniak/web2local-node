@@ -62,7 +62,13 @@ const CSS_MODULE_PATTERNS = [
 ];
 
 /**
- * Extract hashed class names from CSS content
+ * Extracts hashed CSS module class names from CSS content.
+ *
+ * Parses CSS content to find class names that match CSS module hash patterns,
+ * building a map from base class names to their hashed variants.
+ *
+ * @param cssContent - Raw CSS content to parse
+ * @returns Map of base class names to sets of their hashed variants
  */
 export function extractHashedClassNames(
     cssContent: string,
@@ -95,7 +101,13 @@ export function extractHashedClassNames(
 }
 
 /**
- * Check if a name is likely a CSS property rather than a class name
+ * Checks if a name is likely a CSS property rather than a class name.
+ *
+ * Filters out common CSS property names that might match the hash pattern
+ * but aren't actual class names.
+ *
+ * @param name - The name to check
+ * @returns True if the name matches a common CSS property
  */
 function isLikelyCssProperty(name: string): boolean {
     const cssProperties = new Set([
@@ -132,7 +144,14 @@ function isLikelyCssProperty(name: string): boolean {
 }
 
 /**
- * Parse CSS files from a directory and build class name mappings
+ * Parses CSS files from a directory and builds class name mappings.
+ *
+ * Reads each CSS file, extracts hashed class names, and merges them
+ * into a single class name map for the project.
+ *
+ * @param cssDir - Base directory containing CSS files
+ * @param cssFiles - Array of relative CSS file paths to parse
+ * @returns Complete class name map with all discovered mappings
  */
 export async function buildClassNameMap(
     cssDir: string,
@@ -176,7 +195,13 @@ export async function buildClassNameMap(
 }
 
 /**
- * Find CSS bundle files in the static directory
+ * Finds CSS bundle files in the static directory.
+ *
+ * Recursively scans for bundled CSS files (identified by hash patterns
+ * in filenames or location in navigation directories).
+ *
+ * @param staticDir - Static directory to scan for CSS bundles
+ * @returns Array of relative paths to CSS bundle files
  */
 export async function findCssBundles(staticDir: string): Promise<string[]> {
     const cssFiles: string[] = [];
@@ -218,7 +243,12 @@ export async function findCssBundles(staticDir: string): Promise<string[]> {
 }
 
 /**
- * Check if a CSS file appears to be a bundled/compiled CSS file
+ * Checks if a CSS file appears to be a bundled/compiled CSS file.
+ *
+ * Bundled CSS files typically have hash patterns in their filenames.
+ *
+ * @param filename - CSS filename to check
+ * @returns True if the filename indicates a bundled CSS file
  */
 function isBundledCss(filename: string): boolean {
     // Has hash pattern in filename (e.g., index-CPeWLd_6.css, sarsaparilla-CAVT8XC2.css)
@@ -226,7 +256,14 @@ function isBundledCss(filename: string): boolean {
 }
 
 /**
- * Generate a class name map and save it to the project directory
+ * Generates a class name map and saves it to the project directory.
+ *
+ * Scans for CSS bundles in _server/static, builds the class name mappings,
+ * and writes the result to _class-name-map.json.
+ *
+ * @param projectDir - Project root directory
+ * @param onVerbose - Optional callback for verbose logging
+ * @returns The generated class name map, or null if no CSS bundles found
  */
 export async function generateClassNameMapFile(
     projectDir: string,
@@ -267,7 +304,10 @@ export async function generateClassNameMapFile(
 }
 
 /**
- * Load an existing class name map from a project directory
+ * Loads an existing class name map from a project directory.
+ *
+ * @param projectDir - Project root directory containing _class-name-map.json
+ * @returns The loaded class name map, or null if not found or invalid
  */
 export async function loadClassNameMap(
     projectDir: string,
@@ -315,8 +355,13 @@ export function resolveClassName(
 }
 
 /**
- * Generate JavaScript code for the class name resolver
- * This is injected into the Vite config
+ * Generates JavaScript code for the class name resolver.
+ *
+ * Creates runtime code that can be injected into the Vite config
+ * to resolve base class names to their hashed equivalents.
+ *
+ * @param classNameMap - The class name map to embed in the generated code
+ * @returns JavaScript code string defining the resolver function
  */
 export function generateClassNameResolverCode(
     classNameMap: ClassNameMap,

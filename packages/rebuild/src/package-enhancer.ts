@@ -10,7 +10,11 @@ import { getFrameworkPluginPackage } from './vite-config-generator.js';
 import { isPublicNpmPackage } from '@web2local/analyzer';
 
 /**
- * Get build scripts for the project
+ * Gets build scripts for the project.
+ *
+ * Returns standard Vite build scripts for dev, build, preview, and typecheck.
+ *
+ * @returns Record of script names to their commands
  */
 function getBuildScripts(): Record<string, string> {
     return {
@@ -22,7 +26,13 @@ function getBuildScripts(): Record<string, string> {
 }
 
 /**
- * Read and parse package.json
+ * Reads and parses package.json.
+ *
+ * Returns a minimal package.json structure if the file doesn't exist
+ * or cannot be parsed.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @returns Parsed package.json contents
  */
 async function readPackageJson(
     packageJsonPath: string,
@@ -41,7 +51,7 @@ async function readPackageJson(
 }
 
 /**
- * Enhance package.json with build dependencies
+ * Enhances package.json with build dependencies.
  *
  * Only adds build tools that are actually needed:
  * - Vite: Always needed for rebuild
@@ -50,6 +60,9 @@ async function readPackageJson(
  * - Framework plugin: Based on detected framework
  *
  * All versions use 'latest' to avoid hardcoding potentially stale versions.
+ *
+ * @param options - Enhancement options including path, framework, and feature flags
+ * @returns Object with list of added dependencies and whether file was updated
  */
 export async function enhancePackageJson(
     options: PackageEnhanceOptions,
@@ -154,7 +167,10 @@ export async function enhancePackageJson(
 }
 
 /**
- * Check if package.json already has build dependencies
+ * Checks if package.json already has build dependencies.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @returns True if Vite is already in devDependencies
  */
 export async function hasBuildDependencies(
     packageJsonPath: string,
@@ -169,7 +185,15 @@ export async function hasBuildDependencies(
 }
 
 /**
- * Get missing dependencies that need to be installed
+ * Gets missing dependencies that need to be installed.
+ *
+ * Checks for required build tools (Vite, TypeScript, framework plugin, Sass)
+ * and returns any that are not yet in the package.json.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @param framework - The detected framework
+ * @param usesSass - Whether the project uses SASS/SCSS
+ * @returns Array of missing dependency package names
  */
 export async function getMissingDependencies(
     packageJsonPath: string,
@@ -206,7 +230,15 @@ export async function getMissingDependencies(
 }
 
 /**
- * Add a dependency to package.json
+ * Adds a dependency to package.json.
+ *
+ * Adds the specified package to either dependencies or devDependencies
+ * and sorts the section alphabetically.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @param name - Package name to add
+ * @param version - Version specifier (e.g., "latest", "^1.0.0")
+ * @param isDev - Whether to add as devDependency (default: true)
  */
 export async function addDependency(
     packageJsonPath: string,
@@ -248,13 +280,16 @@ export interface FixUnknownVersionsResult {
 }
 
 /**
- * Remove the '*' version placeholder for unknown packages.
+ * Removes the '*' version placeholder for unknown packages.
  *
  * For each package with '*' version:
  * - If it exists on npm: replace with 'latest'
  * - If it doesn't exist on npm: move to _internalDependencies with 'workspace:*'
  *
  * This prevents pnpm install from failing on internal packages that don't exist on npm.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @returns Array of package names that were converted to 'latest'
  */
 export async function fixUnknownVersions(
     packageJsonPath: string,
@@ -264,7 +299,13 @@ export async function fixUnknownVersions(
 }
 
 /**
- * Detailed version that returns both fixed and moved-to-internal packages
+ * Detailed version of fixUnknownVersions that returns both fixed and moved-to-internal packages.
+ *
+ * Checks npm registry for each package with '*' version and either
+ * converts to 'latest' or moves to _internalDependencies.
+ *
+ * @param packageJsonPath - Path to the package.json file
+ * @returns Object with arrays of fixed packages and packages moved to internal
  */
 export async function fixUnknownVersionsDetailed(
     packageJsonPath: string,
