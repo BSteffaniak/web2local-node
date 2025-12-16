@@ -1,10 +1,25 @@
+/**
+ * Web Scraping Module for @web2local/scraper
+ *
+ * This module provides functionality for extracting JavaScript and CSS bundle URLs
+ * from web pages, discovering associated source maps, and identifying vendor bundles.
+ * It supports intelligent caching to avoid redundant network requests and includes
+ * heuristics for detecting minified vendor chunks.
+ */
+
 import { parse as parseHTML } from 'node-html-parser';
 import { getCache } from '@web2local/cache';
 import { BROWSER_HEADERS, robustFetch } from '@web2local/http';
 
+/**
+ * Information about a JavaScript or CSS bundle extracted from a web page.
+ */
 export interface BundleInfo {
+    /** The absolute URL of the bundle file. */
     url: string;
+    /** The type of bundle (script for JS, stylesheet for CSS). */
     type: 'script' | 'stylesheet';
+    /** The discovered source map URL, if found. */
     sourceMapUrl?: string;
 }
 
@@ -46,8 +61,15 @@ export interface ExtractBundleUrlsResult {
 
 /**
  * Fetches HTML from a URL and extracts all JS/CSS bundle URLs.
- * Also detects redirects and returns the final URL for proper path resolution.
- * Results are cached to avoid re-fetching on subsequent runs.
+ *
+ * Parses the HTML document to find script tags, modulepreload links, and
+ * stylesheet links. Also detects redirects and returns the final URL for
+ * proper path resolution. Results are cached to avoid re-fetching on
+ * subsequent runs.
+ *
+ * @param pageUrl - The URL of the web page to scrape
+ * @returns The extracted bundles, final URL after redirects, and redirect info
+ * @throws {Error} When the HTTP request fails with a non-OK status
  */
 export async function extractBundleUrls(
     pageUrl: string,
@@ -173,8 +195,15 @@ export interface SourceMapCheckResult {
 
 /**
  * Checks if a bundle has an associated source map and returns its URL.
- * Also returns the bundle content for vendor bundles without source maps.
- * Results are cached to avoid re-fetching on subsequent runs.
+ *
+ * Searches for source maps by checking HTTP headers (SourceMap, X-SourceMap),
+ * inline sourceMappingURL comments in the bundle content, and by attempting
+ * to fetch a `.map` file at the bundle URL. Also returns the bundle content
+ * for vendor bundles without source maps. Results are cached to avoid
+ * re-fetching on subsequent runs.
+ *
+ * @param bundleUrl - The URL of the JavaScript or CSS bundle
+ * @returns The source map URL if found, plus bundle content for fallback handling
  */
 export async function findSourceMapUrl(
     bundleUrl: string,
@@ -470,10 +499,15 @@ export interface FindAllSourceMapsOptions {
 
 /**
  * Processes all bundles and finds their source maps.
- * Also collects vendor bundles without source maps for fingerprinting.
+ *
+ * Iterates through all provided bundles, checking each for an associated source map.
+ * Bundles with source maps are collected for extraction, while bundles without maps
+ * are categorized as either vendor bundles (for fingerprinting) or general bundles
+ * (for fallback saving).
  *
  * @param bundles - The bundles to process
  * @param options - Processing options including concurrency, progress callback, and pre-fetched content
+ * @returns Categorized results with bundles that have maps, vendor bundles, and bundles without maps
  */
 export async function findAllSourceMaps(
     bundles: BundleInfo[],
