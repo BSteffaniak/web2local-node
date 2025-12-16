@@ -12,20 +12,36 @@ import { getPackageMetadata } from './source-fingerprint.js';
 import { VersionResult, VersionConfidence } from './version-detector.js';
 
 /**
- * Version details from npm package metadata
+ * Version details from npm package metadata.
+ * @internal
  */
 interface VersionDetails {
+    /** Main entry point for CommonJS */
     main?: string;
+    /** ESM entry point */
     module?: string;
+    /** Package exports map */
     exports?: Record<string, unknown>;
+    /** TypeScript declarations entry point */
     types?: string;
+    /** Peer dependencies with version ranges */
     peerDependencies?: Record<string, string>;
+    /** Regular dependencies with version ranges */
     dependencies?: Record<string, string>;
 }
 
+/**
+ * Result of inferring a package version from peer dependency relationships.
+ *
+ * Extends VersionResult with additional information about how the version
+ * was inferred.
+ */
 export interface PeerDepResult extends VersionResult {
+    /** The package name whose version was used for inference */
     inferredFrom: string;
+    /** The peer dependency range that was matched */
     peerRange: string;
+    /** Alternative versions that also matched (for debugging) */
     matchingVersions: string[];
 }
 
@@ -197,10 +213,15 @@ function computeConfidence(
 }
 
 /**
- * Infers versions for unknown packages based on peer dependencies of known packages
+ * Infers versions for unknown packages based on peer dependencies of known packages.
  *
  * Strategy: For each unknown package, check if any known package has it as a peer dep.
  * If so, we can use the peer dep range to narrow down the version.
+ *
+ * @param unknownPackages - Package names without known versions
+ * @param knownVersions - Map of package names to their known versions
+ * @param onProgress - Optional callback invoked for each package processed
+ * @returns Map of package names to their inferred version results
  */
 export async function inferFromKnownPeers(
     unknownPackages: string[],
@@ -319,10 +340,16 @@ export async function inferFromKnownPeers(
 }
 
 /**
- * Forward inference: Given a package's known version, infer related packages
+ * Forward inference: Given a package's known version, infer related packages.
  *
- * Example: If we know react@18.2.0, and we detect react-dom as a dependency,
+ * @example
+ * If we know react@18.2.0 and detect react-dom as a dependency,
  * we can check react-dom's versions to find one that has react@^18.2.0 as peer dep.
+ *
+ * @param unknownPackages - Package names without known versions
+ * @param knownVersions - Map of package names to their known versions
+ * @param onProgress - Optional callback invoked for each package processed
+ * @returns Map of package names to their inferred version results
  */
 export async function inferFromPeerRequirements(
     unknownPackages: string[],
@@ -439,7 +466,16 @@ export async function inferFromPeerRequirements(
 }
 
 /**
- * Main entry point - runs both inference strategies
+ * Main entry point - runs both inference strategies.
+ *
+ * First attempts forward inference from peer requirements, then fills in
+ * remaining unknown packages with reverse inference from known peers.
+ *
+ * @param unknownPackages - Package names without known versions
+ * @param knownVersions - Map of package names to their known versions
+ * @param options - Configuration options
+ * @param options.onProgress - Optional callback invoked for each package processed
+ * @returns Map of package names to their inferred version results
  */
 export async function inferPeerDependencyVersions(
     unknownPackages: string[],

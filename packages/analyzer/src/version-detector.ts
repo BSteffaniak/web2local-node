@@ -5,6 +5,15 @@
 
 import type { ExtractedSource } from '@web2local/types';
 
+/**
+ * Confidence level for detected package versions.
+ *
+ * - `exact` - Version confirmed from lockfile paths (pnpm, yarn) or fingerprint match
+ * - `high` - Version found in source map paths or license banners
+ * - `medium` - Version inferred from constants or peer dependencies
+ * - `low` - Version guessed with limited evidence
+ * - `unverified` - Version found but not validated against npm registry
+ */
 export type VersionConfidence =
     | 'exact'
     | 'high'
@@ -12,6 +21,20 @@ export type VersionConfidence =
     | 'low'
     | 'unverified';
 
+/**
+ * Source from which a package version was detected.
+ *
+ * - `package.json` - Extracted from package.json file in source map
+ * - `banner` - Found in license/copyright banner comment
+ * - `lockfile-path` - Extracted from pnpm/yarn lockfile path structure
+ * - `version-constant` - Found in VERSION constant in source code
+ * - `sourcemap-path` - Extracted from source map file path
+ * - `peer-dep` - Inferred from peer dependency relationships
+ * - `fingerprint` - Matched via source code fingerprinting
+ * - `fingerprint-minified` - Matched via minified code fingerprinting
+ * - `custom-build` - Found in custom build directory or header
+ * - `npm-latest` - Fetched as latest version from npm registry
+ */
 export type VersionSource =
     | 'package.json'
     | 'banner'
@@ -24,9 +47,15 @@ export type VersionSource =
     | 'custom-build'
     | 'npm-latest';
 
+/**
+ * Result of version detection for a package.
+ */
 export interface VersionResult {
+    /** The detected semantic version string (e.g., "18.2.0") */
     version: string;
+    /** How confident we are in this version */
     confidence: VersionConfidence;
+    /** Where the version was detected from */
     source: VersionSource;
 }
 
@@ -184,7 +213,16 @@ function extractPackageNameFromPath(filePath: string): string | null {
 }
 
 /**
- * Detect version from lockfile-style paths (pnpm, yarn, etc.)
+ * Detects version from lockfile-style paths (pnpm, yarn, etc.).
+ *
+ * Supports paths from:
+ * - pnpm: `node_modules/.pnpm/react@18.2.0/node_modules/react/index.js`
+ * - yarn berry: `node_modules/.yarn/cache/lodash-npm-4.17.21-abc123.zip/...`
+ * - yarn classic: `node_modules/lodash/4.17.21/...`
+ *
+ * @param filePath - The file path to analyze
+ * @param packageName - The package name to match against
+ * @returns Version result with 'exact' confidence, or null if not found
  */
 export function detectVersionFromLockfilePath(
     filePath: string,
@@ -216,7 +254,15 @@ export function detectVersionFromLockfilePath(
 }
 
 /**
- * Detect version from source map paths
+ * Detects version from source map paths.
+ *
+ * Matches patterns like:
+ * - `../node_modules/package@1.2.3/index.js`
+ * - `../node_modules/package/v1.2.3/index.js`
+ *
+ * @param filePath - The source map file path to analyze
+ * @param packageName - The package name to match against
+ * @returns Version result with 'high' confidence, or null if not found
  */
 export function detectVersionFromSourceMapPath(
     filePath: string,
@@ -241,7 +287,17 @@ export function detectVersionFromSourceMapPath(
 }
 
 /**
- * Detect version from VERSION constants in source code
+ * Detects version from VERSION constants in source code.
+ *
+ * Searches for patterns like:
+ * - `VERSION = "1.2.3"`
+ * - `version: "1.2.3"`
+ * - `__VERSION__ = "1.2.3"`
+ * - `exports.version = "1.2.3"`
+ *
+ * @param content - The source code content to search
+ * @param _packageName - The package name (currently unused but kept for API consistency)
+ * @returns Version result with 'medium' confidence, or null if not found
  */
 export function detectVersionFromConstants(
     content: string,
@@ -275,7 +331,16 @@ export function detectVersionFromConstants(
 }
 
 /**
- * Detect version from license banners
+ * Detects version from license banners in source code headers.
+ *
+ * Searches the first 1500 characters for patterns like:
+ * - `@license React v18.2.0`
+ * - `/*! lodash v4.17.21 * /`
+ * - `@version 1.2.3`
+ *
+ * @param content - The source code content to search
+ * @param packageName - The package name to match in the banner
+ * @returns Version result with 'high' or 'medium' confidence, or null if not found
  */
 export function detectVersionFromBanner(
     content: string,
@@ -332,8 +397,17 @@ export function detectVersionFromBanner(
 }
 
 /**
- * Get all files belonging to a specific package from extracted sources
- * Enhanced to detect vendor bundles and custom build directories generically
+ * Gets all files belonging to a specific package from extracted sources.
+ *
+ * Enhanced to detect vendor bundles and custom build directories generically.
+ * Matches files by:
+ * - Standard `node_modules/` paths
+ * - Vendor bundle patterns (e.g., `lodash-Abc123.js`)
+ * - Package name with version in directory (e.g., `package-1.2.3/`)
+ *
+ * @param files - All extracted source files
+ * @param packageName - The package name to find files for
+ * @returns Array of source files belonging to the specified package
  */
 export function getPackageFiles(
     files: ExtractedSource[],
@@ -390,8 +464,15 @@ export function getPackageFiles(
 }
 
 /**
- * Detects custom build version from directory structure or file headers
- * Generic approach - derives patterns from package name
+ * Detects custom build version from directory structure or file headers.
+ *
+ * Uses a generic approach that derives patterns from the package name.
+ * Useful for vendor bundles that include version in directory names
+ * or file headers.
+ *
+ * @param packageName - The package name to detect version for
+ * @param packageFiles - Files belonging to this package
+ * @returns Version result with 'high' or 'medium' confidence, or null if not found
  */
 export function detectCustomBuild(
     packageName: string,
@@ -466,7 +547,20 @@ export function detectCustomBuild(
 }
 
 /**
- * Main version detection function - tries all methods in order of confidence
+ * Main version detection function - tries all methods in order of confidence.
+ *
+ * Detection order:
+ * 1. Lockfile paths (exact confidence)
+ * 2. Source map paths (high confidence)
+ * 3. Custom build directories/headers (high/medium confidence)
+ * 4. VERSION constants (medium confidence)
+ *
+ * Note: Banner detection is disabled due to attribution issues with nested node_modules.
+ *
+ * @param packageName - The package name to detect version for
+ * @param packageFiles - Files belonging to this package
+ * @param _allFiles - All extracted files (currently unused, kept for API consistency)
+ * @returns The highest confidence version result, or null if no version detected
  */
 export function detectVersion(
     packageName: string,
@@ -510,7 +604,12 @@ export function detectVersion(
 }
 
 /**
- * Detect versions for multiple packages
+ * Detects versions for multiple packages in batch.
+ *
+ * @param packageNames - Array of package names to detect versions for
+ * @param allFiles - All extracted source files
+ * @param onProgress - Optional callback invoked after each package is processed
+ * @returns Map of package name to version result (only includes packages with detected versions)
  */
 export function detectVersions(
     packageNames: string[],
