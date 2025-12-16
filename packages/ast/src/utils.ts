@@ -13,7 +13,21 @@ import { parseSync } from '@swc/core';
 import type { Module, Pattern } from '@swc/types';
 
 /**
- * Safely parse source code with SWC, returning null on failure
+ * Safely parses source code with SWC, returning null on failure.
+ *
+ * Automatically detects TypeScript vs JavaScript and JSX support based on filename.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax (e.g., '.tsx' enables JSX + TypeScript)
+ * @returns The parsed AST Module, or null if parsing fails
+ *
+ * @example
+ * ```typescript
+ * const ast = safeParse('const x = 1;', 'file.ts');
+ * if (ast) {
+ *   console.log(ast.body.length);
+ * }
+ * ```
  */
 export function safeParse(
     sourceCode: string,
@@ -35,7 +49,26 @@ export function safeParse(
 }
 
 /**
- * Generic AST visitor that walks all nodes
+ * Generic AST visitor that recursively walks all nodes in an AST.
+ *
+ * Handles circular references by tracking visited nodes.
+ *
+ * @param node - The AST node to start walking from
+ * @param visitor - Callback function called for each node with the node and its parent
+ * @param parent - The parent node (used internally for recursion)
+ * @param visited - Set of already visited nodes (used internally to prevent cycles)
+ *
+ * @example
+ * ```typescript
+ * const ast = safeParse('const x = 1;', 'file.ts');
+ * if (ast) {
+ *   walkAST(ast, (node, parent) => {
+ *     if (node.type === 'Identifier') {
+ *       console.log('Found identifier:', node.value);
+ *     }
+ *   });
+ * }
+ * ```
  */
 export function walkAST(
     node: unknown,
@@ -70,8 +103,25 @@ export function walkAST(
 }
 
 /**
- * Extract all import sources from source code using AST
- * Returns the import path strings (not the specifiers)
+ * Extracts all import source paths from source code using AST.
+ *
+ * Returns the import path strings (e.g., 'react', './utils') rather than
+ * the specifiers. Includes static imports, dynamic imports, require() calls,
+ * and re-exports.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of import source paths found in the code
+ *
+ * @example
+ * ```typescript
+ * const sources = extractImportSourcesFromAST(`
+ *   import React from 'react';
+ *   import('./lazy-module');
+ *   export { foo } from './utils';
+ * `, 'file.tsx');
+ * // sources === ['react', './lazy-module', './utils']
+ * ```
  */
 export function extractImportSourcesFromAST(
     sourceCode: string,
@@ -131,7 +181,23 @@ export function extractImportSourcesFromAST(
 }
 
 /**
- * Extract named imports for a specific source path
+ * Extracts named imports for a specific source path.
+ *
+ * Returns the names being imported from a particular module, including
+ * default imports ('default') and namespace imports ('*').
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param sourcePath - The import source path to match (e.g., './Button', 'react')
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of imported names from the specified source
+ *
+ * @example
+ * ```typescript
+ * const names = extractNamedImportsForSource(`
+ *   import React, { useState, useEffect } from 'react';
+ * `, 'react', 'file.tsx');
+ * // names === ['default', 'useState', 'useEffect']
+ * ```
  */
 export function extractNamedImportsForSource(
     sourceCode: string,
@@ -200,8 +266,26 @@ export interface MemberAccess {
 }
 
 /**
- * Extract member expression accesses for a specific object name
- * e.g., extractMemberAccesses(code, 'styles') finds styles.foo, styles['bar']
+ * Extracts member expression accesses for a specific object name.
+ *
+ * Finds patterns like `styles.foo`, `styles['bar']` for CSS modules or
+ * any object member access. Handles both dot notation and bracket notation
+ * with string literals.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param objectName - The base object name to search for (e.g., 'styles', 'process')
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of member access patterns found in the code
+ *
+ * @example
+ * ```typescript
+ * const accesses = extractMemberAccesses(`
+ *   const a = styles.container;
+ *   const b = styles['btn-text'];
+ * `, 'styles', 'file.tsx');
+ * // accesses[0].fullPath === 'styles.container'
+ * // accesses[1].fullPath === 'styles.btn-text'
+ * ```
  */
 export function extractMemberAccesses(
     sourceCode: string,
@@ -314,10 +398,25 @@ export interface JSXMemberAccess {
 }
 
 /**
- * Extract JSX member expression accesses for a specific object name.
- * e.g., extractJSXMemberAccesses(code, 'InventoryTag') finds <InventoryTag.Camping />
+ * Extracts JSX member expression accesses for a specific object name.
  *
- * Handles nested JSX member expressions: <Foo.Bar.Baz />
+ * Finds JSX patterns like `<Foo.Bar />` or `<Foo.Bar.Baz />`. Useful for
+ * detecting component sub-property usage in React/JSX codebases.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param objectName - The base component name to search for (e.g., 'InventoryTag')
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of JSX member access patterns found in the code
+ *
+ * @example
+ * ```typescript
+ * const accesses = extractJSXMemberAccesses(`
+ *   <InventoryTag.Camping />
+ *   <InventoryTag.Sports.Ball />
+ * `, 'InventoryTag', 'file.tsx');
+ * // accesses[0].fullPath === 'InventoryTag.Camping'
+ * // accesses[1].fullPath === 'InventoryTag.Sports.Ball'
+ * ```
  */
 export function extractJSXMemberAccesses(
     sourceCode: string,
@@ -386,7 +485,23 @@ function extractJSXMemberChain(
 }
 
 /**
- * Extract all process.env property accesses
+ * Extracts all `process.env` property accesses from source code.
+ *
+ * Finds environment variable accesses like `process.env.NODE_ENV` or
+ * `process.env['API_KEY']`.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of environment variable names accessed via process.env
+ *
+ * @example
+ * ```typescript
+ * const envVars = extractProcessEnvAccesses(`
+ *   const env = process.env.NODE_ENV;
+ *   const key = process.env['API_KEY'];
+ * `, 'file.ts');
+ * // envVars === ['NODE_ENV', 'API_KEY']
+ * ```
  */
 export function extractProcessEnvAccesses(
     sourceCode: string,
@@ -427,7 +542,17 @@ export function extractProcessEnvAccesses(
 }
 
 /**
- * Detect JSX usage in source code
+ * Detects whether source code contains JSX elements.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns True if the code contains JSX elements, fragments, or text nodes
+ *
+ * @example
+ * ```typescript
+ * hasJSXElements('<div>Hello</div>', 'file.tsx'); // true
+ * hasJSXElements('const x = 1;', 'file.ts');       // false
+ * ```
  */
 export function hasJSXElements(
     sourceCode: string,
@@ -452,7 +577,21 @@ export function hasJSXElements(
 }
 
 /**
- * Detect which framework is imported (react, preact, solid-js, vue)
+ * Detects which UI framework is imported in the source code.
+ *
+ * Checks for imports from React, Preact, Solid.js, and Vue.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Object with boolean flags for each detected framework
+ *
+ * @example
+ * ```typescript
+ * const frameworks = detectFrameworkImports(`
+ *   import React from 'react';
+ * `, 'file.tsx');
+ * // frameworks === { react: true, preact: false, solid: false, vue: false }
+ * ```
  */
 export function detectFrameworkImports(
     sourceCode: string,
@@ -476,7 +615,23 @@ export function detectFrameworkImports(
 }
 
 /**
- * Detect module system (ESM vs CommonJS)
+ * Detects the module system used in source code (ESM vs CommonJS).
+ *
+ * Identifies ESM patterns (import/export statements) and CommonJS patterns
+ * (require(), module.exports, exports.X).
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Object with flags indicating presence of ESM and CommonJS patterns
+ *
+ * @example
+ * ```typescript
+ * detectModuleSystem('import x from "y";', 'file.ts');
+ * // { hasESM: true, hasCommonJS: false }
+ *
+ * detectModuleSystem('const x = require("y");', 'file.js');
+ * // { hasESM: false, hasCommonJS: true }
+ * ```
  */
 export function detectModuleSystem(
     sourceCode: string,
@@ -540,7 +695,23 @@ export function detectModuleSystem(
 }
 
 /**
- * Detect environment APIs used (browser vs node)
+ * Detects environment-specific APIs used in source code (browser vs Node.js).
+ *
+ * Identifies browser APIs (window, document, fetch, etc.) and Node.js APIs
+ * (__dirname, Buffer, process, and Node built-in module imports).
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Object with flags indicating presence of browser and Node.js APIs
+ *
+ * @example
+ * ```typescript
+ * detectEnvironmentAPIs('document.getElementById("x");', 'file.ts');
+ * // { hasBrowserAPIs: true, hasNodeAPIs: false }
+ *
+ * detectEnvironmentAPIs('import fs from "fs";', 'file.ts');
+ * // { hasBrowserAPIs: false, hasNodeAPIs: true }
+ * ```
  */
 export function detectEnvironmentAPIs(
     sourceCode: string,
@@ -656,7 +827,23 @@ export function detectEnvironmentAPIs(
 }
 
 /**
- * Detect async/await, optional chaining, nullish coalescing usage
+ * Detects modern ECMAScript features in source code.
+ *
+ * Identifies usage of async/await, optional chaining (?.), and nullish
+ * coalescing (??).
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Object with flags indicating presence of each ES feature
+ *
+ * @example
+ * ```typescript
+ * detectESFeatures('const x = obj?.prop ?? "default";', 'file.ts');
+ * // { asyncAwait: false, optionalChaining: true, nullishCoalescing: true }
+ *
+ * detectESFeatures('async function f() { await fetch(); }', 'file.ts');
+ * // { asyncAwait: true, optionalChaining: false, nullishCoalescing: false }
+ * ```
  */
 export function detectESFeatures(
     sourceCode: string,
@@ -716,8 +903,24 @@ export function detectESFeatures(
 }
 
 /**
- * Extract function, class, and variable declaration names from source
- * Useful for code signature generation
+ * Extracts top-level declaration names from source code.
+ *
+ * Finds function, class, and variable declaration names at the top level
+ * and from export declarations. Useful for code signature generation.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to parse
+ * @param filename - The filename used to determine parser syntax
+ * @returns Array of declaration names found in the code
+ *
+ * @example
+ * ```typescript
+ * const names = extractDeclarationNames(`
+ *   function foo() {}
+ *   const bar = 1;
+ *   export class Baz {}
+ * `, 'file.ts');
+ * // names === ['foo', 'bar', 'Baz']
+ * ```
  */
 export function extractDeclarationNames(
     sourceCode: string,
@@ -815,8 +1018,23 @@ export function extractDeclarationNames(
 }
 
 /**
- * Strip comments from source code using AST-based approach
- * This correctly handles comments inside strings (doesn't remove them)
+ * Strips comments from source code using a state-machine approach.
+ *
+ * Correctly handles comments inside strings (preserves them) and supports
+ * single-line comments (//), multi-line comments (/* ... *\/), and regex literals.
+ *
+ * @param sourceCode - The JavaScript/TypeScript source code to process
+ * @returns The source code with all comments removed
+ *
+ * @example
+ * ```typescript
+ * const code = stripComments(`
+ *   // This is a comment
+ *   const x = 1; /* inline comment *\/
+ *   const str = "// not a comment";
+ * `);
+ * // Comments removed, but "// not a comment" preserved in string
+ * ```
  */
 export function stripComments(sourceCode: string): string {
     // SWC doesn't have a direct "strip comments" API, but we can use
