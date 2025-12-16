@@ -10,6 +10,10 @@
 export class IncompatibleStateVersionError extends Error {
     readonly name = 'IncompatibleStateVersionError';
 
+    /**
+     * @param foundVersion - The version found in the existing state file
+     * @param expectedVersion - The version expected by the current code
+     */
     constructor(
         public readonly foundVersion: string,
         public readonly expectedVersion: string,
@@ -27,6 +31,11 @@ export class IncompatibleStateVersionError extends Error {
 export class CorruptedStateError extends Error {
     readonly name = 'CorruptedStateError';
 
+    /**
+     * @param filePath - Path to the corrupted file
+     * @param line - Line number where corruption was detected (1-based)
+     * @param details - Additional details about the corruption
+     */
     constructor(
         public readonly filePath: string,
         public readonly line?: number,
@@ -54,6 +63,10 @@ export class CorruptedStateError extends Error {
 export class StateIOError extends Error {
     readonly name = 'StateIOError';
 
+    /**
+     * @param operation - Description of the operation that failed
+     * @param cause - The underlying error that caused the failure
+     */
     constructor(
         public readonly operation: string,
         public readonly cause: Error,
@@ -68,6 +81,11 @@ export class StateIOError extends Error {
 export class InvalidStateTransitionError extends Error {
     readonly name = 'InvalidStateTransitionError';
 
+    /**
+     * @param phase - The phase where the invalid transition was attempted
+     * @param currentStatus - The current status of the phase
+     * @param attemptedAction - The action that was attempted (e.g., 'start', 'complete')
+     */
     constructor(
         public readonly phase: string,
         public readonly currentStatus: string,
@@ -81,11 +99,15 @@ export class InvalidStateTransitionError extends Error {
 }
 
 /**
- * Error thrown when URL validation fails.
+ * Error thrown when URL validation fails during resume.
  */
 export class UrlMismatchError extends Error {
     readonly name = 'UrlMismatchError';
 
+    /**
+     * @param stateUrl - The URL stored in the existing state
+     * @param requestedUrl - The URL requested for the current operation
+     */
     constructor(
         public readonly stateUrl: string,
         public readonly requestedUrl: string,

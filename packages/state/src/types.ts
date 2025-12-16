@@ -107,8 +107,11 @@ export interface ResumeInfo {
  * Matches the structure from @web2local/scraper.
  */
 export interface BundleInfo {
+    /** URL where the bundle was found */
     url: string;
+    /** Type of bundle resource */
     type: 'script' | 'stylesheet' | 'modulepreload';
+    /** URL of the associated source map, if available */
     sourceMapUrl?: string;
 }
 
@@ -116,9 +119,13 @@ export interface BundleInfo {
  * Information about a vendor bundle (no source map, but package info inferred).
  */
 export interface VendorBundleInfo {
+    /** URL where the vendor bundle was found */
     url: string;
+    /** Filename extracted from the URL */
     filename: string;
+    /** Bundle content, if retrieved */
     content?: string;
+    /** Package name inferred from the bundle (e.g., 'react', 'lodash') */
     inferredPackage?: string;
 }
 
@@ -182,10 +189,15 @@ export interface PageCaptureResult {
  * Data stored after scrape phase completion.
  */
 export interface ScrapePhaseData {
+    /** All discovered bundles */
     bundles: BundleInfo[];
+    /** Bundles that have associated source maps */
     bundlesWithMaps: BundleInfo[];
+    /** Vendor bundles (third-party libraries) */
     vendorBundles: VendorBundleInfo[];
+    /** Bundles without source maps */
     bundlesWithoutMaps: BundleInfo[];
+    /** Final URL after any redirects */
     finalUrl?: string;
 }
 
@@ -193,10 +205,14 @@ export interface ScrapePhaseData {
  * Data stored after extract phase completion.
  */
 export interface ExtractPhaseData {
+    /** List of bundles that have been extracted */
     extractedBundles: Array<{
+        /** Name of the extracted bundle */
         bundleName: string;
+        /** Number of source files written from this bundle */
         filesWritten: number;
     }>;
+    /** Total number of source files written across all bundles */
     totalFilesWritten: number;
 }
 
@@ -222,10 +238,15 @@ export interface CapturePhaseData {
  * Data stored after rebuild phase completion.
  */
 export interface RebuildPhaseData {
+    /** Whether the rebuild completed successfully */
     success: boolean;
+    /** Output directory where the rebuilt project was written */
     outputDir?: string;
+    /** List of bundle names that were rebuilt */
     bundles?: string[];
+    /** Time taken for the rebuild in milliseconds */
     durationMs?: number;
+    /** Error messages if the rebuild failed */
     errors?: string[];
 }
 
@@ -237,9 +258,13 @@ export interface RebuildPhaseData {
  * State for a single phase.
  */
 export interface PhaseState {
+    /** Current status of the phase */
     status: PhaseStatus;
+    /** ISO 8601 timestamp when the phase started */
     startedAt?: string;
+    /** ISO 8601 timestamp when the phase completed */
     completedAt?: string;
+    /** Error message if the phase failed */
     error?: string;
 }
 

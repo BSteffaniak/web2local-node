@@ -196,6 +196,9 @@ export class StateManager {
      *
      * @param options - Configuration options
      * @returns Initialized StateManager
+     * @throws {IncompatibleStateVersionError} When resuming from an incompatible state version
+     * @throws {UrlMismatchError} When resuming with a different URL than the original
+     * @throws {CorruptedStateError} When WAL is corrupted and truncateCorruptedWal is false
      */
     static async create(options: StateManagerOptions): Promise<StateManager> {
         const {
@@ -326,6 +329,9 @@ export class StateManager {
 
     /**
      * Get the status of a phase.
+     *
+     * @param phase - The phase to check
+     * @returns Current status of the phase
      */
     getPhaseStatus(phase: PhaseName): PhaseStatus {
         return this.state.phases[phase].status;
@@ -333,6 +339,8 @@ export class StateManager {
 
     /**
      * Get the currently active phase (first non-completed phase).
+     *
+     * @returns The first phase that is not completed, or null if all phases are done
      */
     getCurrentPhase(): PhaseName | null {
         const phaseOrder: PhaseName[] = [
@@ -354,6 +362,9 @@ export class StateManager {
 
     /**
      * Mark a phase as started.
+     *
+     * @param phase - The phase to start
+     * @throws {InvalidStateTransitionError} When phase is not in 'pending' or 'failed' status
      */
     async startPhase(phase: PhaseName): Promise<void> {
         const currentStatus = this.state.phases[phase].status;
@@ -382,6 +393,9 @@ export class StateManager {
 
     /**
      * Mark a phase as completed.
+     *
+     * @param phase - The phase to complete
+     * @throws {InvalidStateTransitionError} When phase is not in 'in_progress' status
      */
     async completePhase(phase: PhaseName): Promise<void> {
         const currentStatus = this.state.phases[phase].status;
@@ -406,6 +420,9 @@ export class StateManager {
 
     /**
      * Mark a phase as failed.
+     *
+     * @param phase - The phase that failed
+     * @param error - Error message describing the failure
      */
     async failPhase(phase: PhaseName, error: string): Promise<void> {
         await this.walWriter.append(createPhaseFailEvent(phase, error));
@@ -424,6 +441,8 @@ export class StateManager {
 
     /**
      * Store scrape results.
+     *
+     * @param result - The scrape phase results to store
      */
     async setScrapeResult(result: {
         bundles: BundleInfo[];
@@ -446,6 +465,8 @@ export class StateManager {
 
     /**
      * Get scrape results.
+     *
+     * @returns Stored scrape phase data, or null if not yet set
      */
     getScrapeResult(): ScrapePhaseData | null {
         return this.state.scrape || null;
@@ -457,6 +478,9 @@ export class StateManager {
 
     /**
      * Mark a bundle as extracted.
+     *
+     * @param bundleName - Name of the extracted bundle
+     * @param filesWritten - Number of source files written from this bundle
      */
     async markBundleExtracted(
         bundleName: string,
@@ -489,6 +513,9 @@ export class StateManager {
 
     /**
      * Check if a bundle has been extracted.
+     *
+     * @param bundleName - Name of the bundle to check
+     * @returns True if the bundle has already been extracted
      */
     isBundleExtracted(bundleName: string): boolean {
         return (
@@ -500,6 +527,8 @@ export class StateManager {
 
     /**
      * Get list of extracted bundles.
+     *
+     * @returns Array of extracted bundle info with file counts
      */
     getExtractedBundles(): Array<{ bundleName: string; filesWritten: number }> {
         return this.state.extract?.extractedBundles ?? [];
@@ -507,6 +536,8 @@ export class StateManager {
 
     /**
      * Get total files extracted.
+     *
+     * @returns Total number of source files extracted across all bundles
      */
     getTotalFilesExtracted(): number {
         return this.state.extract?.totalFilesWritten ?? 0;
@@ -514,6 +545,8 @@ export class StateManager {
 
     /**
      * Get extract phase data.
+     *
+     * @returns Stored extract phase data, or null if not yet set
      */
     getExtractResult(): ExtractPhaseData | null {
         return this.state.extract || null;
@@ -541,6 +574,9 @@ export class StateManager {
 
     /**
      * Mark a page as started (for crash recovery).
+     *
+     * @param url - URL of the page being processed
+     * @param depth - Crawl depth of the page
      */
     async markPageStarted(url: string, depth: number): Promise<void> {
         await this.walWriter.append(createPageStartedEvent(url, depth));
@@ -559,6 +595,8 @@ export class StateManager {
 
     /**
      * Mark a page as completed with all its captured data.
+     *
+     * @param result - Capture result containing fixtures, assets, and discovered URLs
      */
     async markPageCompleted(result: PageCaptureResult): Promise<void> {
         await this.walWriter.append(
@@ -604,6 +642,11 @@ export class StateManager {
 
     /**
      * Mark a page as failed.
+     *
+     * @param url - URL of the failed page
+     * @param depth - Crawl depth of the page
+     * @param error - Error message describing the failure
+     * @param willRetry - Whether the page will be retried
      */
     async markPageFailed(
         url: string,
@@ -623,6 +666,10 @@ export class StateManager {
 
     /**
      * Add newly discovered URLs to the pending queue.
+     *
+     * URLs that have already been visited or are already pending are filtered out.
+     *
+     * @param urls - Array of URL/depth pairs to add
      */
     async addDiscoveredUrls(
         urls: Array<{ url: string; depth: number }>,
@@ -649,6 +696,9 @@ export class StateManager {
 
     /**
      * Check if a URL has been visited (started processing).
+     *
+     * @param url - URL to check
+     * @returns True if the URL has been visited
      */
     isUrlVisited(url: string): boolean {
         return this.state.capture?.visitedUrls.includes(url) ?? false;
@@ -656,6 +706,9 @@ export class StateManager {
 
     /**
      * Check if a URL has been completed successfully.
+     *
+     * @param url - URL to check
+     * @returns True if the URL has been fully processed
      */
     isUrlCompleted(url: string): boolean {
         return this.state.capture?.completedUrls.includes(url) ?? false;
@@ -663,6 +716,8 @@ export class StateManager {
 
     /**
      * Get all visited URLs.
+     *
+     * @returns Array of URLs that have been started
      */
     getVisitedUrls(): string[] {
         return this.state.capture?.visitedUrls ?? [];
@@ -670,6 +725,8 @@ export class StateManager {
 
     /**
      * Get all completed URLs.
+     *
+     * @returns Array of URLs that have been fully processed
      */
     getCompletedUrls(): string[] {
         return this.state.capture?.completedUrls ?? [];
@@ -677,6 +734,8 @@ export class StateManager {
 
     /**
      * Get URLs that were started but not completed (need reprocessing on resume).
+     *
+     * @returns Array of URL/depth pairs that need reprocessing
      */
     getInProgressUrls(): Array<{ url: string; depth: number }> {
         return this.state.capture?.inProgressUrls ?? [];
@@ -684,6 +743,8 @@ export class StateManager {
 
     /**
      * Get pending URLs.
+     *
+     * @returns Array of URL/depth pairs waiting to be processed
      */
     getPendingUrls(): Array<{ url: string; depth: number }> {
         return this.state.capture?.pendingUrls ?? [];
@@ -691,6 +752,8 @@ export class StateManager {
 
     /**
      * Get all captured fixtures.
+     *
+     * @returns Array of captured fixture info
      */
     getCapturedFixtures(): CapturedFixtureInfo[] {
         return this.state.capture?.fixtures ?? [];
@@ -698,6 +761,8 @@ export class StateManager {
 
     /**
      * Get all captured assets.
+     *
+     * @returns Array of captured asset info
      */
     getCapturedAssets(): CapturedAssetInfo[] {
         return this.state.capture?.assets ?? [];
@@ -705,6 +770,8 @@ export class StateManager {
 
     /**
      * Get capture phase data.
+     *
+     * @returns Stored capture phase data, or null if not yet set
      */
     getCaptureResult(): CapturePhaseData | null {
         return this.state.capture || null;
@@ -716,6 +783,8 @@ export class StateManager {
 
     /**
      * Store rebuild results.
+     *
+     * @param result - The rebuild phase results to store
      */
     async setRebuildResult(result: {
         success: boolean;
@@ -738,6 +807,8 @@ export class StateManager {
 
     /**
      * Get rebuild results.
+     *
+     * @returns Stored rebuild phase data, or null if not yet set
      */
     getRebuildResult(): RebuildPhaseData | null {
         return this.state.rebuild || null;
@@ -749,6 +820,8 @@ export class StateManager {
 
     /**
      * Get a human-readable progress string.
+     *
+     * @returns Progress description (e.g., "15/100 pages captured")
      */
     getProgressString(): string {
         return getProgressString(this.state);
@@ -756,6 +829,8 @@ export class StateManager {
 
     /**
      * Get the target URL.
+     *
+     * @returns The URL being processed
      */
     getUrl(): string {
         return this.state.url;
@@ -763,6 +838,8 @@ export class StateManager {
 
     /**
      * Get when the state was created.
+     *
+     * @returns ISO 8601 timestamp of state creation
      */
     getCreatedAt(): string {
         return this.state.createdAt;
@@ -770,6 +847,8 @@ export class StateManager {
 
     /**
      * Get when the state was last updated.
+     *
+     * @returns ISO 8601 timestamp of last update
      */
     getLastUpdatedAt(): string {
         return this.state.lastUpdatedAt;
