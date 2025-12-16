@@ -40,11 +40,21 @@ import { StateManager, PHASES, PHASE_STATUS } from '@web2local/state';
 // TYPES
 // ============================================================================
 
+/**
+ * Manifest structure written after extraction completes.
+ *
+ * Contains metadata about what was extracted and from where.
+ */
 interface ExtractManifest {
+    /** ISO timestamp when extraction occurred. */
     extractedAt: string;
+    /** The source URL that was extracted from. */
     sourceUrl: string;
+    /** Extraction mode: 'page' for HTML pages, 'direct' for direct source map URLs. */
     mode: 'page' | 'direct';
+    /** Array of bundle manifests with extraction details. */
     bundles: BundleManifest[];
+    /** Total number of source files extracted. */
     totalFiles: number;
 }
 

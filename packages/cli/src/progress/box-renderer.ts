@@ -1,18 +1,27 @@
 /**
- * Box rendering utilities for the progress display
+ * Box rendering utilities for the progress display.
+ *
+ * Provides functions for rendering bordered boxes with title, stats, workers,
+ * and log sections in the terminal using Unicode box-drawing characters.
  */
 
 import chalk from 'chalk';
 
+/**
+ * Content structure for rendering a progress box.
+ */
 export interface BoxContent {
+    /** Title displayed in the top border. */
     title: string;
+    /** Stats line displayed below the title. */
     statsLine: string;
+    /** Array of worker status lines. */
     workerLines: string[];
-    /** Recent log lines to display at the bottom of the box */
+    /** Recent log lines to display at the bottom of the box. */
     recentLogs: string[];
-    /** Number of additional logs in buffer not shown (0 = hide indicator) */
+    /** Number of additional logs in buffer not shown (0 = hide indicator). */
     moreLogsCount: number;
-    /** Total height available for the logs section (including indicator line) */
+    /** Total height available for the logs section (including indicator line). */
     recentLogsHeight: number;
 }
 
