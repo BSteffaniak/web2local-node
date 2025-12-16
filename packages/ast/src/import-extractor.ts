@@ -7,7 +7,7 @@ import type { ModuleItem, ImportDeclaration, CallExpression } from '@swc/types';
 export interface NamedImportInfo {
     /** The local name (what it's called in this file) */
     name: string;
-    /** Whether this specific import is type-only (import { type Foo }) */
+    /** Whether this specific import is type-only (import \{ type Foo \}) */
     isTypeOnly: boolean;
 }
 
@@ -15,7 +15,7 @@ export interface NamedImportInfo {
  * Information about an import found in source code
  */
 export interface ImportDeclarationInfo {
-    /** The import path (e.g., './Button', 'react', '@fp/sarsaparilla') */
+    /** The import path (e.g., './Button', 'react', `@fp/sarsaparilla`) */
     source: string;
     /** Names being imported (for named imports) - just the names for backward compatibility */
     namedImports: string[];
@@ -36,11 +36,11 @@ export interface ImportDeclarationInfo {
  *
  * This is more robust than regex-based approaches and handles:
  * - import X from 'mod'
- * - import { a, b } from 'mod'
- * - import { a as b } from 'mod'
+ * - import \{ a, b \} from 'mod'
+ * - import \{ a as b \} from 'mod'
  * - import * as X from 'mod'
  * - import 'mod' (side effects)
- * - import type { X } from 'mod'
+ * - import type \{ X \} from 'mod'
  * - Dynamic imports: import('mod')
  * - require('mod')
  *
@@ -224,7 +224,7 @@ function findDynamicImports(
 /**
  * Categorizes an import source path into relative/external and detects special file types.
  *
- * @param source - The import source path (e.g., './Button', 'react', '@scope/package')
+ * @param source - The import source path (e.g., './Button', 'react', `@scope/package`)
  * @returns An object describing the import category and extracted metadata
  *
  * @example
@@ -232,7 +232,7 @@ function findDynamicImports(
  * categorizeImport('./Button');
  * // { isRelative: true, isExternal: false, packageName: null, isCssModule: false, isTypeFile: false }
  *
- * categorizeImport('@fp/sarsaparilla');
+ * categorizeImport(`@fp/sarsaparilla`);
  * // { isRelative: false, isExternal: true, packageName: '@fp/sarsaparilla', isCssModule: false, isTypeFile: false }
  *
  * categorizeImport('./styles.module.css');

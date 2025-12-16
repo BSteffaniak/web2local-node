@@ -104,7 +104,7 @@ export interface ResumeInfo {
 
 /**
  * Information about a discovered bundle.
- * Matches the structure from @web2local/scraper.
+ * Matches the structure from `@web2local/scraper`.
  */
 export interface BundleInfo {
     /** URL where the bundle was found */

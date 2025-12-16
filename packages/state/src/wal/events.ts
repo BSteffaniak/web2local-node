@@ -48,7 +48,7 @@ export function isValidEventType(type: unknown): type is WALEventType {
  *
  * @param obj - Object to validate
  * @returns The validated event
- * @throws {Error} When the object is not a valid WAL event
+ * @throws \{Error\} When the object is not a valid WAL event
  */
 export function validateEvent(obj: unknown): WALEvent {
     if (typeof obj !== 'object' || obj === null) {

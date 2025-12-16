@@ -33,7 +33,7 @@ import { loggerMiddleware } from '../middleware/logger.js';
  *
  * @param options - Server configuration options
  * @returns Object containing the configured Hono app, loaded manifest, and fixture count
- * @throws {Error} When the manifest cannot be loaded from the specified directory
+ * @throws \{Error\} When the manifest cannot be loaded from the specified directory
  *
  * @example
  * ```typescript

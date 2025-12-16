@@ -1,5 +1,5 @@
 /**
- * Web Scraping Module for @web2local/scraper
+ * Web Scraping Module for `@web2local/scraper`
  *
  * This module provides functionality for extracting JavaScript and CSS bundle URLs
  * from web pages, discovering associated source maps, and identifying vendor bundles.
@@ -69,7 +69,7 @@ export interface ExtractBundleUrlsResult {
  *
  * @param pageUrl - The URL of the web page to scrape
  * @returns The extracted bundles, final URL after redirects, and redirect info
- * @throws {Error} When the HTTP request fails with a non-OK status
+ * @throws \{Error\} When the HTTP request fails with a non-OK status
  */
 export async function extractBundleUrls(
     pageUrl: string,
@@ -333,11 +333,11 @@ export interface SourceMapSearchResult {
 /**
  * Extracts package name from a vendor bundle filename.
  * Common patterns:
- *   - lodash-Dhg5Ny8x.js -> lodash
- *   - chunk-react-dom-ABCD1234.js -> react-dom
- *   - vendor~react~react-dom.js -> react, react-dom (returns first)
- *   - date-fns-CxYz1234.js -> date-fns
- *   - @turf-boolean-contains-abcd.js -> @turf/boolean-contains
+ *   - lodash-Dhg5Ny8x.js -\> lodash
+ *   - chunk-react-dom-ABCD1234.js -\> react-dom
+ *   - vendor~react~react-dom.js -\> react, react-dom (returns first)
+ *   - date-fns-CxYz1234.js -\> date-fns
+ *   - \@turf-boolean-contains-abcd.js -\> \@turf/boolean-contains
  */
 function extractPackageNameFromFilename(filename: string): string | undefined {
     // Remove file extension and query params

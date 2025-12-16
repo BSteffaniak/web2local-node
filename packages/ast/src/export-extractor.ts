@@ -11,7 +11,7 @@ import type {
  * Export information extracted from a source file
  */
 export interface FileExports {
-    /** Named exports (export const X, export { X }) */
+    /** Named exports (export const X, export \{ X \}) */
     named: string[];
     /** Type-only exports (export type X, export interface X) */
     types: string[];

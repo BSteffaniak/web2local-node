@@ -1,8 +1,8 @@
 /**
- * Source Map Extraction for @web2local/scraper
+ * Source Map Extraction for `@web2local/scraper`
  *
  * This module provides caching-aware source map extraction.
- * The core extraction logic lives in @web2local/sourcemap.
+ * The core extraction logic lives in `@web2local/sourcemap`.
  */
 
 import type {
@@ -23,7 +23,7 @@ export type {
     SourceMapExtractionResult,
 } from '@web2local/types';
 
-// Re-export utilities from @web2local/sourcemap
+// Re-export utilities from `@web2local/sourcemap`
 export {
     normalizeSourcePath as normalizePath,
     shouldIncludeSource,
@@ -159,7 +159,7 @@ export async function extractSourcesFromMap(
         };
     }
 
-    // Extract sources using @web2local/sourcemap
+    // Extract sources using `@web2local/sourcemap`
     const result = extractSources(parseResult.value, bundleUrl, sourceMapUrl, {
         onSource: onFile,
     });

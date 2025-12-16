@@ -164,7 +164,7 @@ export function generateHtml(options: HtmlOptions): string {
  * @param entryPoints - Detected entry points (uses first/highest confidence)
  * @param defaultTitle - Default page title if not found in captured HTML
  * @returns Generated HTML document as a string
- * @throws {Error} When no entry points are detected
+ * @throws \{Error\} When no entry points are detected
  */
 export async function generateHtmlFromEntryPoints(
     projectDir: string,
@@ -441,8 +441,8 @@ export async function buildAssetMapping(
  * to point to rebuilt assets.
  *
  * Handles:
- * - <script src="..."> → <script type="module" crossorigin src="...">
- * - <link rel="stylesheet" href="..."> updates
+ * - `<script src="...">` → `<script type="module" crossorigin src="...">`
+ * - `<link rel="stylesheet" href="...">` updates
  * - Removes 'defer' attribute (redundant for modules)
  * - Preserves all body content, inline styles, and HTML structure
  *

@@ -99,6 +99,7 @@ export type SourceMapErrorCode =
  * Use instead of throwing exceptions or returning Error objects as values.
  *
  * @example
+ * ```typescript
  * function divide(a: number, b: number): Result<number, string> {
  *     if (b === 0) return Err('Division by zero');
  *     return Ok(a / b);
@@ -110,6 +111,7 @@ export type SourceMapErrorCode =
  * } else {
  *     console.error(result.error);
  * }
+ * ```
  */
 export type Result<T, E = string> =
     | { readonly ok: true; readonly value: T }
@@ -457,7 +459,7 @@ export type VersionSource =
  * including version information and confidence level.
  */
 export interface DependencyInfo {
-    /** Package name (e.g., "react", "@types/node"). */
+    /** Package name (e.g., "react", `@types/node`). */
     name: string;
     /** Detected version, or null if unknown. */
     version: string | null;
@@ -536,7 +538,7 @@ export interface AliasMap {
  * and a confidence score for the detection.
  */
 export interface InferredAlias {
-    /** The alias prefix (e.g., "@/", "~components/"). */
+    /** The alias prefix (e.g., `@/`, "~components/"). */
     alias: string;
     /** The resolved target path for this alias. */
     targetPath: string;

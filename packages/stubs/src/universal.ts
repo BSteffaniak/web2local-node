@@ -10,9 +10,9 @@
  * This is 100% generic - no special-casing based on variable names or expected types.
  *
  * Usage in generated stub code:
- *   import { __stub__ } from './__universal-stub__';
- *   export const withLDConsumer = __stub__('withLDConsumer');
- *   export const SomeClass = __stub__('SomeClass');
+ *   `import \{ __stub__ \} from './__universal-stub__';`
+ *   `export const withLDConsumer = __stub__('withLDConsumer');`
+ *   `export const SomeClass = __stub__('SomeClass');`
  */
 
 /**

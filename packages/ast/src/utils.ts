@@ -386,10 +386,10 @@ function extractMemberChain(
 }
 
 /**
- * Represents a JSX member expression access like <Foo.Bar /> or <Foo.Bar.Baz />
+ * Represents a JSX member expression access like `<Foo.Bar />` or `<Foo.Bar.Baz />`
  */
 export interface JSXMemberAccess {
-    /** The base object name (e.g., 'Foo' in <Foo.Bar />) */
+    /** The base object name (e.g., 'Foo' in `\<Foo.Bar /\>`) */
     object: string;
     /** The property chain (e.g., ['Bar'] or ['Bar', 'Baz']) */
     properties: string[];
@@ -400,7 +400,7 @@ export interface JSXMemberAccess {
 /**
  * Extracts JSX member expression accesses for a specific object name.
  *
- * Finds JSX patterns like `<Foo.Bar />` or `<Foo.Bar.Baz />`. Useful for
+ * Finds JSX patterns like `\<Foo.Bar /\>` or `\<Foo.Bar.Baz /\>`. Useful for
  * detecting component sub-property usage in React/JSX codebases.
  *
  * @param sourceCode - The JavaScript/TypeScript source code to parse
@@ -442,7 +442,7 @@ export function extractJSXMemberAccesses(
 
 /**
  * Helper to extract a JSX member expression chain starting from a specific identifier
- * Handles: <Foo.Bar />, <Foo.Bar.Baz />
+ * Handles: `\<Foo.Bar /\>`, `\<Foo.Bar.Baz /\>`
  */
 function extractJSXMemberChain(
     node: Record<string, unknown>,

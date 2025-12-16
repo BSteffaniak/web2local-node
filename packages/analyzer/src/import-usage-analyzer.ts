@@ -5,9 +5,9 @@
  * This module detects usage patterns like:
  *
  * - Member expressions: `Foo.bar`, `Foo.baz()`
- * - JSX member expressions: `<Foo.Bar />`, `<Foo.Bar.Baz />`
+ * - JSX member expressions: `\<Foo.Bar /\>`, `\<Foo.Bar.Baz /\>`
  * - Direct calls: `foo()`
- * - Direct JSX usage: `<Foo />`
+ * - Direct JSX usage: `\<Foo /\>`
  * - Constructor usage: `new Foo()`
  *
  * This information is useful for determining which exports are actually used
@@ -27,7 +27,7 @@ export interface NamedImportUsage {
     localName: string;
     /** Properties accessed via member expression (e.g., Foo.bar → ['bar']) */
     memberAccesses: string[];
-    /** Properties accessed via JSX member expression (e.g., <Foo.Bar /> → ['Bar']) */
+    /** Properties accessed via JSX member expression (e.g., `\<Foo.Bar /\>` results in `['Bar']`) */
     jsxMemberAccesses: string[];
     /** Is it called directly as a function? (e.g., foo()) */
     isCalledDirectly: boolean;
@@ -173,7 +173,7 @@ function extractMemberExpressionChain(
 
 /**
  * Extract the base identifier and property chain from a JSXMemberExpression
- * Handles: <Foo.Bar />, <Foo.Bar.Baz />
+ * Handles: `\<Foo.Bar /\>`, `\<Foo.Bar.Baz /\>`
  */
 function extractJSXMemberExpressionChain(
     node: Record<string, unknown>,
@@ -536,7 +536,7 @@ export function aggregateImportUsage(
  * usage data from multiple files importing from multiple sources.
  *
  * @param usageInfos - Array of import usage info objects to filter
- * @param source - The import source to filter by (e.g., 'react', '@tanstack/react-query')
+ * @param source - The import source to filter by (e.g., 'react', '\@tanstack/react-query')
  * @returns Filtered array containing only imports from the specified source
  */
 export function filterUsageBySource(

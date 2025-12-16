@@ -15,7 +15,7 @@ export const VERSION = '0.0.1-alpha.1';
  * Converts a file path to use POSIX-style forward slashes.
  * This is necessary for cross-platform compatibility, especially for:
  * - Import/export statements in generated source code
- * - CSS @import paths
+ * - CSS `@import` paths
  * - Consistent path comparisons
  *
  * @param filePath - The file path to normalize

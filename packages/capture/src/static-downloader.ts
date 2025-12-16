@@ -1817,7 +1817,7 @@ export class StaticCapturer {
 
     /**
      * Fetch additional assets that were discovered but not loaded by the browser.
-     * This is used to capture assets referenced in CSS (url(), @import) and HTML
+     * This is used to capture assets referenced in CSS (`url()`, `\@import`) and HTML
      * (srcset, inline styles) that the browser didn't load.
      *
      * All URLs are eligible for fetching (including cross-origin), but the same
@@ -2194,8 +2194,10 @@ export function parseSrcsetUrls(srcset: string): string[] {
  * @returns Array of URLs extracted from the image-set
  *
  * @example
- * parseImageSetUrls("image-set(url('foo.webp') 1x, url('foo@2x.webp') 2x)")
- * // returns ["foo.webp", "foo@2x.webp"]
+ * ```typescript
+ * parseImageSetUrls("image-set(url('foo.webp') 1x, url('foo\@2x.webp') 2x)")
+ * // returns ["foo.webp", "foo\@2x.webp"]
+ * ```
  */
 export function parseImageSetUrls(imageSet: string): string[] {
     if (!imageSet || !imageSet.trim()) {
@@ -2233,11 +2235,11 @@ export function parseImageSetUrls(imageSet: string): string[] {
 /**
  * Extract all responsive image URLs from HTML content.
  * Finds URLs in:
- * - <img srcset="...">
- * - <source srcset="..."> (in <picture> elements)
- * - <source src="..."> (in <video> and <audio> elements)
- * - <style> tags containing url(), @import, image-set()
- * - Inline style attributes containing url()
+ * - `<img srcset="...">` elements
+ * - `<source srcset="...">` elements (in `<picture>` elements)
+ * - `<source src="...">` elements (in `<video>` and `<audio>` elements)
+ * - `<style>` tags containing `url()`, `\@import`, `image-set()`
+ * - Inline style attributes containing `url()`
  *
  * @param html - The HTML content to parse
  * @param baseUrl - Base URL for resolving relative URLs
@@ -2341,9 +2343,9 @@ export function extractResponsiveUrlsFromCss(
 /**
  * Extract ALL URLs from CSS content.
  * This includes:
- * - All url() references (backgrounds, fonts, cursors, etc.)
- * - All @import url() and @import "..." references
- * - All image-set() references
+ * - All `url()` references (backgrounds, fonts, cursors, etc.)
+ * - All `\@import url()` and `\@import "..."` references
+ * - All `image-set()` references
  *
  * @param css - The CSS content to parse
  * @param cssUrl - URL of the CSS file (for resolving relative URLs)

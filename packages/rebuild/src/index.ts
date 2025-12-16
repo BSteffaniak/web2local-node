@@ -98,7 +98,7 @@ export {
  * @param projectDir - Project root directory containing package.json
  * @param sourceFiles - Optional source files for accurate alias detection.
  *                      When provided, enables detection of import aliases like
- *                      'sarsaparilla' -> '@fp/sarsaparilla' by analyzing actual imports.
+ *                      'sarsaparilla' -\> `@fp/sarsaparilla` by analyzing actual imports.
  * @returns The detected project configuration including entry points, framework, and aliases
  */
 export async function analyzeProject(

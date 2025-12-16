@@ -32,8 +32,8 @@ export interface CheckOutputDirectoryOptions {
 /**
  * Resolve the output directory based on CLI options.
  *
- * - If --output is explicitly provided, use it exactly as specified
- * - Otherwise, default to ./output/{hostname}
+ * - If `--output` is explicitly provided, use it exactly as specified
+ * - Otherwise, default to `./output/\{hostname\}`
  *
  * @param outputOption - The --output CLI option value (undefined if not specified)
  * @param hostname - The hostname extracted from the target URL

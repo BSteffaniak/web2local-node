@@ -52,7 +52,7 @@ export const DATA_URI_PATTERN = /^data:application\/json;base64,(.+)$/;
 // PATH PATTERNS
 // ============================================================================
 
-/** Extracts package name from node_modules path (e.g., "lodash" or "@types/node") */
+/** Extracts package name from node_modules path (e.g., "lodash" or `@types/node`) */
 export const NODE_MODULES_PACKAGE_PATTERN =
     /node_modules\/(@[^/]+\/[^/]+|[^/]+)/;
 

@@ -196,9 +196,9 @@ export class StateManager {
      *
      * @param options - Configuration options
      * @returns Initialized StateManager
-     * @throws {IncompatibleStateVersionError} When resuming from an incompatible state version
-     * @throws {UrlMismatchError} When resuming with a different URL than the original
-     * @throws {CorruptedStateError} When WAL is corrupted and truncateCorruptedWal is false
+     * @throws \{IncompatibleStateVersionError\} When resuming from an incompatible state version
+     * @throws \{UrlMismatchError\} When resuming with a different URL than the original
+     * @throws \{CorruptedStateError\} When WAL is corrupted and truncateCorruptedWal is false
      */
     static async create(options: StateManagerOptions): Promise<StateManager> {
         const {
@@ -364,7 +364,7 @@ export class StateManager {
      * Mark a phase as started.
      *
      * @param phase - The phase to start
-     * @throws {InvalidStateTransitionError} When phase is not in 'pending' or 'failed' status
+     * @throws \{InvalidStateTransitionError\} When phase is not in 'pending' or 'failed' status
      */
     async startPhase(phase: PhaseName): Promise<void> {
         const currentStatus = this.state.phases[phase].status;
@@ -395,7 +395,7 @@ export class StateManager {
      * Mark a phase as completed.
      *
      * @param phase - The phase to complete
-     * @throws {InvalidStateTransitionError} When phase is not in 'in_progress' status
+     * @throws \{InvalidStateTransitionError\} When phase is not in 'in_progress' status
      */
     async completePhase(phase: PhaseName): Promise<void> {
         const currentStatus = this.state.phases[phase].status;

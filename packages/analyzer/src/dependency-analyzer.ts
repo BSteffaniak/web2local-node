@@ -41,21 +41,27 @@ export type { DependencyInfo, AnalysisResult } from '@web2local/types';
 
 /**
  * Pattern to match node_modules paths with versions in source map sources
- * Examples:
- *   ../node_modules/react@18.2.0/index.js
- *   node_modules/@tanstack/react-query@5.0.0/build/index.js
- *   ../../node_modules/lodash-es/lodash.js (no version)
+ *
+ * @example
+ * ```
+ * ../node_modules/react@18.2.0/index.js
+ * node_modules/@tanstack/react-query@5.0.0/build/index.js
+ * ../../node_modules/lodash-es/lodash.js (no version)
+ * ```
  */
 const NODE_MODULES_VERSION_PATTERN =
     /node_modules\/(@[^/]+\/[^@/]+|[^@/]+)(?:@(\d+\.\d+\.\d+[^/]*))?/;
 
 /**
  * Extracts the package name from an import specifier
- * Examples:
- *   'lodash' -> 'lodash'
- *   'lodash/merge' -> 'lodash'
- *   '@scope/pkg' -> '@scope/pkg'
- *   '@scope/pkg/sub' -> '@scope/pkg'
+ *
+ * @example
+ * ```
+ * 'lodash' -> 'lodash'
+ * 'lodash/merge' -> 'lodash'
+ * '@scope/pkg' -> '@scope/pkg'
+ * '@scope/pkg/sub' -> '@scope/pkg'
+ * ```
  */
 function getPackageName(importSpecifier: string): string {
     if (importSpecifier.startsWith('@')) {
@@ -219,9 +225,11 @@ export function extractBareImports(
  * Extracts all bare (non-relative) import specifiers with their full paths (including subpaths).
  * Unlike extractBareImports which only returns package names, this returns the full specifier.
  *
- * For example:
- *   - 'lodash/merge' is returned as 'lodash/merge' (not just 'lodash')
- *   - '@scope/pkg/sub' is returned as '@scope/pkg/sub' (not just '@scope/pkg')
+ * @example
+ * ```
+ * 'lodash/merge' is returned as 'lodash/merge' (not just 'lodash')
+ * '@scope/pkg/sub' is returned as '@scope/pkg/sub' (not just '@scope/pkg')
+ * ```
  *
  * @param sourceFiles - Source files to analyze
  * @returns Set of full import specifiers
@@ -266,21 +274,23 @@ export function extractFullImportSpecifiers(
 }
 
 /**
- * Resolves path segments, handling ../ and ./ properly.
+ * Resolves path segments, handling `../` and `./` properly.
  *
  * This function needs to match the behavior of the reconstruction sanitizePath,
  * which processes the path AFTER the bundleName prefix. So for a path like
- * 'assets/../../app-jotai.ts', the bundleName is 'assets' and the original
- * source map path was '../../app-jotai.ts'. After sanitization, the original
- * path becomes 'app-jotai.ts', and it's written to 'assets/app-jotai.ts'.
+ * `assets/../../app-jotai.ts`, the bundleName is `assets` and the original
+ * source map path was `../../app-jotai.ts`. After sanitization, the original
+ * path becomes `app-jotai.ts`, and it's written to `assets/app-jotai.ts`.
  *
  * We need to replicate this: take the first segment as bundleName, sanitize
  * the rest, then rejoin.
  *
- * For example:
- *   'assets/../../app-jotai.ts' -> 'assets/app-jotai.ts'
- *   'assets/foo/../bar.ts' -> 'assets/bar.ts'
- *   'bundle/node_modules/pkg/index.ts' -> 'bundle/node_modules/pkg/index.ts'
+ * @example
+ * ```
+ * 'assets/../../app-jotai.ts' -> 'assets/app-jotai.ts'
+ * 'assets/foo/../bar.ts' -> 'assets/bar.ts'
+ * 'bundle/node_modules/pkg/index.ts' -> 'bundle/node_modules/pkg/index.ts'
+ * ```
  */
 function resolvePathSegments(inputPath: string): string {
     const segments = inputPath.split('/');
@@ -616,7 +626,7 @@ export async function analyzeDependencies(
  *
  * Unlike analyzeDependencies which skips node_modules, this function analyzes ALL
  * provided source files, which properly detects dependencies of internal packages
- * like @fp/sarsaparilla that import react-stately, react-modal, etc.
+ * like `@fp/sarsaparilla` that import react-stately, react-modal, etc.
  */
 export function analyzeDependenciesFromSourceFiles(
     sourceFiles: ExtractedSource[],
@@ -682,9 +692,12 @@ export function mergeVersionInfo(
 
 /**
  * Pattern to match package.json files in node_modules
- * Examples:
- *   node_modules/react/package.json
- *   node_modules/@reduxjs/toolkit/package.json
+ *
+ * @example
+ * ```
+ * node_modules/react/package.json
+ * node_modules/@reduxjs/toolkit/package.json
+ * ```
  */
 const NODE_MODULES_PACKAGE_JSON_PATTERN =
     /node_modules\/(@[^/]+\/[^/]+|[^/]+)\/package\.json$/;
@@ -721,8 +734,12 @@ export function extractVersionsFromSourceFiles(
 /**
  * Also try to extract versions from license headers/banners in source files
  * Many libraries include version info like:
- *   /** @license React v18.2.0 *\/
- *   /*! lodash v4.17.21 *\/
+ *
+ * @example
+ * ```text
+ * /** \@license React v18.2.0 * /
+ * /*! lodash v4.17.21 * /
+ * ```
  */
 export function extractVersionsFromBanners(
     files: Array<{ path: string; content: string }>,
@@ -763,7 +780,7 @@ export function extractVersionsFromBanners(
 
 /**
  * Tries to match banner-extracted package names to actual dependency names
- * Handles cases like: fingerprintjs -> @fingerprintjs/fingerprintjs
+ * Handles cases like: `fingerprintjs` to `\@fingerprintjs/fingerprintjs`
  */
 export function matchBannerVersionsToDependencies(
     dependencies: Map<string, DependencyInfo>,
@@ -937,7 +954,7 @@ export async function validateNpmVersion(
 
 /**
  * Validates versions for multiple packages in batches
- * Returns a map of package@version -> isValid
+ * Returns a map of `package@version` to isValid
  * Also returns replacement versions for invalid ones (fetched from npm latest)
  */
 export async function validateNpmVersionsBatch(
@@ -1081,12 +1098,12 @@ export interface DependencyClassification {
  * Detects workspace package roots from source file paths.
  *
  * A package root is identified by looking for structural indicators:
- * - {package}/package.json
- * - {package}/src/index.{ts,tsx,js,jsx}
- * - {package}/index.{ts,tsx,js,jsx}
- * - {package}/src/... (directory containing source files)
+ * - `{package}/package.json`
+ * - `{package}/src/index.{ts,tsx,js,jsx}`
+ * - `{package}/index.{ts,tsx,js,jsx}`
+ * - `{package}/src/...` (directory containing source files)
  *
- * Returns a map of package name -> package root path
+ * Returns a map of package name to package root path
  */
 function detectWorkspacePackageRoots(
     sourceFiles: ExtractedSource[],
@@ -1395,7 +1412,7 @@ export async function classifyDependencies(
 
 /**
  * Represents a mapping from import aliases to actual package names
- * e.g., 'sarsaparilla' -> '@fp/sarsaparilla'
+ * e.g., `sarsaparilla` to `\@fp/sarsaparilla`
  */
 export interface AliasMap {
     /** Map from alias to actual package name */
@@ -1407,8 +1424,8 @@ export interface AliasMap {
 /**
  * Detects import aliases by correlating import statements with resolved source map paths.
  *
- * When a source file imports from 'sarsaparilla' but the source map shows the file
- * resolved to 'node_modules/@fp/sarsaparilla/...', we've discovered an alias.
+ * When a source file imports from `sarsaparilla` but the source map shows the file
+ * resolved to `node_modules/@fp/sarsaparilla/...`, we've discovered an alias.
  *
  * @param sourceFiles - All extracted source files with their paths and content
  * @returns Map of aliases to their actual package names
@@ -1804,11 +1821,11 @@ export function detectProjectConfig(
  * Mapping of alias to the actual path where the package files are located
  */
 export interface AliasPathMapping {
-    /** Import alias (e.g., 'sarsaparilla') */
+    /** Import alias (e.g., `sarsaparilla`) */
     alias: string;
-    /** Actual package name (e.g., '@fp/sarsaparilla') */
+    /** Actual package name (e.g., `@fp/sarsaparilla`) */
     actualPackage: string;
-    /** Path to the package relative to project root (e.g., './navigation/node_modules/@fp/sarsaparilla') */
+    /** Path to the package relative to project root (e.g., `./navigation/node_modules/@fp/sarsaparilla`) */
     relativePath: string;
 }
 
@@ -1816,11 +1833,11 @@ export interface AliasPathMapping {
  * Builds alias path mappings from an AliasMap and source files.
  * Finds the actual location of each aliased package in the extracted files.
  *
- * File paths have the structure: {bundleName}/{sourcePath}
- * where sourcePath may contain ../ relative references.
+ * File paths have the structure: `{bundleName}/{sourcePath}`
+ * where sourcePath may contain `../` relative references.
  *
  * We find node_modules packages by:
- * 1. Looking for paths that contain /node_modules/
+ * 1. Looking for paths that contain `/node_modules/`
  * 2. Extracting the bundle prefix (the first path segment)
  * 3. Combining them to form the actual output path
  */
@@ -1957,20 +1974,20 @@ export function detectVendorBundleDirectories(
  * Workspace package information for path mapping
  */
 export interface WorkspacePackageMapping {
-    /** Package name as imported (e.g., 'site-kit') */
+    /** Package name as imported (e.g., `site-kit`) */
     name: string;
-    /** Relative path from project root (e.g., './navigation/site-kit') */
+    /** Relative path from project root (e.g., `./navigation/site-kit`) */
     relativePath: string;
 }
 
 /**
  * Subpath import mapping for package subpaths
- * e.g., 'sarsaparilla/auth' -> './navigation/shared-ui/auth'
+ * e.g., `sarsaparilla/auth` to `./navigation/shared-ui/auth`
  */
 export interface SubpathMapping {
-    /** Full import specifier (e.g., 'sarsaparilla/auth') */
+    /** Full import specifier (e.g., `sarsaparilla/auth`) */
     specifier: string;
-    /** Relative path from project root (e.g., './navigation/shared-ui/auth') */
+    /** Relative path from project root (e.g., `./navigation/shared-ui/auth`) */
     relativePath: string;
 }
 
