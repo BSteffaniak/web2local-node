@@ -1,3 +1,32 @@
+/**
+ * Stub File Generator
+ *
+ * Provides utilities for generating stub files to fill gaps in source map recovery.
+ * Handles multiple stub types:
+ *
+ * - **Package Index Files**: Generates barrel files (index.ts) for packages missing entry points
+ * - **CSS Module Stubs**: Creates placeholder CSS/SCSS files for missing style modules
+ * - **Type File Stubs**: Generates type definitions for missing .types.ts files
+ * - **Universal Stubs**: Provides Proxy-based stubs that handle any runtime operation
+ * - **Environment Declarations**: Creates env.d.ts for process.env type coverage
+ * - **External Package Stubs**: Generates type stubs for uninstalled dependencies
+ *
+ * The generator uses AST parsing (via SWC) to analyze imports and exports,
+ * ensuring accurate stub generation that satisfies TypeScript compilation.
+ *
+ * @example
+ * ```typescript
+ * import { generateStubFiles } from '@web2local/stubs';
+ *
+ * const result = await generateStubFiles('./output', {
+ *   internalPackages: new Set(['@company/ui', '@company/utils']),
+ *   onProgress: (msg) => console.log(msg),
+ * });
+ *
+ * console.log(`Generated ${result.indexFilesGenerated} index files`);
+ * ```
+ */
+
 import { readdir, writeFile, stat, readFile, mkdir } from 'fs/promises';
 import { join, dirname, basename, relative, extname, resolve } from 'path';
 import { toPosixPath } from '@web2local/utils';
@@ -151,12 +180,16 @@ export function getUniversalStubImportPath(
 }
 
 /**
- * Information about a package that needs stub files
+ * Information about a package that needs stub files.
  */
 export interface PackageInfo {
+    /** Package name (basename of the directory). */
     name: string;
+    /** Absolute path to the package directory. */
     path: string;
+    /** Whether the package has an existing index file. */
     hasIndex: boolean;
+    /** List of exported module identifiers found in the package. */
     exportedModules: string[];
 }
 
