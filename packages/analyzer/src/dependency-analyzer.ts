@@ -1,3 +1,34 @@
+/**
+ * Dependency analysis and npm package detection.
+ *
+ * @packageDocumentation
+ *
+ * This module provides comprehensive dependency analysis for extracted source code.
+ * It identifies npm packages used in the code, detects their versions, and generates
+ * manifest files for package reconstruction.
+ *
+ * Key capabilities:
+ * - Extract bare module imports from source files
+ * - Detect package versions using multiple strategies (lockfiles, fingerprinting, peer deps)
+ * - Verify packages exist on npm registry
+ * - Infer missing versions from peer dependency relationships
+ * - Generate dependency manifests for build tooling
+ *
+ * @example
+ * ```typescript
+ * import { analyzeDependencies, extractBareImports } from '@web2local/analyzer';
+ *
+ * // Get all npm packages imported in source files
+ * const imports = extractBareImports(sourceFiles);
+ *
+ * // Full analysis with version detection
+ * const result = await analyzeDependencies(sourceFiles, {
+ *   useFingerprinting: true,
+ *   onProgress: (msg) => console.log(msg)
+ * });
+ * ```
+ */
+
 import { readFile, readdir, writeFile } from 'fs/promises';
 import { join, extname } from 'path';
 import { runConcurrent } from '@web2local/utils';

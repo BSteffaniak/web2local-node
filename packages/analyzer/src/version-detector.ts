@@ -1,6 +1,32 @@
 /**
- * Version detection pipeline with confidence-based ranking
- * Tries multiple detection methods and returns the highest confidence result
+ * Version detection for npm packages using multiple heuristics.
+ *
+ * @packageDocumentation
+ *
+ * This module provides a pipeline for detecting package versions from extracted
+ * source code. It tries multiple detection methods in order of confidence and
+ * returns the highest confidence result.
+ *
+ * Detection methods (in order of confidence):
+ * 1. **Lockfile paths** (exact) - pnpm/yarn lockfile directory structures
+ * 2. **Source map paths** (high) - Version embedded in source map file paths
+ * 3. **Custom builds** (high/medium) - Version in directory names or file headers
+ * 4. **VERSION constants** (medium) - Version constants in source code
+ *
+ * @example
+ * ```typescript
+ * import { detectVersion, detectVersions, getPackageFiles } from '@web2local/analyzer';
+ *
+ * // Detect version for a single package
+ * const packageFiles = getPackageFiles(allFiles, 'react');
+ * const result = detectVersion('react', packageFiles, allFiles);
+ * if (result) {
+ *   console.log(`Found ${result.version} with ${result.confidence} confidence`);
+ * }
+ *
+ * // Detect versions for multiple packages
+ * const results = detectVersions(['react', 'lodash'], allFiles);
+ * ```
  */
 
 import type { ExtractedSource } from '@web2local/types';
