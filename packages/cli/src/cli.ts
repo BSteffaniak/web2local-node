@@ -1,11 +1,22 @@
+/**
+ * Command line argument parsing and CLI setup for web2local.
+ *
+ * This module defines all CLI commands, options, and their handlers using commander.js.
+ * It exports type definitions for parsed options that are used throughout the CLI.
+ */
+
 import { Command } from 'commander';
 import type { ServerOptions } from '@web2local/server';
 import { VERSION } from '@web2local/utils';
 import { runMain } from './index.js';
 
 /**
- * Normalize a URL by adding https:// if no protocol is specified.
+ * Normalizes a URL by adding https:// if no protocol is specified.
+ *
  * This allows users to pass URLs like "example.com" without the protocol.
+ *
+ * @param url - The URL to normalize
+ * @returns The URL with https:// prefix if no protocol was present
  */
 function normalizeUrl(url: string): string {
     // Don't modify if it already has a protocol or is a data URL
@@ -20,125 +31,230 @@ function normalizeUrl(url: string): string {
     return `https://${url}`;
 }
 
+/**
+ * Options for the `extract` subcommand.
+ *
+ * The extract command only extracts source files from source maps,
+ * without dependency analysis, API capture, or rebuild.
+ */
 export interface ExtractOptions {
+    /** Target URL to extract source maps from. */
     url: string;
-    /** Output directory. If not specified, defaults to ./output/<hostname> */
+    /** Output directory. If not specified, defaults to ./output/<hostname>. */
     output?: string;
-    /** Clear existing output directory without prompting */
+    /** Clear existing output directory without prompting. */
     overwrite: boolean;
-    /** Resume from checkpoint if available */
+    /** Resume from checkpoint if available. */
     resume: boolean;
+    /** Enable verbose logging. */
     verbose: boolean;
+    /** Number of concurrent downloads. */
     concurrency: number;
+    /** Bypass cache, fetch fresh. */
     noCache: boolean;
-    /** Use browser crawling to discover bundles across multiple pages */
+    /** Use browser crawling to discover bundles across multiple pages. */
     crawl?: boolean;
-    /** Maximum link depth to follow when crawling */
+    /** Maximum link depth to follow when crawling. */
     crawlMaxDepth?: number;
-    /** Maximum number of pages to visit when crawling */
+    /** Maximum number of pages to visit when crawling. */
     crawlMaxPages?: number;
-    /** Run browser in headless mode (default: true) */
+    /** Run browser in headless mode (default: true). */
     headless?: boolean;
 }
 
+/**
+ * Full CLI options for the main web2local command.
+ *
+ * This interface contains all parsed options from the command line,
+ * covering all phases of the extraction pipeline.
+ */
 export interface CliOptions {
+    /** Target URL to extract from. */
     url: string;
-    /** Output directory. If not specified, defaults to ./output/<hostname> */
+    /** Output directory. If not specified, defaults to ./output/<hostname>. */
     output?: string;
-    /** Clear existing output directory without prompting */
+    /** Clear existing output directory without prompting. */
     overwrite: boolean;
-    /** Resume from checkpoint if available */
+    /** Resume from checkpoint if available. */
     resume: boolean;
+    /** Enable verbose logging. */
     verbose: boolean;
+    /** Number of concurrent downloads for source map extraction. */
     concurrency: number;
-    // Package.json generation (default: enabled)
+
+    // Package.json generation options (enabled by default)
+
+    /** Skip generating package.json with detected dependencies. */
     noPackageJson: boolean;
+    /** Disable source fingerprinting for version matching. */
     noFingerprinting: boolean;
+    /** Skip fetching latest npm versions for undetected packages. */
     noFetchVersions: boolean;
+    /** Maximum versions to check per package during fingerprinting (0 = all). */
     maxVersions: number;
+    /** Directory for caching npm metadata and fingerprints. */
     cacheDir: string;
+    /** Disable fingerprint caching. */
     noCache: boolean;
+    /** Include pre-release versions when fingerprinting. */
     includePrereleases: boolean;
+
     // Fingerprinting concurrency options
+
+    /** Number of packages to fingerprint concurrently. */
     fingerprintConcurrency: number;
+    /** Number of versions to check concurrently per package. */
     versionConcurrency: number;
+    /** Number of entry paths to try concurrently when fetching from CDN. */
     pathConcurrency: number;
+    /** Bypass all caches and fetch fresh data. */
     forceRefresh: boolean;
-    // API capture options (default: enabled)
+
+    // API capture options (enabled by default)
+
+    /** Skip API call capture via browser automation. */
     noCapture: boolean;
+    /** Filter patterns for API routes to capture (glob-style). */
     apiFilter: string[];
+    /** Enable static asset capture. */
     captureStatic: boolean;
+    /** Capture rendered HTML after JS execution instead of original. */
     captureRenderedHtml: boolean;
+    /** Run browser in headless mode. */
     headless: boolean;
+    /** Time to wait for API calls after page load (ms). */
     browseTimeout: number;
+    /** Enable auto-scrolling to trigger lazy loading. */
     autoScroll: boolean;
+
     // Capture parallelization options
+
+    /** Number of pages to crawl in parallel. */
     captureConcurrency: number;
+    /** Number of retries for failed page navigations. */
     pageRetries: number;
+    /** Number of retries for truncated asset downloads. */
     assetRetries: number;
+    /** Base delay for exponential backoff between retries (ms). */
     retryDelay: number;
+    /** Maximum backoff delay between retries (ms). */
     retryDelayMax: number;
+    /** Delay between requests to avoid rate limiting (0 = disabled). */
     rateLimitDelay: number;
+    /** Per-page navigation timeout (ms). */
     pageTimeout: number;
+
     // Capture wait time options
+
+    /** Network idle wait timeout (ms). */
     networkIdleTimeout: number;
+    /** Consider page idle after this many ms without network requests. */
     networkIdleTime: number;
+    /** Delay between scroll steps when auto-scrolling (ms). */
     scrollDelay: number;
+    /** Additional settle time after scrolling (ms). */
     pageSettleTime: number;
-    // Rebuild options (default: enabled)
+
+    // Rebuild options (enabled by default)
+
+    /** Skip running the build (only generate config files). */
     noRebuild: boolean;
+    /** Package manager to use for install/build. */
     packageManager: 'npm' | 'pnpm' | 'yarn' | 'auto';
+    /** Start mock server after successful operations. */
     serve: boolean;
+    /** Serve from rebuilt source instead of captured files. */
     useRebuilt: boolean;
+
     // Server options (when --serve is used)
+
+    /** Mock server port. */
     port?: number;
+    /** Mock server host. */
     host?: string;
+    /** Mock server response delay (ms). */
     delay?: number;
+    /** Disable CORS on mock server. */
     noCors?: boolean;
+    /** Mock server serves only static files. */
     staticOnly?: boolean;
+    /** Mock server serves only API fixtures. */
     apiOnly?: boolean;
+
     // Fallback options
+
+    /** Additionally save minified bundles that have source maps. */
     saveBundles: boolean;
+
     // Crawl options
+
+    /** Enable link crawling during capture. */
     crawl: boolean;
+    /** Maximum link depth to follow when crawling. */
     crawlMaxDepth: number;
+    /** Maximum number of pages to visit when crawling. */
     crawlMaxPages: number;
+
     // Dynamic import resolution options
+
+    /** Maximum iterations for resolving dynamic imports from bundles. */
     resolveMaxIterations: number;
 }
 
 /**
- * CLI options for serve command
+ * Internal CLI options for the serve command (before parsing).
  */
 interface ServeCliOptions {
+    /** Mock server port (string from CLI, parsed to number). */
     port?: string;
+    /** Mock server host. */
     host?: string;
+    /** Response delay in ms (string from CLI, parsed to number). */
     delay?: string;
+    /** CORS enabled (negatable via --no-cors). */
     cors?: boolean;
+    /** Serve only static files. */
     staticOnly?: boolean;
+    /** Serve only API fixtures. */
     apiOnly?: boolean;
+    /** Enable verbose logging. */
     verbose?: boolean;
+    /** Serve from rebuilt source. */
     useRebuilt?: boolean;
 }
 
 /**
- * CLI options for extract command
+ * Internal CLI options for the extract command (before parsing).
  */
 interface ExtractCliOptions {
+    /** Output directory path. */
     output?: string;
+    /** Overwrite existing output. */
     overwrite?: boolean;
+    /** Resume from checkpoint. */
     resume?: boolean;
+    /** Enable verbose logging. */
     verbose?: boolean;
+    /** Concurrency (string from CLI, parsed to number). */
     concurrency: string;
+    /** Cache enabled (negatable via --no-cache). */
     cache?: boolean;
+    /** Crawl enabled (negatable via --no-crawl). */
     crawl?: boolean;
+    /** Max crawl depth (string from CLI). */
     crawlMaxDepth: string;
+    /** Max pages to crawl (string from CLI). */
     crawlMaxPages: string;
+    /** Run browser in headless mode. */
     headless?: boolean;
 }
 
 /**
- * Extract server options from parsed CLI options
+ * Extracts server options from parsed CLI options for the serve command.
+ *
+ * @param cliOptions - The raw CLI options from commander
+ * @param outputDir - The resolved output directory path
+ * @returns Server options object compatible with the server package
  */
 function getServerOptions(
     cliOptions: ServeCliOptions,
@@ -157,6 +273,12 @@ function getServerOptions(
     };
 }
 
+/**
+ * Adds server-related CLI options to a commander program.
+ *
+ * @param program - The commander program to add options to
+ * @returns The modified program for chaining
+ */
 function serverCliOptions(program: Command): Command {
     return program
         .option('-p, --port <number>', 'Mock server port', '3000')
@@ -172,6 +294,14 @@ function serverCliOptions(program: Command): Command {
         );
 }
 
+/**
+ * Parses command line arguments and returns the parsed options.
+ *
+ * This function sets up the main command and subcommands (serve, extract),
+ * parses process.argv, and executes the appropriate action handler.
+ *
+ * @returns The parsed CLI options for the main command
+ */
 export function parseArgs(): CliOptions {
     const program = new Command();
 
