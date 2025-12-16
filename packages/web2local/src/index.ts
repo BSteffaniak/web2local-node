@@ -1,12 +1,18 @@
 #!/usr/bin/env node
+/**
+ * Entry point for the web2local CLI application.
+ *
+ * This module serves as the executable wrapper that bootstraps the CLI by
+ * importing and invoking the main function from `@web2local/cli`. It provides
+ * top-level error handling for any fatal, unhandled errors that escape the
+ * CLI's own error management.
+ *
+ * @packageDocumentation
+ */
 
 import { main } from '@web2local/cli';
 
-// This is the true entry point of the application.
-// It imports the main logic from the CLI package and executes it.
 main().catch((error) => {
-    // This basic error handling is a safeguard.
-    // The main function itself should handle its own errors gracefully.
     console.error(
         `\n[web2local] A fatal, unhandled error occurred: ${error.message}`,
     );
