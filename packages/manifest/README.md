@@ -32,5 +32,7 @@ await generateServerManifest(fixtures, assets, {
     sourceUrl: 'https://example.com',
     outputDir: './output/example.com',
     defaultPort: 3000,
+    cors: true,
+    delay: { enabled: false, minMs: 0, maxMs: 0 },
 });
 ```
