@@ -17,42 +17,48 @@ Analyzes reconstructed source files to:
 ```typescript
 import { generateDependencyManifest } from '@web2local/analyzer';
 
-const result = await generateDependencyManifest({
-    projectDir: './extracted-project',
-    sourceFiles: extractedFiles,
-    useFingerprinting: true,
-    onProgress: (msg) => console.log(msg),
-});
+const { packageJson, tsconfig, stats } = await generateDependencyManifest(
+    './extracted-project',
+    null, // manifestPath (optional)
+    'my-project',
+    {
+        useFingerprinting: true,
+        onProgress: (file) => console.log(`Analyzing: ${file}`),
+    },
+);
 
-console.log(result.dependencies);
-// Map { 'react' => { version: '18.2.0', confidence: 'exact' }, ... }
+console.log(stats.totalDependencies);
+// Number of detected dependencies
 ```
 
 ## API
 
-### generateDependencyManifest(options)
+### generateDependencyManifest(sourceDir, manifestPath, outputName, options)
 
 Analyzes source files and generates a dependency manifest with detected versions.
 
 ```typescript
-const result = await generateDependencyManifest({
-    projectDir: './project',
-    sourceFiles: files,
-    useFingerprinting: true, // Match against npm package contents
-    fetchVersions: true, // Fetch latest versions for undetected packages
-    vendorBundles: bundles, // Vendor bundles for fingerprinting
-});
+const { packageJson, tsconfig, stats, aliasMap } = await generateDependencyManifest(
+    './project',
+    null,
+    'output-name',
+    {
+        useFingerprinting: true, // Match against npm package contents
+        fetchFromNpm: true, // Fallback to npm latest as last resort
+        extractedSourceFiles: files, // Raw source files from extraction
+    },
+);
 ```
 
-### inferAliasesFromImports(sourceFiles)
+### inferAliasesFromImports(sourceFiles, existingAliases?)
 
 Detects import aliases by analyzing import patterns across files.
 
 ```typescript
 import { inferAliasesFromImports } from '@web2local/analyzer';
 
-const aliases = await inferAliasesFromImports(sourceFiles);
-// [{ alias: '@utils', targetPath: './src/utils', confidence: 'high' }]
+const aliases = inferAliasesFromImports(sourceFiles, new Set());
+// [{ alias: '@utils', targetPath: './src/utils', evidence: [...], confidence: 'high' }]
 ```
 
 ### reconstructAllIndexes(options)
@@ -65,7 +71,7 @@ import { reconstructAllIndexes } from '@web2local/analyzer';
 const result = await reconstructAllIndexes({
     projectDir: './project',
     sourceFiles: files,
-    aliases: detectedAliases,
+    aliases: [{ alias: '@common', path: './src/common' }],
 });
 ```
 
@@ -76,9 +82,10 @@ Resolves dynamic import paths from minified bundles to source files.
 ```typescript
 import { resolveMissingDynamicImports } from '@web2local/analyzer';
 
-const resolved = await resolveMissingDynamicImports({
-    projectDir: './project',
-    bundles: vendorBundles,
+const result = await resolveMissingDynamicImports({
+    bundlesDir: './output/_bundles',
+    staticDir: './output/_server/static',
+    baseUrl: 'https://example.com',
 });
 ```
 
