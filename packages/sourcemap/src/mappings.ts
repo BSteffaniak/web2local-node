@@ -179,6 +179,14 @@ export interface MappingsValidationResult {
  * @param sourcesLength - Length of the sources array (for bounds checking)
  * @param namesLength - Length of the names array (for bounds checking)
  * @returns Validation result with structured errors
+ *
+ * @example
+ * ```typescript
+ * const result = validateMappings('AAAA;BACA', 2, 0);
+ * if (!result.valid) {
+ *     console.error('Mapping errors:', result.errors);
+ * }
+ * ```
  */
 export function validateMappings(
     mappings: string,

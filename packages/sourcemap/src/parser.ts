@@ -156,7 +156,8 @@ export function tryParseSourceMapAuto(
  * @param content - The JSON string content
  * @param url - The URL of the source map (for error messages)
  * @returns Validated SourceMapV3 object
- * @throws SourceMapError if parsing or validation fails
+ * @throws \{SourceMapError\} When JSON parsing fails (INVALID_JSON code)
+ * @throws \{SourceMapError\} When validation fails (various validation error codes)
  */
 export function parseSourceMap(content: string, url?: string): SourceMapV3 {
     const result = tryParseSourceMap(content, url);
@@ -172,7 +173,9 @@ export function parseSourceMap(content: string, url?: string): SourceMapV3 {
  * @param dataUri - The data URI string (data:application/json;base64,...)
  * @param url - The URL context (for error messages)
  * @returns Validated SourceMapV3 object
- * @throws SourceMapError if decoding or parsing fails
+ * @throws \{SourceMapError\} When the data URI format is invalid (INVALID_DATA_URI code)
+ * @throws \{SourceMapError\} When base64 decoding fails (INVALID_BASE64 code)
+ * @throws \{SourceMapError\} When JSON parsing or validation fails
  */
 export function parseInlineSourceMap(
     dataUri: string,
@@ -192,7 +195,14 @@ export function parseInlineSourceMap(
  * @param content - Either JSON string or data URI
  * @param url - The URL context (for error messages)
  * @returns Validated SourceMapV3 object
- * @throws SourceMapError if parsing fails
+ * @throws \{SourceMapError\} When parsing or validation fails
+ *
+ * @example
+ * ```typescript
+ * // Works with both JSON and data URIs
+ * const map1 = parseSourceMapAuto('{"version":3,"sources":[],"mappings":""}');
+ * const map2 = parseSourceMapAuto('data:application/json;base64,eyJ2ZXJzaW9uIjozfQ==');
+ * ```
  */
 export function parseSourceMapAuto(content: string, url?: string): SourceMapV3 {
     const result = tryParseSourceMapAuto(content, url);
