@@ -1,24 +1,85 @@
+/**
+ * TypeScript configuration generation for reconstructed projects.
+ *
+ * Generates tsconfig.json files tailored to the detected project configuration,
+ * including path mappings for import aliases, workspace packages, and subpath
+ * imports discovered during source map analysis.
+ */
+
 import { writeFile } from 'fs/promises';
 import type { DetectedProjectConfig } from '@web2local/types';
 
-// Local types for path mappings (only used by this generator)
+/**
+ * Represents a path alias mapping detected from source maps.
+ * @internal
+ */
 interface AliasPathMapping {
+    /** The import alias (e.g., '@components'). */
     alias: string;
-    relativePath: string;
-}
-
-interface WorkspacePackageMapping {
-    name: string;
-    relativePath: string;
-}
-
-interface SubpathMapping {
-    specifier: string;
+    /** The relative path to the aliased directory. */
     relativePath: string;
 }
 
 /**
- * Generates a tsconfig.json object based on detected project configuration
+ * Represents a workspace package that needs path mapping.
+ * @internal
+ */
+interface WorkspacePackageMapping {
+    /** The package name (e.g., '@myorg/shared'). */
+    name: string;
+    /** The relative path to the package directory. */
+    relativePath: string;
+}
+
+/**
+ * Represents a subpath import mapping (e.g., 'pkg/auth' -> './shared/auth').
+ * @internal
+ */
+interface SubpathMapping {
+    /** The import specifier (e.g., 'sarsaparilla/auth'). */
+    specifier: string;
+    /** The relative path to the subpath directory. */
+    relativePath: string;
+}
+
+/**
+ * Generates a tsconfig.json object based on detected project configuration.
+ *
+ * Creates a TypeScript configuration optimized for reconstructed code:
+ * - Loose type checking (strict: false) since reconstructed code may have issues
+ * - Path mappings for detected import aliases and workspace packages
+ * - JSX configuration based on detected framework (React, Preact, Solid, Vue)
+ * - Appropriate lib settings based on environment (browser/node/both)
+ *
+ * The generated config uses `noEmit: true` since it's meant for IDE support
+ * and type checking, not building.
+ *
+ * @param aliasPathMappings - Import alias mappings detected from source maps
+ * @param projectConfig - Detected project configuration (TypeScript, JSX, etc.)
+ * @param vendorBundleDirs - Directories containing vendor bundles to exclude
+ * @param workspacePackages - Internal workspace packages needing path mappings
+ * @param subpathMappings - Subpath import mappings (e.g., 'pkg/feature')
+ * @returns A tsconfig.json object ready to be serialized
+ *
+ * @example
+ * ```typescript
+ * const aliasMappings = [
+ *   { alias: '@components', relativePath: './src/components' },
+ *   { alias: '@utils', relativePath: './src/utils' },
+ * ];
+ *
+ * const tsconfig = generateTsConfig(aliasMappings, {
+ *   hasTypeScript: true,
+ *   hasJsx: true,
+ *   jsxFramework: 'react',
+ *   environment: 'browser',
+ * });
+ *
+ * // tsconfig.compilerOptions.paths will include:
+ * // { "@components": ["./src/components/src", "./src/components"], ... }
+ * ```
+ *
+ * @see {@link writeTsConfig} for writing the result to disk
  */
 export function generateTsConfig(
     aliasPathMappings?: AliasPathMapping[],
@@ -210,7 +271,22 @@ export function generateTsConfig(
 }
 
 /**
- * Writes the generated tsconfig.json to disk
+ * Writes the generated tsconfig.json to disk.
+ *
+ * Serializes the tsconfig object with pretty-printing (2-space indentation)
+ * and a trailing newline for POSIX compliance.
+ *
+ * @param outputPath - Absolute path where the tsconfig.json should be written
+ * @param tsconfig - The tsconfig object to serialize
+ * @throws {Error} When the file cannot be written (permissions, disk full, etc.)
+ *
+ * @example
+ * ```typescript
+ * const tsconfig = generateTsConfig(aliasMappings, projectConfig);
+ * await writeTsConfig('/output/my-app/tsconfig.json', tsconfig);
+ * ```
+ *
+ * @see {@link generateTsConfig} for creating the tsconfig object
  */
 export async function writeTsConfig(
     outputPath: string,
