@@ -15,20 +15,20 @@ import type {
 import { extractUrlPattern, generateFixtureId } from './url-pattern.js';
 
 /**
- * Options for API interception
+ * Options for configuring API interception behavior.
  */
 export interface InterceptorOptions {
-    /** Filter patterns for API routes (glob-style patterns) */
+    /** Glob-style patterns for matching API routes. */
     apiFilters: string[];
-    /** Whether to capture request/response bodies */
+    /** Whether to capture request/response bodies. */
     captureBodies: boolean;
-    /** Maximum body size to capture (bytes) */
+    /** Maximum body size to capture in bytes. Bodies exceeding this are truncated. */
     maxBodySize: number;
-    /** Verbose logging */
+    /** Enable verbose logging for debugging. */
     verbose: boolean;
-    /** Structured progress callback */
+    /** Callback invoked when an API call is captured. */
     onCapture?: (event: ApiCaptureEvent) => void;
-    /** Structured verbose log callback */
+    /** Callback for verbose log messages. */
     onVerbose?: (event: CaptureVerboseEvent) => void;
 }
 
@@ -212,7 +212,10 @@ function filterHeaders(
 }
 
 /**
- * API Interceptor - captures API calls from a browser page
+ * Intercepts and captures API calls (XHR/fetch) from browser pages.
+ *
+ * Attaches to Playwright pages to monitor network requests, filtering for
+ * API calls based on configured patterns and capturing request/response data.
  */
 export class ApiInterceptor {
     private fixtures: ApiFixture[] = [];
@@ -223,6 +226,11 @@ export class ApiInterceptor {
         { request: Request; startTime: number }
     > = new Map();
 
+    /**
+     * Create a new API interceptor.
+     *
+     * @param options - Configuration options for interception behavior
+     */
     constructor(options: Partial<InterceptorOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
     }

@@ -68,6 +68,11 @@ export class CrawlQueue {
     private _maxDepthReached = false;
     private _maxPagesReached = false;
 
+    /**
+     * Create a new crawl queue.
+     *
+     * @param options - Configuration options for queue behavior
+     */
     constructor(private options: CrawlQueueOptions) {}
 
     /**

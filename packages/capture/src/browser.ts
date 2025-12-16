@@ -24,13 +24,21 @@ const DEFAULT_USER_AGENT =
 const DEFAULT_VIEWPORT = { width: 1920, height: 1080 };
 
 /**
- * Manages browser lifecycle for capture operations
+ * Manages browser lifecycle for capture operations.
+ *
+ * Wraps Playwright's browser management to provide a consistent interface
+ * for launching browsers, creating pages, and cleaning up resources.
  */
 export class BrowserManager {
     private browser: Browser | null = null;
     private context: BrowserContext | null = null;
     private options: BrowserOptions;
 
+    /**
+     * Create a new browser manager.
+     *
+     * @param options - Browser configuration options
+     */
     constructor(options: Partial<BrowserOptions> = {}) {
         this.options = {
             headless: options.headless ?? true,
@@ -102,7 +110,9 @@ export class BrowserManager {
     }
 
     /**
-     * Get the browser context
+     * Get the browser context.
+     *
+     * @returns The current browser context, or null if the browser hasn't been launched
      */
     getContext(): BrowserContext | null {
         return this.context;
