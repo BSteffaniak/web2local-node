@@ -45,7 +45,10 @@ export class WALWriter {
 
     /**
      * Set the compaction callback.
+     *
      * Useful when the callback needs to reference objects created after construction.
+     *
+     * @param callback - Async function to call when compaction is triggered
      */
     setCompactionCallback(callback: () => Promise<void>): void {
         this.options.onCompactionNeeded = callback;
@@ -53,7 +56,10 @@ export class WALWriter {
 
     /**
      * Open the WAL file for appending.
+     *
      * @param startSeq - Starting sequence number (from last compacted state)
+     * @throws {StateIOError} When the file cannot be opened
+     * @throws {Error} When the writer is already open
      */
     async open(startSeq: number = 0): Promise<void> {
         if (this.fd) {
@@ -72,8 +78,11 @@ export class WALWriter {
 
     /**
      * Append an event to the WAL.
+     *
      * @param event - Event payload (without timestamp and seq)
      * @returns The sequence number assigned to this event
+     * @throws {Error} When the writer is not open
+     * @throws {StateIOError} When the write operation fails
      */
     async append(event: Omit<WALEvent, 'timestamp' | 'seq'>): Promise<number> {
         if (!this.fd) {
@@ -176,6 +185,8 @@ export class WALWriter {
 
     /**
      * Get the current sequence number.
+     *
+     * @returns The last assigned sequence number
      */
     getCurrentSeq(): number {
         return this.seq;
@@ -183,6 +194,8 @@ export class WALWriter {
 
     /**
      * Get the number of events since last compaction.
+     *
+     * @returns Count of events written since the last compaction
      */
     getEventsSinceCompaction(): number {
         return this.eventsSinceCompaction;
@@ -197,6 +210,10 @@ export class WALWriter {
 
     /**
      * Close the WAL file.
+     *
+     * Processes any remaining queued writes before closing.
+     *
+     * @throws {StateIOError} When the file cannot be closed
      */
     async close(): Promise<void> {
         if (!this.fd) {
@@ -218,7 +235,11 @@ export class WALWriter {
 
     /**
      * Truncate the WAL file (after compaction).
+     *
      * This clears all events from the file.
+     *
+     * @throws {Error} When the writer is not open
+     * @throws {StateIOError} When the truncate operation fails
      */
     async truncate(): Promise<void> {
         if (!this.fd) {
@@ -236,6 +257,8 @@ export class WALWriter {
 
     /**
      * Check if the writer is open.
+     *
+     * @returns True if the WAL file is open for writing
      */
     isOpen(): boolean {
         return this.fd !== null;

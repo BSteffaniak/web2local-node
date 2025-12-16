@@ -37,7 +37,9 @@ export interface CompactionResult {
  * @param statePath - Path to state.json
  * @param walPath - Path to state.wal
  * @param walWriter - WAL writer (for truncation and writing compaction event)
- * @returns Compaction result
+ * @returns Compaction result with event count and new sequence number
+ * @throws {StateIOError} When state file cannot be read or written
+ * @throws {StateIOError} When WAL is corrupted
  */
 export async function compact(
     statePath: string,
@@ -115,7 +117,8 @@ export async function compact(
  *
  * @param statePath - Path to state.json
  * @param walPath - Path to state.wal
- * @returns Current state with all events applied
+ * @returns Object containing the reconstructed state and WAL read result
+ * @throws {StateIOError} When state file cannot be read
  */
 export async function loadCurrentState(
     statePath: string,

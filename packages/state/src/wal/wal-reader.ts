@@ -328,6 +328,9 @@ function applyEvent(state: StateFile, event: WALEvent): void {
 
 /**
  * Get a human-readable progress string for a state.
+ *
+ * @param state - The state file to generate progress for
+ * @returns Human-readable progress description (e.g., "15/100 pages captured")
  */
 export function getProgressString(state: StateFile): string {
     // Find the current phase (first non-completed phase)
@@ -386,7 +389,10 @@ export function getProgressString(state: StateFile): string {
 
 /**
  * Validate WAL events against expected sequence.
- * Returns the index of the first out-of-sequence event, or -1 if all valid.
+ *
+ * @param events - Array of events to validate
+ * @param startSeq - Expected starting sequence number (events should start at startSeq + 1)
+ * @returns Index of first out-of-sequence event, or -1 if all events are valid
  */
 export function validateEventSequence(
     events: WALEvent[],

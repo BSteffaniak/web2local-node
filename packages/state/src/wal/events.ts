@@ -33,6 +33,9 @@ export const VALID_EVENT_TYPES: Set<WALEventType> = new Set([
 
 /**
  * Check if a value is a valid WAL event type.
+ *
+ * @param type - Value to check
+ * @returns True if the value is a valid WAL event type string
  */
 export function isValidEventType(type: unknown): type is WALEventType {
     return (
@@ -42,7 +45,10 @@ export function isValidEventType(type: unknown): type is WALEventType {
 
 /**
  * Validate that an object is a valid WAL event.
- * Returns the event if valid, throws if invalid.
+ *
+ * @param obj - Object to validate
+ * @returns The validated event
+ * @throws {Error} When the object is not a valid WAL event
  */
 export function validateEvent(obj: unknown): WALEvent {
     if (typeof obj !== 'object' || obj === null) {
@@ -74,6 +80,9 @@ type EventWithoutMeta<T extends WALEvent> = Omit<T, 'timestamp' | 'seq'>;
 
 /**
  * Create a phase start event payload (without timestamp/seq).
+ *
+ * @param phase - The phase being started
+ * @returns Event payload ready for WAL writer
  */
 export function createPhaseStartEvent(
     phase: PhaseName,
@@ -83,6 +92,9 @@ export function createPhaseStartEvent(
 
 /**
  * Create a phase complete event payload.
+ *
+ * @param phase - The phase that completed
+ * @returns Event payload ready for WAL writer
  */
 export function createPhaseCompleteEvent(
     phase: PhaseName,
@@ -92,6 +104,10 @@ export function createPhaseCompleteEvent(
 
 /**
  * Create a phase fail event payload.
+ *
+ * @param phase - The phase that failed
+ * @param error - Error message describing the failure
+ * @returns Event payload ready for WAL writer
  */
 export function createPhaseFailEvent(
     phase: PhaseName,
@@ -102,6 +118,9 @@ export function createPhaseFailEvent(
 
 /**
  * Create a scrape result event payload.
+ *
+ * @param data - Scrape results including bundles and vendor info
+ * @returns Event payload ready for WAL writer
  */
 export function createScrapeResultEvent(data: {
     bundles: BundleInfo[];
@@ -115,6 +134,10 @@ export function createScrapeResultEvent(data: {
 
 /**
  * Create a bundle extracted event payload.
+ *
+ * @param bundleName - Name of the extracted bundle
+ * @param filesWritten - Number of source files written
+ * @returns Event payload ready for WAL writer
  */
 export function createBundleExtractedEvent(
     bundleName: string,
@@ -125,6 +148,10 @@ export function createBundleExtractedEvent(
 
 /**
  * Create a page started event payload.
+ *
+ * @param url - URL of the page being processed
+ * @param depth - Crawl depth of the page
+ * @returns Event payload ready for WAL writer
  */
 export function createPageStartedEvent(
     url: string,
@@ -135,6 +162,12 @@ export function createPageStartedEvent(
 
 /**
  * Create a page completed event payload.
+ *
+ * @param url - URL of the completed page
+ * @param depth - Crawl depth of the page
+ * @param fixtures - Fixtures captured from this page
+ * @param assets - Assets captured from this page
+ * @returns Event payload ready for WAL writer
  */
 export function createPageCompletedEvent(
     url: string,
@@ -147,6 +180,12 @@ export function createPageCompletedEvent(
 
 /**
  * Create a page failed event payload.
+ *
+ * @param url - URL of the failed page
+ * @param depth - Crawl depth of the page
+ * @param error - Error message describing the failure
+ * @param willRetry - Whether the page will be retried
+ * @returns Event payload ready for WAL writer
  */
 export function createPageFailedEvent(
     url: string,
@@ -159,6 +198,9 @@ export function createPageFailedEvent(
 
 /**
  * Create a URLs discovered event payload.
+ *
+ * @param urls - Array of discovered URL/depth pairs
+ * @returns Event payload ready for WAL writer
  */
 export function createUrlsDiscoveredEvent(
     urls: Array<{ url: string; depth: number }>,
@@ -168,6 +210,9 @@ export function createUrlsDiscoveredEvent(
 
 /**
  * Create a rebuild result event payload.
+ *
+ * @param data - Rebuild results including success status and output info
+ * @returns Event payload ready for WAL writer
  */
 export function createRebuildResultEvent(data: {
     success: boolean;
@@ -181,6 +226,9 @@ export function createRebuildResultEvent(data: {
 
 /**
  * Create a compaction event payload.
+ *
+ * @param eventsCompacted - Number of events that were compacted
+ * @returns Event payload ready for WAL writer
  */
 export function createCompactionEvent(
     eventsCompacted: number,
