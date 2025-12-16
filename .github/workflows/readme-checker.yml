@@ -1,0 +1,283 @@
+name: README Checker
+
+on:
+    schedule:
+        - cron: "0 5 * * 1" # Weekly Monday at 5 AM UTC
+    workflow_dispatch:
+        inputs:
+            existing_branch:
+                description: "Use existing branch (leave empty to create new)"
+                required: false
+                type: string
+                default: ""
+
+            packages:
+                description: "Comma-separated packages (leave empty for all)"
+                required: false
+                type: string
+                default: ""
+
+            prompt_override:
+                description: "Additional guidance or custom prompt"
+                required: false
+                type: string
+                default: ""
+
+            model:
+                description: "Claude model to use"
+                required: false
+                type: choice
+                options:
+                    - ""
+                    - "claude-opus-4-5-20251101"
+                    - "claude-sonnet-4-5-20250929"
+                    - "claude-opus-4-1-20250805"
+                    - "claude-opus-4-20250514"
+                    - "claude-sonnet-4-20250514"
+                    - "claude-3-7-sonnet-20250219"
+                    - "claude-3-5-haiku-20241022"
+                    - "claude-3-haiku-20240307"
+                default: ""
+
+            max_turns:
+                description: "Maximum conversation turns (leave empty for default)"
+                required: false
+                type: string
+                default: ""
+
+permissions:
+    id-token: write
+    contents: write
+    pull-requests: write
+
+jobs:
+    create-branch:
+        name: Create or use existing branch
+        runs-on: ubuntu-latest
+        outputs:
+            branch-name: ${{ steps.branch.outputs.branch_name }}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Create branch
+              id: branch
+              uses: MoosicBox/MoosicBox/.github/actions/claude-checker@master
+              with:
+                  command: create-branch
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  branch_prefix: readme-updates
+                  branch_name: ${{ inputs.existing_branch }}
+                  existing_branch: ${{ inputs.existing_branch != '' && 'true' || 'false' }}
+
+    determine-packages:
+        name: Determine packages to update
+        runs-on: ubuntu-latest
+        needs: [create-branch]
+        outputs:
+            matrix: ${{ steps.analyze.outputs.matrix }}
+            has-packages: ${{ steps.analyze.outputs.has-changes }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - uses: dtolnay/rust-toolchain@stable
+
+            - name: Generate package matrix
+              id: analyze
+              uses: MoosicBox/MoosicBox/.github/actions/clippier@master
+              with:
+                  command: packages
+                  packages: ${{ github.event.inputs.packages }}
+                  skip-on-no-changes: "false"
+                  force-full-matrix-condition: "true"
+                  os-suffix: "-latest"
+                  os: "ubuntu"
+
+    update-readmes:
+        name: Update ${{ matrix.package.name }}
+        runs-on: ubuntu-latest
+        needs: [create-branch, determine-packages]
+        if: needs.determine-packages.outputs.has-packages == 'true'
+        strategy:
+            fail-fast: false
+            max-parallel: 1
+            matrix:
+                package: ${{ fromJson(needs.determine-packages.outputs.matrix) }}
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ needs.create-branch.outputs.branch-name }}
+                  fetch-depth: 0
+
+            - name: Check if README exists
+              id: check_readme
+              run: |
+                  if [ -f "${{ matrix.package.path }}/README.md" ]; then
+                    echo "exists=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "exists=false" >> $GITHUB_OUTPUT
+                    echo "No README found for ${{ matrix.package.name }}, skipping"
+                  fi
+
+            - name: Update README with Claude
+              if: steps.check_readme.outputs.exists == 'true'
+              id: claude
+              uses: MoosicBox/MoosicBox/.github/actions/claude-checker@master
+              with:
+                  command: check
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  claude_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+                  prompt_template: readme
+
+                  enable_execution_details_summary: "true"
+                  summary_title: "💭 README Update: ${{ matrix.package.name }}"
+
+                  template_vars: |
+                      package_name: ${{ matrix.package.name }}
+                      package_path: ${{ matrix.package.path }}
+                      custom_guidelines: ${{ inputs.prompt_override }}
+                      is_refinement_pass: ${{ inputs.existing_branch != '' && inputs.prompt_override != '' && 'true' || 'false' }}
+
+                  branch_name: ${{ needs.create-branch.outputs.branch-name }}
+                  auto_commit: true
+                  enable_resilient_push: true
+                  push_max_retries: 5
+                  extract_commit_message: true
+
+                  model: ${{ inputs.model || 'claude-opus-4-5-20251101' }}
+                  max_turns: ${{ inputs.max_turns }}
+
+            - name: Format README with prettier
+              if: always() && steps.check_readme.outputs.exists == 'true'
+              run: |
+                  README_PATH="${{ matrix.package.path }}/README.md"
+                  if [ -f "$README_PATH" ]; then
+                    npx -y prettier --write "$README_PATH"
+
+                    if [ -n "$(git status --porcelain)" ]; then
+                      git config user.name "github-actions[bot]"
+                      git config user.email "github-actions[bot]@users.noreply.github.com"
+                      git add "$README_PATH"
+                      git commit --amend --no-edit
+                      git push --force-with-lease origin ${{ needs.create-branch.outputs.branch-name }}
+                    fi
+                  fi
+
+    update-root-readme:
+        name: Update root README
+        runs-on: ubuntu-latest
+        needs: [create-branch]
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ needs.create-branch.outputs.branch-name }}
+                  fetch-depth: 0
+
+            - name: Update root README with Claude
+              uses: MoosicBox/MoosicBox/.github/actions/claude-checker@master
+              with:
+                  command: check
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  claude_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+                  prompt_template: readme
+
+                  template_vars: |
+                      package_path: .
+                      is_root_readme: true
+                      custom_guidelines: ${{ inputs.prompt_override }}
+                      is_refinement_pass: ${{ inputs.existing_branch != '' && inputs.prompt_override != '' && 'true' || 'false' }}
+
+                  branch_name: ${{ needs.create-branch.outputs.branch-name }}
+                  auto_commit: true
+                  enable_resilient_push: true
+                  push_max_retries: 5
+                  extract_commit_message: true
+
+                  model: ${{ inputs.model || 'claude-opus-4-5-20251101' }}
+                  max_turns: ${{ inputs.max_turns }}
+
+            - name: Format README with prettier
+              if: always()
+              run: |
+                  if [ -f "README.md" ]; then
+                    npx -y prettier --write "README.md"
+
+                    if [ -n "$(git status --porcelain)" ]; then
+                      git config user.name "github-actions[bot]"
+                      git config user.email "github-actions[bot]@users.noreply.github.com"
+                      git add README.md
+                      git commit --amend --no-edit
+                      git push --force-with-lease origin ${{ needs.create-branch.outputs.branch-name }}
+                    fi
+                  fi
+
+    create-pr:
+        name: Create Pull Request
+        runs-on: ubuntu-latest
+        needs: [create-branch, update-readmes, update-root-readme]
+        if: always() && needs.create-branch.result == 'success'
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ needs.create-branch.outputs.branch-name }}
+                  fetch-depth: 0
+
+            - name: Check for changes
+              id: check_changes
+              run: |
+                  CHANGES=$(git diff origin/master --name-only | grep README.md || true)
+                  if [ -n "$CHANGES" ]; then
+                    echo "has_changes=true" >> $GITHUB_OUTPUT
+                    echo "Found changes in:"
+                    echo "$CHANGES"
+                  else
+                    echo "has_changes=false" >> $GITHUB_OUTPUT
+                    echo "No README changes detected"
+                  fi
+
+            - name: Create Pull Request
+              if: steps.check_changes.outputs.has_changes == 'true'
+              uses: MoosicBox/MoosicBox/.github/actions/claude-checker@master
+              with:
+                  command: create-pr
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  branch_name: ${{ needs.create-branch.outputs.branch-name }}
+                  pr_base_branch: master
+                  pr_title: "📝 Automated README Accuracy Updates"
+                  pr_body: |
+                      ## 🤖 Automated README Accuracy Review
+
+                      This PR contains automated updates to ensure all README files accurately reflect the current state of the codebase.
+
+                      ### 📋 What was reviewed:
+                      ${{ inputs.packages != '' && format('- Specific packages: {0}', inputs.packages) || '- ✅ Root README.md\n- ✅ All package READMEs' }}
+
+                      ${{ inputs.prompt_override != '' && format('### 🎯 Additional Guidance Applied:\n```\n{0}\n```\n', inputs.prompt_override) || '' }}
+
+                      ${{ inputs.model != '' && format('### 🤖 Model Used:\n`{0}`\n', inputs.model) || '' }}
+
+                      ### 🔍 Review focus:
+                      - Verified that claimed features are actually implemented
+                      - Marked future/planned features clearly
+                      - Updated outdated information
+                      - Ensured code examples match actual APIs
+
+                      ---
+                      *This PR was automatically generated by the README Checker workflow.*
+                  pr_labels: automated,documentation
+                  pr_skip_if_no_changes: true
+
+            - name: No changes summary
+              if: steps.check_changes.outputs.has_changes == 'false'
+              run: |
+                  echo "✅ No README updates needed - all documentation appears accurate"
