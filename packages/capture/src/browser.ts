@@ -4,13 +4,17 @@
 
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 
+/**
+ * Options for configuring browser behavior.
+ */
 export interface BrowserOptions {
+    /** Whether to run the browser in headless mode */
     headless: boolean;
-    /** User agent to use */
+    /** User agent string to use for requests */
     userAgent?: string;
-    /** Viewport size */
+    /** Viewport size for the browser window */
     viewport?: { width: number; height: number };
-    /** Extra HTTP headers to send */
+    /** Extra HTTP headers to send with every request */
     extraHeaders?: Record<string, string>;
 }
 
@@ -37,7 +41,11 @@ export class BrowserManager {
     }
 
     /**
-     * Launch the browser and create a context
+     * Launch the browser and create a context.
+     *
+     * If the browser is already launched, this method returns immediately.
+     *
+     * @throws {Error} If the browser fails to launch
      */
     async launch(): Promise<void> {
         if (this.browser) {
@@ -63,7 +71,12 @@ export class BrowserManager {
     }
 
     /**
-     * Create a new page in the browser context
+     * Create a new page in the browser context.
+     *
+     * Automatically launches the browser if not already running.
+     *
+     * @returns A new Playwright page instance
+     * @throws {Error} If page creation fails
      */
     async newPage(): Promise<Page> {
         if (!this.context) {
@@ -97,7 +110,16 @@ export class BrowserManager {
 }
 
 /**
- * Auto-scroll the page to trigger lazy loading
+ * Auto-scroll the page to trigger lazy loading.
+ *
+ * Scrolls down the page in increments, waiting for lazy-loaded content to load.
+ * Automatically scrolls back to the top when finished.
+ *
+ * @param page - The Playwright page to scroll
+ * @param options - Scroll configuration options
+ * @param options.step - Scroll step in pixels (default: 500)
+ * @param options.delay - Delay between scrolls in ms (default: 100)
+ * @param options.maxScrolls - Maximum scroll attempts (default: 50)
  */
 export async function autoScrollPage(
     page: Page,
@@ -162,7 +184,15 @@ export async function autoScrollPage(
 }
 
 /**
- * Wait for network to be idle (no pending requests)
+ * Wait for network to be idle (no pending requests).
+ *
+ * Waits for the Playwright 'networkidle' state, then adds an additional
+ * idle time buffer for any trailing requests.
+ *
+ * @param page - The Playwright page to wait on
+ * @param options - Wait configuration options
+ * @param options.timeout - Maximum wait time in ms (default: 30000)
+ * @param options.idleTime - Additional idle buffer in ms (default: 500)
  */
 export async function waitForNetworkIdle(
     page: Page,
@@ -283,11 +313,19 @@ function shouldSkipUrl(url: string): boolean {
 
 /**
  * Extract all same-origin links from the current page.
- * Filters out non-page URLs (images, files, mailto, etc.)
  *
- * @param page - Playwright page
+ * Filters out non-page URLs (images, files, mailto, etc.) and normalizes
+ * URLs for consistent crawl deduplication.
+ *
+ * @param page - Playwright page to extract links from
  * @param baseOrigin - Origin to filter links (e.g., "https://example.com")
- * @returns Array of absolute URLs to same-origin pages
+ * @returns Array of absolute URLs to same-origin pages, sorted alphabetically
+ *
+ * @example
+ * ```typescript
+ * const links = await extractPageLinks(page, 'https://example.com');
+ * // Returns: ['https://example.com/about', 'https://example.com/contact']
+ * ```
  */
 export async function extractPageLinks(
     page: Page,

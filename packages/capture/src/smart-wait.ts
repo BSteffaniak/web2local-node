@@ -50,7 +50,10 @@ const DEFAULT_WAIT_OPTIONS: Omit<Required<SmartWaitOptions>, 'onPhase'> = {
 };
 
 /**
- * Sleep for a given number of milliseconds
+ * Sleep for a given number of milliseconds.
+ *
+ * @param ms - The number of milliseconds to sleep
+ * @returns A promise that resolves after the specified delay
  */
 export function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -155,8 +158,23 @@ async function waitForNetworkIdleWithTimeout(
  * - Exits early when page is clearly stable
  * - Optimized scroll delays
  *
- * @param page - Playwright page instance
+ * @param page - Playwright page instance to wait on
  * @param options - Wait configuration options
+ * @param options.networkIdleTimeout - Network idle wait timeout in ms (default: 5000)
+ * @param options.networkIdleTime - Consider idle after this many ms without requests (default: 1000)
+ * @param options.scrollDelay - Delay between scroll steps in ms (default: 50)
+ * @param options.pageSettleTime - Additional settle time after scrolling in ms (default: 1000)
+ * @param options.autoScroll - Enable auto-scroll to trigger lazy loading (default: true)
+ * @param options.onPhase - Callback when entering a new phase
+ *
+ * @example
+ * ```typescript
+ * await smartWaitForPage(page, {
+ *     networkIdleTimeout: 3000,
+ *     autoScroll: true,
+ *     onPhase: (phase) => console.log(`Phase: ${phase}`),
+ * });
+ * ```
  */
 export async function smartWaitForPage(
     page: Page,
@@ -191,7 +209,14 @@ export async function smartWaitForPage(
 
 /**
  * Wait for page to be ready for interaction.
- * This is a lighter-weight wait for non-first pages.
+ *
+ * A lighter-weight wait for non-first pages that skips auto-scrolling.
+ * Uses shorter timeouts than {@link smartWaitForPage}.
+ *
+ * @param page - Playwright page instance to wait on
+ * @param options - Wait configuration options
+ * @param options.networkIdleTimeout - Network idle wait timeout in ms (default: 3000)
+ * @param options.networkIdleTime - Additional idle buffer in ms (default: 500)
  */
 export async function quickWaitForPage(
     page: Page,

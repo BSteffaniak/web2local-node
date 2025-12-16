@@ -474,11 +474,19 @@ function calculatePriority(pattern: string, pathParams: string[]): number {
 }
 
 /**
- * Extract a URL pattern from a concrete URL path
+ * Extract a URL pattern from a concrete URL path.
+ *
+ * Converts dynamic path segments (like UUIDs, numeric IDs, etc.) into
+ * named parameter placeholders based on context.
+ *
+ * @param urlPath - The URL path to extract a pattern from (may include query string)
+ * @returns Pattern result with the normalized pattern, parameter names, and priority
  *
  * @example
+ * ```typescript
  * extractUrlPattern("/api/users/123/posts/456")
  * // Returns: { pattern: "/api/users/:userId/posts/:postId", pathParams: ["userId", "postId"], ... }
+ * ```
  */
 export function extractUrlPattern(urlPath: string): UrlPatternResult {
     // Remove query string if present
@@ -519,7 +527,16 @@ export function extractUrlPattern(urlPath: string): UrlPatternResult {
 }
 
 /**
- * Group URLs by their extracted pattern
+ * Group URLs by their extracted pattern.
+ *
+ * @param urls - Array of URLs to group
+ * @returns Map from pattern string to array of original URLs
+ *
+ * @example
+ * ```typescript
+ * groupUrlsByPattern(['/users/1', '/users/2', '/posts/1'])
+ * // Returns: Map { '/users/:userId' => ['/users/1', '/users/2'], '/posts/:postId' => ['/posts/1'] }
+ * ```
  */
 export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
     const groups = new Map<string, string[]>();
@@ -535,7 +552,11 @@ export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
 }
 
 /**
- * Create a filename-safe version of a fixture ID
+ * Create a filename-safe version of a fixture ID.
+ *
+ * @param method - HTTP method (GET, POST, etc.)
+ * @param pattern - URL pattern with parameter placeholders
+ * @returns A safe filename string like "GET_api_users_userId.json"
  */
 export function createFixtureFilename(method: string, pattern: string): string {
     // Replace path separators and special chars
@@ -549,7 +570,12 @@ export function createFixtureFilename(method: string, pattern: string): string {
 }
 
 /**
- * Generate a unique fixture ID
+ * Generate a unique fixture ID.
+ *
+ * @param method - HTTP method (GET, POST, etc.)
+ * @param pattern - URL pattern with parameter placeholders
+ * @param index - Numeric index to ensure uniqueness
+ * @returns A unique fixture ID string like "0001_GET_api-users-userId"
  */
 export function generateFixtureId(
     method: string,

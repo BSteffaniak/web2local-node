@@ -72,7 +72,8 @@ export class CrawlQueue {
 
     /**
      * Atomically take the next item from the queue.
-     * Returns null if the queue is empty or max pages reached.
+     *
+     * @returns The next queue item, or null if the queue is empty or max pages reached
      */
     take(): QueueItem | null {
         // Check if we've hit the max pages limit
@@ -100,7 +101,10 @@ export class CrawlQueue {
 
     /**
      * Add a URL to the queue if not already visited or queued.
-     * Returns true if the URL was added, false if skipped.
+     *
+     * @param url - The URL to add to the queue
+     * @param depth - The link depth (distance from initial URL)
+     * @returns True if the URL was added, false if skipped (already visited, queued, or exceeds depth limit)
      */
     add(url: string, depth: number): boolean {
         const normalizedUrl = normalizeUrlForCrawl(url);
@@ -146,6 +150,8 @@ export class CrawlQueue {
 
     /**
      * Mark a URL as completed (successfully processed).
+     *
+     * @param url - The URL to mark as completed
      */
     complete(url: string): void {
         const normalizedUrl = normalizeUrlForCrawl(url);
@@ -162,7 +168,9 @@ export class CrawlQueue {
 
     /**
      * Re-queue a failed URL for retry.
-     * Returns true if the URL was re-queued, false if max retries exceeded.
+     *
+     * @param item - The queue item to retry
+     * @returns True if the URL was re-queued, false if max retries exceeded
      */
     retry(item: QueueItem): boolean {
         const normalizedUrl = normalizeUrlForCrawl(item.url);
@@ -190,7 +198,8 @@ export class CrawlQueue {
 
     /**
      * Check if all work is done.
-     * Returns true if the queue is empty AND no items are in progress.
+     *
+     * @returns True if the queue is empty AND no items are in progress, or if max pages is reached
      */
     isDone(): boolean {
         // If max pages reached, we're done regardless of queue state
@@ -218,6 +227,8 @@ export class CrawlQueue {
 
     /**
      * Get current statistics.
+     *
+     * @returns Statistics about the crawl queue state
      */
     getStats(): CrawlQueueStats {
         return {
@@ -231,6 +242,8 @@ export class CrawlQueue {
 
     /**
      * Get a snapshot of current queue state for progress reporting.
+     *
+     * @returns Current queue state with counts of queued, in-progress, and completed items
      */
     getSnapshot(): {
         queued: number;
@@ -246,6 +259,9 @@ export class CrawlQueue {
 
     /**
      * Check if a URL has been visited.
+     *
+     * @param url - The URL to check
+     * @returns True if the URL has been visited
      */
     hasVisited(url: string): boolean {
         return this.visitedUrls.has(normalizeUrlForCrawl(url));
@@ -253,7 +269,10 @@ export class CrawlQueue {
 
     /**
      * Check if the max pages limit has been reached.
+     *
      * Workers should use this to exit early when take() returns null.
+     *
+     * @returns True if the maximum page limit has been reached
      */
     isMaxPagesReached(): boolean {
         return this.completedCount >= this.options.maxPages;
@@ -261,7 +280,10 @@ export class CrawlQueue {
 
     /**
      * Manually mark a URL as visited without processing.
-     * Useful for handling redirects.
+     *
+     * Useful for handling redirects or marking URLs that should not be crawled.
+     *
+     * @param url - The URL to mark as visited
      */
     markVisited(url: string): void {
         this.visitedUrls.add(normalizeUrlForCrawl(url));
@@ -269,8 +291,11 @@ export class CrawlQueue {
 
     /**
      * Initialize completed count for resume scenarios.
+     *
      * Call this before processing begins to account for already-completed pages.
      * This ensures the maxPages limit accounts for prior work.
+     *
+     * @param count - The number of pages already completed in a previous session
      */
     initializeCompletedCount(count: number): void {
         this.completedCount = count;

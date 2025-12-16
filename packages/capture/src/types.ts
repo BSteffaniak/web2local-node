@@ -454,14 +454,20 @@ export type ResourceType =
     | 'other';
 
 /**
- * Determines if a resource type is an API call
+ * Determines if a resource type is an API call.
+ *
+ * @param type - The browser resource type to check
+ * @returns True if the resource type is 'xhr' or 'fetch'
  */
 export function isApiResourceType(type: ResourceType): boolean {
     return type === 'xhr' || type === 'fetch';
 }
 
 /**
- * Determines if a resource type is a static asset
+ * Determines if a resource type is a static asset.
+ *
+ * @param type - The browser resource type to check
+ * @returns True if the resource type represents a static asset (document, stylesheet, image, media, font, script, or manifest)
  */
 export function isStaticResourceType(type: ResourceType): boolean {
     return [
