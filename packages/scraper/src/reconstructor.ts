@@ -113,9 +113,21 @@ async function fileExistsWithSameContent(
  * unsafe paths. Also skips writing files that already exist with identical
  * content to avoid unnecessary disk writes.
  *
+ * File write errors are captured in the result's `errors` array rather than thrown,
+ * allowing the operation to continue with remaining files.
+ *
  * @param files - The extracted source files to write
  * @param options - Configuration including output directory and bundle name
  * @returns Statistics about the reconstruction including counts and errors
+ *
+ * @example
+ * ```typescript
+ * const result = await reconstructSources(extractedSources, {
+ *     outputDir: './output/example.com',
+ *     bundleName: 'main-abc123'
+ * });
+ * console.log(`Written: ${result.filesWritten}, Skipped: ${result.filesSkipped}`);
+ * ```
  */
 export async function reconstructSources(
     files: readonly ExtractedSource[],
@@ -176,6 +188,14 @@ export async function reconstructSources(
  *
  * @param path - The potentially unsafe path to sanitize
  * @returns The sanitized path, or null if the result would be empty
+ *
+ * @example
+ * ```typescript
+ * sanitizePath('../etc/passwd');      // Returns: 'etc/passwd'
+ * sanitizePath('/absolute/path.ts');  // Returns: 'absolute/path.ts'
+ * sanitizePath('src/index.ts');       // Returns: 'src/index.ts'
+ * sanitizePath('');                   // Returns: null
+ * ```
  */
 export function sanitizePath(path: string): string | null {
     // Remove any null bytes
@@ -318,9 +338,20 @@ export interface SavedBundle {
  * within the bundles directory. Files that already exist with identical
  * content are not rewritten.
  *
+ * File write errors are captured in the returned `errors` array rather than thrown,
+ * allowing the operation to continue with remaining bundles.
+ *
  * @param bundlesWithoutMaps - The bundles to save along with their content
  * @param options - Configuration containing the output directory path
  * @returns The list of saved bundles with their local paths and any errors
+ *
+ * @example
+ * ```typescript
+ * const { saved, errors } = await saveBundles(bundlesWithoutMaps, {
+ *     outputDir: './output/example.com'
+ * });
+ * console.log(`Saved ${saved.length} bundles to _bundles/`);
+ * ```
  */
 export async function saveBundles(
     bundlesWithoutMaps: BundleWithContent[],
@@ -440,8 +471,22 @@ async function detectBundleEntryPoint(
  * creates a `src/index.ts` file that re-exports from extracted bundles and
  * imports minified bundles without source maps.
  *
+ * Errors during file write are captured in the returned `errors` array rather than thrown.
+ *
  * @param options - Configuration including output directory, saved bundles, and extracted bundles
  * @returns Information about the generated stubs including the entry point path
+ *
+ * @example
+ * ```typescript
+ * const result = await generateBundleStubs({
+ *     outputDir: './output/example.com',
+ *     savedBundles: savedBundles,
+ *     extractedBundles: [{ bundleName: 'main-abc123' }]
+ * });
+ * if (result.stubsGenerated > 0) {
+ *     console.log(`Entry point: ${result.entryPointPath}`);
+ * }
+ * ```
  */
 export async function generateBundleStubs(
     options: BundleStubOptions,
