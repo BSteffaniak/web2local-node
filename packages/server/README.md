@@ -44,17 +44,13 @@ await runServer({
 Creates a Hono app instance without starting the server. Useful for testing or custom server setups.
 
 ```typescript
-import { createApp, loadManifest, loadFixtureIndex, loadAllFixtures } from '@web2local/server';
+import { createApp } from '@web2local/server';
 
-const manifest = await loadManifest('./captured-site');
-const index = await loadFixtureIndex('./captured-site', manifest);
-const fixtures = await loadAllFixtures('./captured-site', index);
-
-const app = createApp({
-    manifest,
-    fixtures,
-    staticDir: './captured-site/static',
-    options: { verbose: true },
+const { app, manifest, fixtureCount } = await createApp({
+    dir: './captured-site',
+    port: 3000,
+    host: 'localhost',
+    verbose: true,
 });
 ```
 
@@ -92,11 +88,12 @@ The server expects the following structure:
 
 ```
 captured-site/
-  manifest.json          # Server configuration
-  fixtures/
-    index.json           # Fixture index
-    *.json               # Individual fixture files
-  static/
-    index.html           # Entry point
-    assets/              # Static assets
+  _server/
+    manifest.json        # Server configuration
+    fixtures/
+      _index.json        # Fixture index
+      *.json             # Individual fixture files
+    static/
+      index.html         # Entry point
+      assets/            # Static assets
 ```
