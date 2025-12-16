@@ -75,11 +75,10 @@ web2local serve <dir> [--port 3000]
 
 #### Extraction
 
-| Option                       | Default | Description                  |
-| ---------------------------- | ------- | ---------------------------- |
-| `-c, --concurrency <n>`      | `5`     | Concurrent downloads         |
-| `-n, --include-node-modules` | `false` | Include node_modules sources |
-| `--no-cache`                 | —       | Disable caching              |
+| Option                  | Default | Description          |
+| ----------------------- | ------- | -------------------- |
+| `-c, --concurrency <n>` | `5`     | Concurrent downloads |
+| `--no-cache`            | —       | Disable caching      |
 
 #### Dependency Analysis
 
@@ -168,6 +167,7 @@ web2local serve <dir> [--port 3000]
 | [@web2local/cache](./packages/cache)         | Disk and memory caching                       |
 | [@web2local/http](./packages/http)           | HTTP utilities with retry logic               |
 | [@web2local/manifest](./packages/manifest)   | Server manifest generation                    |
+| [@web2local/state](./packages/state)         | State management with resume functionality    |
 | [@web2local/types](./packages/types)         | Shared TypeScript types                       |
 | [@web2local/utils](./packages/utils)         | Common utilities                              |
 
