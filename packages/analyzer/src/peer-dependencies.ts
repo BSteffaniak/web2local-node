@@ -1,11 +1,29 @@
 /**
- * Dynamic peer dependency inference
+ * Peer dependency-based version inference for npm packages.
  *
- * Infers package versions by analyzing peer dependency relationships:
- * 1. If we know package A's version, and package B has A as a peer dep,
- *    we can narrow down B's possible versions
- * 2. Reverse inference: if B requires A as peer with specific version,
- *    and we find B's version, we may be able to infer A's version
+ * @packageDocumentation
+ *
+ * This module infers package versions by analyzing peer dependency relationships:
+ *
+ * 1. **Forward inference**: If we know package A's version, and package B has A
+ *    as a peer dependency, we can narrow down B's possible versions.
+ *
+ * 2. **Reverse inference**: If B requires A as a peer with a specific version
+ *    range, and we find B's version, we may be able to infer A's version.
+ *
+ * @example
+ * ```typescript
+ * import { inferPeerDependencyVersions } from '@web2local/analyzer';
+ *
+ * const knownVersions = new Map([
+ *   ['react', { name: 'react', version: '18.2.0', confidence: 'exact' }]
+ * ]);
+ *
+ * const results = await inferPeerDependencyVersions(
+ *   ['react-dom', '@tanstack/react-query'],
+ *   knownVersions
+ * );
+ * ```
  */
 
 import { getPackageMetadata } from './source-fingerprint.js';

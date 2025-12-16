@@ -1,13 +1,36 @@
 /**
- * Improved source fingerprinting - compare extracted source against npm package versions
- * to find the best matching version
+ * Source code fingerprinting for npm package version detection.
  *
- * Key improvements:
- * - Checks ALL versions by default (unless --max-versions specified)
- * - Better entry point discovery using npm package.json
- * - Multi-file comparison for higher accuracy
+ * @packageDocumentation
+ *
+ * This module compares extracted source code against published npm package versions
+ * to find the best matching version. It uses multiple strategies to handle both
+ * minified and unminified code.
+ *
+ * Key features:
+ * - Checks ALL versions by default (unless maxVersionsToCheck is specified)
+ * - Better entry point discovery using npm package.json metadata
+ * - Multi-file comparison for higher accuracy with modular packages
  * - Source-to-dist comparison using AST-based signatures
  * - Disk caching for faster repeated runs
+ * - Structural fingerprinting for packages with many small files
+ *
+ * @example
+ * ```typescript
+ * import { findMatchingVersion, findMatchingVersions } from '@web2local/analyzer';
+ *
+ * // Find version for a single package
+ * const result = await findMatchingVersion('react', extractedFiles);
+ * if (result) {
+ *   console.log(`Found version ${result.version} with ${result.similarity} similarity`);
+ * }
+ *
+ * // Find versions for multiple packages
+ * const results = await findMatchingVersions(packageMap, {
+ *   minSimilarity: 0.8,
+ *   onProgress: (pkg, result) => console.log(`${pkg}: ${result?.version}`)
+ * });
+ * ```
  */
 
 import { createHash } from 'crypto';
@@ -37,31 +60,75 @@ const DEFAULT_VERSION_CHECK_CONCURRENCY = 10;
 /** Default number of entry paths to try concurrently when fetching from CDN */
 const DEFAULT_PATH_CONCURRENCY = 5;
 
+/**
+ * Result of fingerprint-based version detection.
+ *
+ * Extends {@link VersionResult} with similarity metrics for assessing
+ * match quality.
+ */
 export interface FingerprintResult extends VersionResult {
+    /** Similarity score between 0 and 1 (1 = exact match) */
     similarity: number;
+    /** Number of files that contributed to the match */
     matchedFiles: number;
+    /** Total number of files analyzed */
     totalFiles: number;
 }
 
+/**
+ * Options for fingerprint-based version detection.
+ */
 export interface FingerprintOptions {
-    /** Maximum versions to check (0 = all) */
+    /**
+     * Maximum number of versions to check per package.
+     * Set to 0 to check all available versions.
+     * @defaultValue 0
+     */
     maxVersionsToCheck?: number;
-    /** Minimum similarity threshold (0-1) */
+    /**
+     * Minimum similarity threshold for accepting a match.
+     * Values range from 0 (no similarity) to 1 (exact match).
+     * @defaultValue 0.7
+     */
     minSimilarity?: number;
-    /** Number of packages to process concurrently (default: 5) */
+    /**
+     * Number of packages to process concurrently.
+     * @defaultValue 5
+     */
     concurrency?: number;
-    /** Number of versions to check concurrently within each package (default: 10) */
+    /**
+     * Number of versions to check concurrently within each package.
+     * @defaultValue 10
+     */
     versionConcurrency?: number;
-    /** Number of entry paths to try concurrently when fetching from CDN (default: 5) */
+    /**
+     * Number of entry paths to try concurrently when fetching from CDN.
+     * @defaultValue 5
+     */
     pathConcurrency?: number;
-    /** Include pre-release versions (alpha, beta, rc, nightly, etc.) */
+    /**
+     * Whether to include pre-release versions in the search.
+     * Pre-release versions include alpha, beta, rc, nightly, canary, etc.
+     * @defaultValue false
+     */
     includePrereleases?: boolean;
-    /** Progress callback for overall progress */
+    /**
+     * Callback invoked when a package finishes processing.
+     * @param packageName - The name of the package that was processed
+     * @param result - The fingerprint result, or null if no match found
+     */
     onProgress?: (
         packageName: string,
         result: FingerprintResult | null,
     ) => void;
-    /** Detailed progress callback */
+    /**
+     * Callback invoked for each version being checked.
+     * Useful for detailed progress reporting.
+     * @param packageName - The name of the package
+     * @param version - The version being checked
+     * @param versionIndex - Current version index (1-based)
+     * @param versionTotal - Total number of versions to check
+     */
     onDetailedProgress?: (
         packageName: string,
         version: string,
@@ -1481,9 +1548,30 @@ async function checkVersionSimilarity(
 }
 
 /**
- * Finds the best matching version for a package
- * Uses dual fingerprinting strategy: tries clean source first, then minified versions
- * For packages with many small files, uses multi-file fingerprinting
+ * Finds the best matching npm package version for extracted source files.
+ *
+ * Uses a dual fingerprinting strategy:
+ * 1. Tries clean source fingerprinting first
+ * 2. Falls back to minified version comparison if needed
+ * 3. For packages with many small files, uses structural fingerprinting
+ *
+ * Results are cached to speed up repeated lookups.
+ *
+ * @param packageName - The npm package name to find a version for
+ * @param extractedFiles - Source files extracted from the target (e.g., from source maps)
+ * @param options - Optional configuration for version detection
+ * @returns The best matching version result, or null if no suitable match found
+ *
+ * @example
+ * ```typescript
+ * const result = await findMatchingVersion('lodash', extractedFiles, {
+ *   minSimilarity: 0.8,
+ *   onVersionCheck: (v, i, t) => console.log(`Checking ${v} (${i}/${t})`)
+ * });
+ * if (result) {
+ *   console.log(`Matched ${result.version} with ${result.similarity} similarity`);
+ * }
+ * ```
  */
 export async function findMatchingVersion(
     packageName: string,
@@ -1708,7 +1796,26 @@ export async function findMatchingVersion(
 }
 
 /**
- * Batch fingerprint matching for multiple packages
+ * Batch fingerprint matching for multiple packages.
+ *
+ * Processes multiple packages concurrently, pre-fetching npm metadata to
+ * minimize latency. Results are cached for faster subsequent runs.
+ *
+ * @param packages - Map of package names to their extracted source files
+ * @param options - Configuration options for the fingerprinting process
+ * @returns Map of package names to their best matching version results
+ *
+ * @example
+ * ```typescript
+ * const packages = new Map([
+ *   ['react', reactFiles],
+ *   ['lodash', lodashFiles]
+ * ]);
+ * const results = await findMatchingVersions(packages, {
+ *   concurrency: 3,
+ *   onProgress: (pkg, result) => console.log(`${pkg}: ${result?.version}`)
+ * });
+ * ```
  */
 export async function findMatchingVersions(
     packages: Map<string, ExtractedSource[]>,
@@ -1768,7 +1875,13 @@ export async function findMatchingVersions(
 }
 
 /**
- * Gets package metadata (exposed for peer dependency inference)
+ * Gets package metadata from npm registry with caching.
+ *
+ * Exposes cached metadata access for external use, primarily for
+ * peer dependency inference.
+ *
+ * @param packageName - The npm package name to look up
+ * @returns Cached package metadata, or null if the package doesn't exist
  */
 export async function getPackageMetadata(
     packageName: string,
@@ -1778,7 +1891,10 @@ export async function getPackageMetadata(
 }
 
 /**
- * Represents a minified vendor bundle for fingerprinting
+ * Represents a minified vendor bundle for fingerprinting.
+ *
+ * Used when analyzing bundles without source maps, where the only
+ * option is to compare minified code against published npm versions.
  */
 export interface VendorBundleInput {
     /** The minified bundle content */
@@ -1790,10 +1906,30 @@ export interface VendorBundleInput {
 }
 
 /**
- * Attempts to identify a package from a minified vendor bundle by fingerprinting
- * against npm's minified versions.
+ * Attempts to identify a package from a minified vendor bundle.
+ *
+ * Compares the minified bundle against minified versions from npm's CDN
+ * using features that survive minification (string literals, function patterns,
+ * numeric constants).
  *
  * This is specifically for vendor bundles WITHOUT source maps.
+ *
+ * @param vendorBundle - The minified bundle to identify
+ * @param candidatePackages - List of potential package names to check
+ * @param options - Configuration options for the fingerprinting process
+ * @returns The best matching version with package name, or null if no match found
+ *
+ * @example
+ * ```typescript
+ * const result = await fingerprintVendorBundle(
+ *   { content: minifiedCode, filename: 'vendor-123abc.js' },
+ *   ['react', 'lodash', 'axios'],
+ *   { minSimilarity: 0.7 }
+ * );
+ * if (result) {
+ *   console.log(`Identified ${result.packageName}@${result.version}`);
+ * }
+ * ```
  */
 export async function fingerprintVendorBundle(
     vendorBundle: VendorBundleInput,
@@ -1974,7 +2110,26 @@ export async function fingerprintVendorBundle(
 }
 
 /**
- * Batch fingerprint vendor bundles against a set of candidate packages
+ * Batch fingerprint multiple vendor bundles against candidate packages.
+ *
+ * Processes multiple minified bundles concurrently, attempting to identify
+ * which npm package each bundle originated from.
+ *
+ * @param vendorBundles - Array of minified bundles to identify
+ * @param candidatePackages - List of potential package names to check against
+ * @param options - Configuration options for the fingerprinting process
+ * @returns Map of bundle filenames to their best matching version results
+ *
+ * @example
+ * ```typescript
+ * const bundles = [
+ *   { content: bundle1, filename: 'vendor-a.js' },
+ *   { content: bundle2, filename: 'vendor-b.js' }
+ * ];
+ * const results = await fingerprintVendorBundles(bundles, ['react', 'lodash'], {
+ *   onBundleComplete: (i, t, f, r) => console.log(`${f}: ${r?.packageName}`)
+ * });
+ * ```
  */
 export async function fingerprintVendorBundles(
     vendorBundles: VendorBundleInput[],

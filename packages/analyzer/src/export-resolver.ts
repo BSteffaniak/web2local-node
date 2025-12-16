@@ -111,8 +111,13 @@ function emitWarning(message: string, options: ExportResolverOptions): void {
 
 /**
  * Searches package source files for a file that exports all the given names.
- * Used to find the source file for namespace exports.
  *
+ * Used to find the source file for namespace exports when a consumer does
+ * `import * as Foo from 'package'` and accesses specific properties on `Foo`.
+ *
+ * @param packagePath - Absolute path to the package directory to search
+ * @param requiredExports - Array of export names that must all be present in one file
+ * @param options - Optional configuration for warnings and progress reporting
  * @returns The relative path from packagePath to the source file, or null if not found
  */
 export async function findNamespaceSourceFile(
@@ -170,9 +175,14 @@ export async function findNamespaceSourceFile(
 
 /**
  * Searches package source files for imports of a specific name from external dependencies.
- * Used to find dependency re-exports.
  *
- * @returns The dependency source and whether it's a type-only import, or null if not found
+ * Used to find dependency re-exports when a package imports a symbol from an external
+ * dependency and should re-export it from its index file.
+ *
+ * @param packagePath - Absolute path to the package directory to search
+ * @param exportName - The name of the export to find
+ * @param options - Optional configuration for warnings and progress reporting
+ * @returns Object with dependency source and type-only flag, or null if not found
  */
 export async function findDependencyReexport(
     packagePath: string,
@@ -244,6 +254,13 @@ export async function findDependencyReexport(
 
 /**
  * Scans consumer files and collects import usage information for a specific package.
+ *
+ * Analyzes how imports from a package are used in consumer files, including
+ * member accesses, function calls, and JSX usage patterns.
+ *
+ * @param consumerFiles - Array of absolute file paths to scan for imports
+ * @param packageSource - The package import source to look for (e.g., 'react', '\@scope/pkg')
+ * @returns Object containing raw usage infos and aggregated usage by import name
  */
 export async function collectConsumerUsage(
     consumerFiles: string[],
@@ -278,11 +295,19 @@ export async function collectConsumerUsage(
 /**
  * Finds the resolution for missing exports from a package.
  *
- * Algorithm:
+ * This function analyzes consumer usage patterns to determine how to resolve
+ * missing exports:
  * 1. For each missing export, determine usage pattern (namespace vs direct)
  * 2. If namespace: search package source files for one that exports all accessed properties
  * 3. If direct: search package source files for imports of this name from external deps
  * 4. If no resolution found: mark as stub with reason
+ *
+ * @param packagePath - Absolute path to the package directory
+ * @param missingExportNames - Set of export names that consumers expect but aren't provided
+ * @param consumerFiles - Array of absolute file paths that import from this package
+ * @param packageImportSource - The import source string used by consumers (e.g., '\@pkg/name')
+ * @param options - Optional configuration for warnings and progress reporting
+ * @returns Array of missing export info with resolution strategies
  */
 export async function resolvePackageMissingExports(
     packagePath: string,
@@ -536,7 +561,13 @@ export function generateExportStatement(
 }
 
 /**
- * Groups resolutions by type for organized output
+ * Groups resolutions by type for organized output.
+ *
+ * Categorizes missing export resolutions into three groups for easier
+ * processing when generating index files.
+ *
+ * @param resolutions - Array of missing export info to categorize
+ * @returns Object with arrays of namespaces, reexports, and stubs
  */
 export function groupResolutionsByType(resolutions: MissingExportInfo[]): {
     namespaces: MissingExportInfo[];
