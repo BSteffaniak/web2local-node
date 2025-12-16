@@ -1133,6 +1133,7 @@ export async function runMain(options: CliOptions) {
                 // Parallelization options
                 concurrency: options.captureConcurrency,
                 pageRetries: options.pageRetries,
+                assetRetries: options.assetRetries,
                 retryDelayBase: options.retryDelay,
                 retryDelayMax: options.retryDelayMax,
                 rateLimitDelay: options.rateLimitDelay,

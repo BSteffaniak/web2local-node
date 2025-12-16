@@ -92,6 +92,7 @@ const DEFAULT_CAPTURE_OPTIONS: Partial<CaptureOptions> = {
     // Parallelization defaults
     concurrency: 5,
     pageRetries: 3,
+    assetRetries: 2,
     retryDelayBase: 500,
     retryDelayMax: 5000,
     rateLimitDelay: 0,
@@ -132,6 +133,7 @@ export async function captureWebsite(
     // Parallelization settings
     const concurrency = opts.concurrency ?? 5;
     const pageRetries = opts.pageRetries ?? 3;
+    const assetRetries = opts.assetRetries ?? 2;
     const retryDelayBase = opts.retryDelayBase ?? 500;
     const retryDelayMax = opts.retryDelayMax ?? 5000;
     const rateLimitDelay = opts.rateLimitDelay ?? 0;
@@ -166,6 +168,9 @@ export async function captureWebsite(
         staticFilter: opts.staticFilter,
         onAssetCaptured: opts.onAssetCaptured,
         skipAssetWrite: opts.skipAssetWrite,
+        assetRetries,
+        retryDelayBase,
+        retryDelayMax,
         onCapture: (event) => {
             opts.onProgress?.(event);
         },

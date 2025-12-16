@@ -37,64 +37,104 @@ const PLACEHOLDER_PNG = Buffer.from(
 const TRUNCATION_RECOVERY_TIMEOUT_MS = 60000;
 
 /**
+ * Sleep for a given number of milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Direct HTTP fetch with proper streaming support and content verification.
  * Used as a fallback when Playwright's response.body() returns truncated data.
  * Uses robustFetch for automatic retry on transient errors.
  *
+ * Includes retry logic for truncated responses: if the response is truncated
+ * (received fewer bytes than Content-Length), we retry with exponential backoff.
+ *
  * @param url - URL to fetch
  * @param onWarning - Optional callback for warning messages (truncation, fetch failures)
  * @param timeoutMs - Timeout in milliseconds (default: 60000)
+ * @param maxRetries - Maximum number of retries for truncated responses (default: 2)
+ * @param retryDelayBase - Base delay for exponential backoff in ms (default: 500)
+ * @param retryDelayMax - Maximum backoff delay in ms (default: 5000)
  */
 async function fetchWithContentVerification(
     url: string,
     onWarning?: (message: string) => void,
     timeoutMs: number = TRUNCATION_RECOVERY_TIMEOUT_MS,
+    maxRetries: number = 2,
+    retryDelayBase: number = 500,
+    retryDelayMax: number = 5000,
 ): Promise<Buffer | null> {
-    try {
-        const response = await robustFetch(url, {
-            signal: AbortSignal.timeout(timeoutMs),
-            headers: {
-                'User-Agent':
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                Accept: '*/*',
-            },
-        });
+    let lastBuffer: Buffer | null = null;
 
-        if (!response.ok) {
-            return null;
-        }
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await robustFetch(url, {
+                signal: AbortSignal.timeout(timeoutMs),
+                headers: {
+                    'User-Agent':
+                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    Accept: '*/*',
+                },
+            });
 
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        // Verify content length if header present
-        const contentLength = parseInt(
-            response.headers.get('content-length') || '0',
-            10,
-        );
-        if (contentLength > 0 && buffer.length !== contentLength) {
-            // Truncated data - log warning but still return what we got
-            const msg = `Truncated response for ${url} (got ${buffer.length} bytes, expected ${contentLength})`;
-            if (onWarning) {
-                onWarning(msg);
-            } else {
-                console.warn(msg);
+            if (!response.ok) {
+                return lastBuffer;
             }
-        }
 
-        return buffer;
-    } catch (error) {
-        // FetchError already has good error details
-        if (error instanceof FetchError) {
-            const msg = `Failed to fetch ${url}: ${error.message}`;
-            if (onWarning) {
-                onWarning(msg);
-            } else {
-                console.warn(msg);
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            // Verify content length if header present
+            const contentLength = parseInt(
+                response.headers.get('content-length') || '0',
+                10,
+            );
+
+            // Check for truncation (only when got < expected)
+            // Note: got > expected is normal for compressed responses (gzip/br)
+            // where Content-Length is compressed size but body() returns decompressed
+            if (contentLength > 0 && buffer.length < contentLength) {
+                lastBuffer = buffer;
+
+                // If we have more retries, backoff and retry
+                if (attempt < maxRetries) {
+                    const delay = Math.min(
+                        retryDelayBase * Math.pow(2, attempt),
+                        retryDelayMax,
+                    );
+                    await sleep(delay);
+                    continue;
+                }
+
+                // Final attempt still truncated - warn and return what we have
+                const msg = `Truncated response for ${url} (got ${buffer.length} bytes, expected ${contentLength}) after ${attempt + 1} attempts`;
+                if (onWarning) {
+                    onWarning(msg);
+                } else {
+                    console.warn(msg);
+                }
+                return buffer;
             }
+
+            // Success - got complete data (or no Content-Length to verify against)
+            return buffer;
+        } catch (error) {
+            // FetchError already has good error details
+            if (error instanceof FetchError) {
+                const msg = `Failed to fetch ${url}: ${error.message}`;
+                if (onWarning) {
+                    onWarning(msg);
+                } else {
+                    console.warn(msg);
+                }
+            }
+            return lastBuffer; // Return partial data if we have any
         }
-        return null;
     }
+
+    return lastBuffer;
 }
 
 /**
@@ -157,6 +197,17 @@ export interface StaticCaptureOptions {
      * Provides granular progress during pending captures, CSS asset fetching, and URL rewriting.
      */
     onFlushProgress?: (event: FlushProgressEvent) => void;
+
+    /**
+     * Number of retries for truncated asset downloads (default: 2).
+     * When an asset is truncated (received fewer bytes than Content-Length header),
+     * we will retry fetching it this many times with exponential backoff.
+     */
+    assetRetries?: number;
+    /** Base delay for exponential backoff between retries in ms (default: 500) */
+    retryDelayBase?: number;
+    /** Maximum backoff delay between retries in ms (default: 5000) */
+    retryDelayMax?: number;
 }
 
 const DEFAULT_OPTIONS: StaticCaptureOptions = {
@@ -166,6 +217,9 @@ const DEFAULT_OPTIONS: StaticCaptureOptions = {
     captureMediaSources: false,
     verbose: false,
     skipAssetWrite: false,
+    assetRetries: 2,
+    retryDelayBase: 500,
+    retryDelayMax: 5000,
 };
 
 /**
@@ -1197,10 +1251,14 @@ export class StaticCapturer {
                         `expected ${contentLength} bytes, got ${body.length} bytes. Retrying with direct fetch...`,
                 );
 
-                // Try to recover with direct HTTP fetch (with timeout)
+                // Try to recover with direct HTTP fetch (with timeout and retries)
                 const recoveredBody = await fetchWithContentVerification(
                     url,
                     (msg) => this.logWarning(msg),
+                    TRUNCATION_RECOVERY_TIMEOUT_MS,
+                    this.options.assetRetries ?? 2,
+                    this.options.retryDelayBase ?? 500,
+                    this.options.retryDelayMax ?? 5000,
                 );
                 if (recoveredBody && recoveredBody.length === contentLength) {
                     this.log(
@@ -1918,8 +1976,13 @@ export class StaticCapturer {
         let usedPlaceholder = false;
 
         try {
-            body = await fetchWithContentVerification(url, (msg) =>
-                this.logWarning(msg),
+            body = await fetchWithContentVerification(
+                url,
+                (msg) => this.logWarning(msg),
+                TRUNCATION_RECOVERY_TIMEOUT_MS,
+                this.options.assetRetries ?? 2,
+                this.options.retryDelayBase ?? 500,
+                this.options.retryDelayMax ?? 5000,
             );
         } catch (error) {
             this.log(

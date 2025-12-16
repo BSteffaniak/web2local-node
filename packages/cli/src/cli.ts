@@ -75,6 +75,7 @@ export interface CliOptions {
     // Capture parallelization options
     captureConcurrency: number;
     pageRetries: number;
+    assetRetries: number;
     retryDelay: number;
     retryDelayMax: number;
     rateLimitDelay: number;
@@ -286,6 +287,11 @@ export function parseArgs(): CliOptions {
             '3',
         )
         .option(
+            '--asset-retries <number>',
+            'Number of retries for truncated asset downloads (default: 2)',
+            '2',
+        )
+        .option(
             '--retry-delay <ms>',
             'Base delay for exponential backoff between retries in ms (default: 500)',
             '500',
@@ -415,6 +421,7 @@ export function parseArgs(): CliOptions {
                 // Capture parallelization options
                 captureConcurrency: parseInt(options.captureConcurrency, 10),
                 pageRetries: parseInt(options.pageRetries, 10),
+                assetRetries: parseInt(options.assetRetries, 10),
                 retryDelay: parseInt(options.retryDelay, 10),
                 retryDelayMax: parseInt(options.retryDelayMax, 10),
                 rateLimitDelay: parseInt(options.rateLimitDelay, 10),
@@ -575,6 +582,7 @@ export function parseArgs(): CliOptions {
         // Capture parallelization options
         captureConcurrency: parseInt(options.captureConcurrency, 10),
         pageRetries: parseInt(options.pageRetries, 10),
+        assetRetries: parseInt(options.assetRetries, 10),
         retryDelay: parseInt(options.retryDelay, 10),
         retryDelayMax: parseInt(options.retryDelayMax, 10),
         rateLimitDelay: parseInt(options.rateLimitDelay, 10),

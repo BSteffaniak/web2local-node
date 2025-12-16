@@ -143,6 +143,8 @@ export interface CaptureOptions {
     concurrency?: number;
     /** Number of retries for failed page navigations (default: 3) */
     pageRetries?: number;
+    /** Number of retries for truncated asset downloads (default: 2) */
+    assetRetries?: number;
     /** Base delay for exponential backoff between retries in ms (default: 500) */
     retryDelayBase?: number;
     /** Maximum backoff delay between retries in ms (default: 5000) */
