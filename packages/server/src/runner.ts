@@ -1,5 +1,10 @@
 /**
- * Programmatic interface for running the mock server
+ * Programmatic interface for running the mock server.
+ *
+ * This module provides a simple function to start the mock server
+ * programmatically, useful for integration with other tools or scripts.
+ *
+ * @packageDocumentation
  */
 
 import { createApp, getServerInfo } from './server/app.js';
@@ -8,7 +13,25 @@ import pc from 'picocolors';
 import type { ServerOptions } from './types.js';
 
 /**
- * Run the mock server programmatically
+ * Runs the mock server programmatically.
+ *
+ * Starts a Hono server that serves captured API fixtures and static assets.
+ * The server runs until the process is terminated (e.g., with Ctrl+C).
+ *
+ * @param options - Server configuration options
+ * @throws {Error} When the server cannot be started (e.g., port in use, invalid directory)
+ *
+ * @example
+ * ```typescript
+ * import { runServer } from '@web2local/server';
+ *
+ * await runServer({
+ *     dir: './output/example.com',
+ *     port: 3000,
+ *     host: 'localhost',
+ *     verbose: true,
+ * });
+ * ```
  */
 export async function runServer(options: ServerOptions): Promise<void> {
     console.log(pc.bold(pc.cyan('\n  Mock Site Server')));

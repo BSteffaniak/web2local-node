@@ -1,5 +1,11 @@
 /**
- * Manifest and fixture loader
+ * Manifest and fixture loading utilities.
+ *
+ * This module provides functions for loading server manifests, fixture indexes,
+ * and individual fixtures from a captured site directory. It handles the
+ * various file layout conventions used by web2local.
+ *
+ * @packageDocumentation
  */
 
 import { readFile, readdir, stat } from 'fs/promises';
@@ -12,7 +18,20 @@ import type {
 } from '../types.js';
 
 /**
- * Load the server manifest from a directory
+ * Loads the server manifest from a captured site directory.
+ *
+ * Attempts to load from `_server/manifest.json` first, then falls back
+ * to checking for a `_server.json` pointer file.
+ *
+ * @param dir - Path to the captured site directory
+ * @returns The parsed server manifest
+ * @throws {Error} When no manifest can be found in the directory
+ *
+ * @example
+ * ```typescript
+ * const manifest = await loadManifest('./output/example.com');
+ * console.log(manifest.name); // "example.com"
+ * ```
  */
 export async function loadManifest(dir: string): Promise<ServerManifest> {
     const serverDir = join(dir, '_server');
@@ -39,7 +58,20 @@ export async function loadManifest(dir: string): Promise<ServerManifest> {
 }
 
 /**
- * Load the fixture index from a directory
+ * Loads the fixture index from a captured site directory.
+ *
+ * The fixture index contains metadata about all available API fixtures
+ * including their patterns, methods, and file locations.
+ *
+ * @param dir - Path to the captured site directory
+ * @returns The parsed fixture index
+ * @throws {Error} When the fixture index cannot be found or parsed
+ *
+ * @example
+ * ```typescript
+ * const index = await loadFixtureIndex('./output/example.com');
+ * console.log(`Found ${index.fixtures.length} fixtures`);
+ * ```
  */
 export async function loadFixtureIndex(dir: string): Promise<FixtureIndex> {
     const indexPath = join(dir, '_server', 'fixtures', '_index.json');
@@ -53,7 +85,18 @@ export async function loadFixtureIndex(dir: string): Promise<FixtureIndex> {
 }
 
 /**
- * Load a single fixture file
+ * Loads a single fixture file from disk.
+ *
+ * @param dir - Path to the captured site directory
+ * @param relativePath - Relative path to the fixture file within `_server/fixtures/`
+ * @returns The loaded fixture with its file path
+ * @throws {Error} When the fixture file cannot be read or parsed
+ *
+ * @example
+ * ```typescript
+ * const fixture = await loadFixture('./output/example.com', 'api/users.json');
+ * console.log(fixture.request.method); // "GET"
+ * ```
  */
 export async function loadFixture(
     dir: string,
@@ -74,7 +117,20 @@ export async function loadFixture(
 }
 
 /**
- * Load all fixtures from index
+ * Loads all fixtures from the fixture index.
+ *
+ * Reads the fixture index and loads each fixture file. Fixtures that fail
+ * to load are logged as warnings but do not cause the overall load to fail.
+ * Results are sorted by priority (higher priority fixtures first).
+ *
+ * @param dir - Path to the captured site directory
+ * @returns Array of loaded fixtures sorted by priority
+ *
+ * @example
+ * ```typescript
+ * const fixtures = await loadAllFixtures('./output/example.com');
+ * console.log(`Loaded ${fixtures.length} fixtures`);
+ * ```
  */
 export async function loadAllFixtures(dir: string): Promise<LoadedFixture[]> {
     const index = await loadFixtureIndex(dir);
@@ -102,7 +158,23 @@ export async function loadAllFixtures(dir: string): Promise<LoadedFixture[]> {
 }
 
 /**
- * Get the static directory path
+ * Gets the path to the static files directory.
+ *
+ * Returns either the captured static directory (`_server/static`) or the
+ * rebuilt source directory (`_rebuilt`) depending on the `useRebuilt` flag.
+ *
+ * @param dir - Path to the captured site directory
+ * @param useRebuilt - Whether to use the rebuilt source directory
+ * @returns Absolute path to the static files directory
+ *
+ * @example
+ * ```typescript
+ * const staticDir = getStaticDir('./output/example.com');
+ * // Returns: './output/example.com/_server/static'
+ *
+ * const rebuiltDir = getStaticDir('./output/example.com', true);
+ * // Returns: './output/example.com/_rebuilt'
+ * ```
  */
 export function getStaticDir(dir: string, useRebuilt: boolean = false): string {
     if (useRebuilt) {
@@ -112,7 +184,17 @@ export function getStaticDir(dir: string, useRebuilt: boolean = false): string {
 }
 
 /**
- * Check if a directory exists
+ * Checks if a directory exists at the given path.
+ *
+ * @param path - Path to check
+ * @returns `true` if a directory exists at the path, `false` otherwise
+ *
+ * @example
+ * ```typescript
+ * if (await directoryExists('./output/example.com/_server')) {
+ *     console.log('Server directory found');
+ * }
+ * ```
  */
 export async function directoryExists(path: string): Promise<boolean> {
     try {
@@ -124,7 +206,17 @@ export async function directoryExists(path: string): Promise<boolean> {
 }
 
 /**
- * Check if a file exists
+ * Checks if a file exists at the given path.
+ *
+ * @param path - Path to check
+ * @returns `true` if a file exists at the path, `false` otherwise
+ *
+ * @example
+ * ```typescript
+ * if (await fileExists('./output/example.com/_server.json')) {
+ *     console.log('Pointer file found');
+ * }
+ * ```
  */
 export async function fileExists(path: string): Promise<boolean> {
     try {
@@ -136,7 +228,23 @@ export async function fileExists(path: string): Promise<boolean> {
 }
 
 /**
- * Resolve the site directory, handling various input formats
+ * Resolves and validates a site directory path.
+ *
+ * Handles various input formats including paths ending in `_server`,
+ * directories containing `_server/`, and directories with `_server.json`
+ * pointer files.
+ *
+ * @param input - Path to resolve (may be relative or absolute)
+ * @returns Resolved absolute path to the site directory
+ * @throws {Error} When the input is not a valid captured site directory
+ *
+ * @example
+ * ```typescript
+ * // All of these resolve to the same site directory:
+ * await resolveSiteDir('./output/example.com');
+ * await resolveSiteDir('./output/example.com/_server');
+ * await resolveSiteDir('/absolute/path/to/example.com');
+ * ```
  */
 export async function resolveSiteDir(input: string): Promise<string> {
     const resolved = resolve(input);
@@ -165,7 +273,19 @@ export async function resolveSiteDir(input: string): Promise<string> {
 }
 
 /**
- * List all available captured sites in an output directory
+ * Lists all captured sites in an output directory.
+ *
+ * Scans the directory for subdirectories that contain a `_server` folder,
+ * indicating they are valid captured sites.
+ *
+ * @param outputDir - Path to the output directory to scan
+ * @returns Array of site directory names (not full paths)
+ *
+ * @example
+ * ```typescript
+ * const sites = await listCapturedSites('./output');
+ * // Returns: ['example.com', 'other-site.org']
+ * ```
  */
 export async function listCapturedSites(outputDir: string): Promise<string[]> {
     const sites: string[] = [];
