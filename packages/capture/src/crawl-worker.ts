@@ -18,6 +18,7 @@ import type {
 
 /**
  * Calculate exponential backoff delay for a retry attempt.
+ *
  * @param retryCount - The current retry count (0 = first retry)
  * @param baseDelay - Base delay in ms
  * @param maxDelay - Maximum delay in ms
@@ -190,6 +191,11 @@ export class CrawlWorker {
 
     /**
      * Run the worker until the queue is exhausted.
+     *
+     * Continuously takes URLs from the shared queue, processes them,
+     * and adds newly discovered links back to the queue.
+     *
+     * @returns Result containing pages processed, errors encountered, and whether HTML was captured
      */
     async run(): Promise<WorkerResult> {
         const { queue, rateLimitDelay, onProgress } = this.options;

@@ -105,13 +105,31 @@ const DEFAULT_CAPTURE_OPTIONS: Partial<CaptureOptions> = {
 };
 
 /**
- * Perform a full capture of a website
+ * Perform a full capture of a website.
  *
  * This is the main entry point for capturing a website's API calls and static assets.
  * When crawling is enabled, it will follow links on the page to capture additional
  * routes and their associated chunks.
  *
  * Supports parallel crawling with configurable concurrency for improved performance.
+ *
+ * @param options - Configuration options for the capture operation
+ * @returns The capture result containing fixtures, assets, errors, and statistics
+ *
+ * @example
+ * ```typescript
+ * const result = await captureWebsite({
+ *     url: 'https://example.com',
+ *     outputDir: './captured',
+ *     apiFilter: ['/api/'],
+ *     captureStatic: true,
+ *     headless: true,
+ *     browseTimeout: 10000,
+ *     autoScroll: true,
+ *     verbose: false,
+ * });
+ * console.log(`Captured ${result.fixtures.length} API calls`);
+ * ```
  */
 export async function captureWebsite(
     options: CaptureOptions,
@@ -486,7 +504,20 @@ export async function captureWebsite(
 }
 
 /**
- * Capture API calls only (no static assets)
+ * Capture API calls only (no static assets).
+ *
+ * A convenience wrapper around {@link captureWebsite} that disables static asset capture.
+ *
+ * @param url - The URL of the website to capture
+ * @param options - Optional capture configuration (captureStatic is always false)
+ * @returns The capture result containing only API fixtures
+ *
+ * @example
+ * ```typescript
+ * const result = await captureApiOnly('https://api.example.com', {
+ *     apiFilter: ['/graphql'],
+ * });
+ * ```
  */
 export async function captureApiOnly(
     url: string,
@@ -506,7 +537,19 @@ export async function captureApiOnly(
 }
 
 /**
- * Quick capture - fast capture with minimal waiting
+ * Quick capture - fast capture with minimal waiting.
+ *
+ * A convenience wrapper around {@link captureWebsite} optimized for speed.
+ * Uses reduced timeouts and disables auto-scroll.
+ *
+ * @param url - The URL of the website to capture
+ * @param outputDir - Directory to write captured assets (default: './output')
+ * @returns The capture result containing fixtures and assets
+ *
+ * @example
+ * ```typescript
+ * const result = await quickCapture('https://example.com', './quick-capture');
+ * ```
  */
 export async function quickCapture(
     url: string,

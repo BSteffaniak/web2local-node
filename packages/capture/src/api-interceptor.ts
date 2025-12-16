@@ -228,7 +228,12 @@ export class ApiInterceptor {
     }
 
     /**
-     * Attach interceptor to a page
+     * Attach interceptor to a page.
+     *
+     * Sets up request and response event listeners to capture API calls
+     * that match the configured filter patterns.
+     *
+     * @param page - The Playwright page to attach to
      */
     attach(page: Page): void {
         // Track request start times
@@ -380,7 +385,9 @@ export class ApiInterceptor {
     }
 
     /**
-     * Get all captured fixtures
+     * Get all captured fixtures.
+     *
+     * @returns Array of captured API fixtures
      */
     getFixtures(): ApiFixture[] {
         return this.fixtures;
@@ -396,7 +403,9 @@ export class ApiInterceptor {
     }
 
     /**
-     * Get capture statistics
+     * Get capture statistics.
+     *
+     * @returns Statistics object containing total count and breakdowns by HTTP method and status
      */
     getStats(): {
         totalCaptured: number;
@@ -423,7 +432,13 @@ export class ApiInterceptor {
 }
 
 /**
- * Deduplicate fixtures by pattern (keep first occurrence)
+ * Deduplicate fixtures by pattern (keep first occurrence).
+ *
+ * Multiple API calls to the same pattern (e.g., /api/users/:userId) are
+ * deduplicated, keeping only the first captured instance.
+ *
+ * @param fixtures - Array of API fixtures to deduplicate
+ * @returns Deduplicated array of fixtures
  */
 export function deduplicateFixtures(fixtures: ApiFixture[]): ApiFixture[] {
     const seen = new Set<string>();
@@ -441,7 +456,13 @@ export function deduplicateFixtures(fixtures: ApiFixture[]): ApiFixture[] {
 }
 
 /**
- * Sort fixtures by priority (higher priority first)
+ * Sort fixtures by priority (higher priority first).
+ *
+ * More specific patterns (with more static segments) get higher priority
+ * to ensure accurate route matching.
+ *
+ * @param fixtures - Array of API fixtures to sort
+ * @returns New array of fixtures sorted by priority descending
  */
 export function sortFixturesByPriority(fixtures: ApiFixture[]): ApiFixture[] {
     return [...fixtures].sort((a, b) => {
