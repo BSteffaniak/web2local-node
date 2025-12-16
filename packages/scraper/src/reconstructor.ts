@@ -1,3 +1,10 @@
+/**
+ * Source Reconstruction
+ *
+ * Reconstructs the original file structure from extracted source map contents.
+ * Handles path sanitization, file deduplication, and manifest generation.
+ */
+
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { dirname, join, relative } from 'path';
 import { createHash } from 'crypto';
@@ -6,35 +13,64 @@ import type { ExtractedSource } from '@web2local/types';
 import { shouldIncludeSource } from '@web2local/sourcemap';
 import type { BundleWithContent } from './scraper.js';
 
+/**
+ * Options for source reconstruction.
+ */
 export interface ReconstructionOptions {
     /** The full output directory path (e.g., ./output/example.com) */
     outputDir: string;
+    /** Name of the bundle being reconstructed, used as subdirectory */
     bundleName: string;
 }
 
+/**
+ * Result of a source reconstruction operation.
+ */
 export interface ReconstructionResult {
+    /** Number of files successfully written to disk */
     filesWritten: number;
+    /** Number of files skipped due to filtering */
     filesSkipped: number;
+    /** Number of files unchanged (already exist with same content) */
     filesUnchanged: number;
+    /** Any errors encountered during reconstruction */
     errors: string[];
+    /** Full path to the output directory for this bundle */
     outputPath: string;
 }
 
+/**
+ * Manifest summarizing extracted source files.
+ */
 export interface Manifest {
+    /** ISO timestamp when extraction occurred */
     extractedAt: string;
+    /** Original URL that was scraped */
     sourceUrl: string;
+    /** List of bundles that were processed */
     bundles: BundleManifest[];
+    /** Total number of files extracted across all bundles */
     totalFiles: number;
+    /** Extraction statistics */
     stats: {
+        /** Count of files by file extension */
         byExtension: Record<string, number>;
+        /** Count of files by top-level directory */
         byDirectory: Record<string, number>;
     };
 }
 
+/**
+ * Manifest entry for a single extracted bundle.
+ */
 export interface BundleManifest {
+    /** URL of the original bundle */
     bundleUrl: string;
+    /** URL of the source map used for extraction */
     sourceMapUrl: string;
+    /** Number of files extracted from this bundle */
     filesExtracted: number;
+    /** List of extracted file paths (may be truncated for large bundles) */
     files: string[];
 }
 
@@ -70,7 +106,13 @@ async function fileExistsWithSameContent(
 
 /**
  * Reconstructs the original file structure from extracted sources.
- * Skips writing files that already exist with the same content.
+ *
+ * Writes each extracted source file to disk, creating directories as needed.
+ * Skips writing files that already exist with identical content (by hash comparison).
+ *
+ * @param files - Array of extracted source files to write
+ * @param options - Reconstruction options including output directory and bundle name
+ * @returns Result object with counts of files written, skipped, and any errors
  */
 export async function reconstructSources(
     files: readonly ExtractedSource[],
@@ -124,8 +166,12 @@ export async function reconstructSources(
 
 /**
  * Sanitizes a path to prevent directory traversal attacks and normalize it.
- * Resolves `..` segments and removes leading slashes/dots.
- * Returns null if the result would be empty.
+ *
+ * Resolves `..` segments safely (preventing escape from base directory),
+ * removes leading slashes/dots, and replaces invalid filename characters.
+ *
+ * @param path - The path to sanitize
+ * @returns Sanitized path, or null if the result would be empty or invalid
  */
 export function sanitizePath(path: string): string | null {
     // Remove any null bytes
@@ -159,7 +205,11 @@ export function sanitizePath(path: string): string | null {
 }
 
 /**
- * Generates a manifest file summarizing what was extracted
+ * Writes a manifest JSON file summarizing the extraction results.
+ *
+ * @param outputDir - Directory where manifest.json will be written
+ * @param sourceUrl - Original URL that was scraped
+ * @param bundles - Array of bundle manifest entries
  */
 export async function writeManifest(
     outputDir: string,
@@ -200,7 +250,19 @@ export async function writeManifest(
 }
 
 /**
- * Gets the bundle name from a URL for organizing output
+ * Derives a bundle name from its URL for organizing output directories.
+ *
+ * Combines the parent directory with the filename (without extension) to ensure
+ * unique bundle names even when multiple bundles have the same filename.
+ *
+ * @param bundleUrl - Full URL of the bundle
+ * @returns Bundle name suitable for use as a directory name
+ *
+ * @example
+ * ```ts
+ * getBundleName('https://example.com/navigation/index-C4LR0b0Z.js')
+ * // Returns: 'navigation/index-C4LR0b0Z'
+ * ```
  */
 export function getBundleName(bundleUrl: string): string {
     const url = new URL(bundleUrl);
@@ -226,18 +288,28 @@ export function getBundleName(bundleUrl: string): string {
 }
 
 /**
- * Result of saving minified bundles
+ * Information about a minified bundle saved to disk.
  */
 export interface SavedBundle {
+    /** Original URL of the bundle */
     url: string;
+    /** Local file path where the bundle was saved */
     localPath: string;
+    /** Type of bundle (JavaScript or CSS) */
     type: 'script' | 'stylesheet';
+    /** Size of the bundle in bytes */
     size: number;
 }
 
 /**
  * Saves minified bundles to disk when no source maps are available.
- * This is a fallback mode that preserves the original minified files.
+ *
+ * This is a fallback mode that preserves the original minified files,
+ * allowing projects to be rebuilt even without source code.
+ *
+ * @param bundlesWithoutMaps - Bundles that don't have source maps
+ * @param options - Options including output directory
+ * @returns Object containing saved bundle info and any errors
  */
 export async function saveBundles(
     bundlesWithoutMaps: BundleWithContent[],
@@ -351,6 +423,9 @@ async function detectBundleEntryPoint(
  *
  * This is used as a fallback when source maps are not available, creating
  * a project structure that can still be built/modified.
+ *
+ * @param options - Options for stub generation including output directory and bundles
+ * @returns Result with count of stubs generated, entry point path, and any errors
  */
 export async function generateBundleStubs(
     options: BundleStubOptions,

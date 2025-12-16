@@ -1,4 +1,15 @@
-// @web2local/analyzer
+/**
+ * @web2local/analyzer
+ *
+ * Static analysis utilities for extracted source code.
+ *
+ * This package provides tools for:
+ * - Analyzing import/export usage patterns
+ * - Detecting and resolving import aliases
+ * - Generating dependency manifests (package.json, tsconfig.json)
+ * - Resolving dynamic imports and asset stubs
+ * - Reconstructing index files for extracted packages
+ */
 
 // Asset stub resolver
 export {
