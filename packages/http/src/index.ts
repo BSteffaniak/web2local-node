@@ -20,6 +20,19 @@
  * @param timeout - Timeout in milliseconds
  * @param signal - Optional user-provided AbortSignal
  * @returns Combined AbortSignal, or undefined if neither provided
+ *
+ * @example
+ * ```typescript
+ * // With timeout only
+ * const signal = createSignalWithTimeout(5000);
+ * await fetch(url, { signal });
+ *
+ * // With user abort controller and timeout
+ * const controller = new AbortController();
+ * const signal = createSignalWithTimeout(5000, controller.signal);
+ * await fetch(url, { signal });
+ * controller.abort(); // Aborts immediately
+ * ```
  */
 export function createSignalWithTimeout(
     timeout?: number,
@@ -81,6 +94,18 @@ const RETRY_DELAY_MS = 1000;
  * @param error - The error thrown by fetch (can be any type)
  * @returns An object containing the error message, optional error code,
  *          cause chain as a string, and a helpful hint for common issues
+ *
+ * @example
+ * ```typescript
+ * try {
+ *     await fetch('https://example.com/api');
+ * } catch (error) {
+ *     const details = getFetchErrorDetails(error);
+ *     console.log(details.message); // "fetch failed"
+ *     console.log(details.code);    // "ECONNREFUSED"
+ *     console.log(details.hint);    // "Connection refused. The server may be down..."
+ * }
+ * ```
  */
 export function getFetchErrorDetails(error: unknown): {
     message: string;
@@ -166,6 +191,18 @@ export function getFetchErrorDetails(error: unknown): {
  * @param url - The URL that was being fetched
  * @param verbose - If true, includes additional details and hints
  * @returns A formatted error message string
+ *
+ * @example
+ * ```typescript
+ * try {
+ *     await fetch('https://api.example.com/data');
+ * } catch (error) {
+ *     console.error(formatFetchError(error, 'https://api.example.com/data', true));
+ *     // Output: "Failed to fetch https://api.example.com/data: fetch failed
+ *     //   Cause: [ECONNREFUSED] connect ECONNREFUSED 127.0.0.1:443
+ *     //   Hint: Connection refused. The server may be down or blocking connections."
+ * }
+ * ```
  */
 export function formatFetchError(
     error: unknown,
@@ -344,7 +381,20 @@ export interface RobustFetchOptions extends RequestInit {
  * @param url - The URL to fetch
  * @param options - Fetch options plus optional retry count
  * @returns The fetch Response (may be error response if retries exhausted)
- * @throws `FetchError` When a non-transient error occurs or retries are exhausted
+ * @throws \{FetchError\} When a non-transient error occurs or retries are exhausted
+ *
+ * @example
+ * ```typescript
+ * // Basic usage
+ * const response = await robustFetch('https://api.example.com/data');
+ * const data = await response.json();
+ *
+ * // With custom options
+ * const response = await robustFetch('https://api.example.com/data', {
+ *     retries: 5,
+ *     headers: { Authorization: 'Bearer token' },
+ * });
+ * ```
  */
 export async function robustFetch(
     url: string,
@@ -807,16 +857,16 @@ const SEGMENT_CONTEXT_MAP: Record<string, string> = {
 };
 
 /**
- * Result of URL pattern extraction
+ * Result of URL pattern extraction from {@link extractUrlPattern}.
  */
 export interface UrlPatternResult {
-    /** Original URL path */
+    /** The original URL path that was analyzed. */
     originalPath: string;
-    /** Pattern with :param placeholders */
+    /** The extracted pattern with `:param` placeholders for dynamic segments. */
     pattern: string;
-    /** List of parameter names */
+    /** List of parameter names extracted from the pattern. */
     params: string[];
-    /** Priority for matching (higher = more specific) */
+    /** Priority score for pattern matching (higher values indicate more specific patterns). */
     priority: number;
 }
 
@@ -940,6 +990,18 @@ export function extractUrlPattern(urlPath: string): UrlPatternResult {
  *
  * @param urls - Array of concrete URL paths to group
  * @returns A Map where keys are patterns and values are arrays of matching URLs
+ *
+ * @example
+ * ```typescript
+ * const urls = [
+ *     '/api/users/123',
+ *     '/api/users/456',
+ *     '/api/posts/789',
+ * ];
+ * const groups = groupUrlsByPattern(urls);
+ * // groups.get('/api/users/:userId') => ['/api/users/123', '/api/users/456']
+ * // groups.get('/api/posts/:postId') => ['/api/posts/789']
+ * ```
  */
 export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
     const groups = new Map<string, string[]>();
@@ -963,6 +1025,15 @@ export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
  * @param method - The HTTP method (e.g., 'GET', 'POST')
  * @param pattern - The URL pattern (e.g., '/api/users/:userId')
  * @returns A filename-safe string (e.g., 'GET_api_users_userId.json')
+ *
+ * @example
+ * ```typescript
+ * createFixtureFilename('GET', '/api/users/:userId');
+ * // Returns: 'GET_api_users_userId.json'
+ *
+ * createFixtureFilename('POST', '/api/posts');
+ * // Returns: 'POST_api_posts.json'
+ * ```
  */
 export function createFixtureFilename(method: string, pattern: string): string {
     // Replace path separators and special chars
