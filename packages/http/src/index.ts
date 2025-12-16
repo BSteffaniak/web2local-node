@@ -1,3 +1,14 @@
+/**
+ * HTTP client utilities for web2local.
+ *
+ * This module provides robust HTTP fetching with automatic retries for transient
+ * errors (network issues, rate limits, server errors), browser-like headers to
+ * avoid bot detection, and utilities for extracting URL patterns from concrete
+ * paths.
+ *
+ * @packageDocumentation
+ */
+
 // ============================================================================
 // SIGNAL UTILITIES
 // ============================================================================
@@ -61,8 +72,15 @@ const RETRY_DELAY_MS = 1000;
 
 /**
  * Extracts detailed error information from a fetch error.
+ *
  * Node.js fetch errors (via undici) wrap the actual cause in error.cause,
- * which can be nested multiple levels deep.
+ * which can be nested multiple levels deep. This function walks the cause
+ * chain to extract error codes, build a cause string, and provide helpful
+ * hints for common network issues.
+ *
+ * @param error - The error thrown by fetch (can be any type)
+ * @returns An object containing the error message, optional error code,
+ *          cause chain as a string, and a helpful hint for common issues
  */
 export function getFetchErrorDetails(error: unknown): {
     message: string;
@@ -147,6 +165,7 @@ export function getFetchErrorDetails(error: unknown): {
  * @param error - The error thrown by fetch
  * @param url - The URL that was being fetched
  * @param verbose - If true, includes additional details and hints
+ * @returns A formatted error message string
  */
 export function formatFetchError(
     error: unknown,
@@ -169,14 +188,30 @@ export function formatFetchError(
 }
 
 /**
- * Custom error class for fetch failures with detailed information
+ * Custom error class for fetch failures with detailed information.
+ *
+ * Wraps the original fetch error with additional context including the URL,
+ * error code, and helpful hints for troubleshooting.
  */
 export class FetchError extends Error {
+    /** The URL that failed to fetch. */
     public readonly url: string;
+
+    /** The error code (e.g., 'ECONNREFUSED', 'ETIMEDOUT') if available. */
     public readonly code?: string;
+
+    /** A helpful hint for troubleshooting the error. */
     public readonly hint?: string;
+
+    /** The original error that was thrown by fetch. */
     public readonly originalError: unknown;
 
+    /**
+     * Creates a new FetchError.
+     *
+     * @param url - The URL that failed to fetch
+     * @param originalError - The original error thrown by fetch
+     */
     constructor(url: string, originalError: unknown) {
         const details = getFetchErrorDetails(originalError);
 
@@ -194,7 +229,10 @@ export class FetchError extends Error {
     }
 
     /**
-     * Returns a formatted error message suitable for display
+     * Returns a formatted error message suitable for display.
+     *
+     * @param verbose - If true, includes helpful hints for troubleshooting
+     * @returns A formatted error message string
      */
     format(verbose = false): string {
         let msg = `Failed to fetch ${this.url}: ${this.message}`;
@@ -281,8 +319,14 @@ function addJitter(delay: number, jitterFactor: number = 0.25): number {
     return Math.floor(delay + jitter);
 }
 
+/**
+ * Options for {@link robustFetch}, extending the standard fetch RequestInit.
+ */
 export interface RobustFetchOptions extends RequestInit {
-    /** Number of retry attempts for transient errors (default: 2) */
+    /**
+     * Number of retry attempts for transient errors.
+     * @defaultValue 2
+     */
     retries?: number;
 }
 
@@ -290,10 +334,17 @@ export interface RobustFetchOptions extends RequestInit {
  * Wrapper around fetch that retries on transient errors (including 429 rate limits)
  * and provides improved error messages.
  *
+ * Automatically retries on:
+ * - Network errors (connection reset, timeout, DNS failures)
+ * - Rate limiting (HTTP 429) with respect for Retry-After header
+ * - Server errors (HTTP 5xx)
+ *
+ * Uses exponential backoff with jitter to prevent thundering herd issues.
+ *
  * @param url - The URL to fetch
  * @param options - Fetch options plus optional retry count
- * @returns The fetch Response
- * @throws FetchError with detailed error information on failure
+ * @returns The fetch Response (may be error response if retries exhausted)
+ * @throws {FetchError} When a non-transient error occurs or retries are exhausted
  */
 export async function robustFetch(
     url: string,
@@ -828,11 +879,20 @@ function calculatePriority(pattern: string, params: string[]): number {
 }
 
 /**
- * Extract a URL pattern from a concrete URL path
+ * Extracts a URL pattern from a concrete URL path by identifying dynamic segments.
+ *
+ * Recognizes common dynamic segment patterns like UUIDs, numeric IDs, MongoDB ObjectIDs,
+ * and hashes. Uses context from preceding segments to generate meaningful parameter names
+ * (e.g., `/users/123` becomes `/users/:userId`).
+ *
+ * @param urlPath - The concrete URL path to extract a pattern from
+ * @returns The extracted pattern with parameter placeholders and metadata
  *
  * @example
+ * ```typescript
  * extractUrlPattern("/api/users/123/posts/456")
  * // Returns: { pattern: "/api/users/:userId/posts/:postId", params: ["userId", "postId"], ... }
+ * ```
  */
 export function extractUrlPattern(urlPath: string): UrlPatternResult {
     // Remove query string if present
@@ -873,7 +933,13 @@ export function extractUrlPattern(urlPath: string): UrlPatternResult {
 }
 
 /**
- * Group URLs by their extracted pattern
+ * Groups URLs by their extracted pattern.
+ *
+ * Useful for identifying which URLs share the same route structure,
+ * allowing deduplication or pattern-based processing.
+ *
+ * @param urls - Array of concrete URL paths to group
+ * @returns A Map where keys are patterns and values are arrays of matching URLs
  */
 export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
     const groups = new Map<string, string[]>();
@@ -889,7 +955,14 @@ export function groupUrlsByPattern(urls: string[]): Map<string, string[]> {
 }
 
 /**
- * Create a filename-safe version of a fixture ID
+ * Creates a filename-safe string from an HTTP method and URL pattern.
+ *
+ * Sanitizes the pattern by removing leading slashes, replacing path separators
+ * and special characters with underscores, suitable for use as a fixture filename.
+ *
+ * @param method - The HTTP method (e.g., 'GET', 'POST')
+ * @param pattern - The URL pattern (e.g., '/api/users/:userId')
+ * @returns A filename-safe string (e.g., 'GET_api_users_userId.json')
  */
 export function createFixtureFilename(method: string, pattern: string): string {
     // Replace path separators and special chars
