@@ -11,7 +11,7 @@ This package provides crash-safe state persistence for long-running web2local op
 - **Write-Ahead Logging**: Append-only log for fast, crash-safe writes
 - **Automatic Compaction**: Periodically compacts WAL into main state file
 - **Resume Support**: Detect and resume from interrupted operations
-- **Phase Tracking**: Track progress through scrape, extract, capture, and rebuild phases
+- **Phase Tracking**: Track progress through scrape, extract, dependencies, capture, and rebuild phases
 - **Corruption Detection**: Detects and reports WAL corruption with recovery options
 
 ## Usage
