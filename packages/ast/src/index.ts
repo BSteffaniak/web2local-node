@@ -1,5 +1,5 @@
 /**
- * @web2local/ast
+ * `@web2local/ast`
  *
  * AST parsing and analysis utilities using SWC
  */

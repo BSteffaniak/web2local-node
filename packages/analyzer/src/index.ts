@@ -1,5 +1,5 @@
 /**
- * @web2local/analyzer
+ * `@web2local/analyzer`
  *
  * This package provides source code analysis utilities for the web2local project.
  * It includes tools for:

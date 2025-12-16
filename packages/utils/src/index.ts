@@ -1,5 +1,5 @@
 /**
- * @web2local/utils
+ * `@web2local/utils`
  *
  * Shared utility functions for web2local packages
  */

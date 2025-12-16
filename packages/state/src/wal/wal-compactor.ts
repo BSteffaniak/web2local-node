@@ -1,5 +1,5 @@
 /**
- * @web2local/state - WAL Compactor
+ * `@web2local/state` - WAL Compactor
  *
  * Compacts the write-ahead log into the main state file.
  * This is called periodically and on graceful shutdown.

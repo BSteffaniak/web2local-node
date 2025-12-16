@@ -1,5 +1,5 @@
 /**
- * @web2local/sourcemap
+ * `@web2local/sourcemap`
  *
  * Professional source map parsing, discovery, and extraction.
  * Implements the ECMA-426 Source Map specification.

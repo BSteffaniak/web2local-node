@@ -13,7 +13,7 @@
  * This information is useful for determining which exports are actually used
  * from a package, enabling tree-shaking analysis and re-export generation.
  *
- * @module
+ * @packageDocumentation
  */
 
 import { parseSync } from '@swc/core';

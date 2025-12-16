@@ -1,5 +1,5 @@
 /**
- * @web2local/state - WAL Writer
+ * `@web2local/state` - WAL Writer
  *
  * Append-only write-ahead log for durability.
  * Each event is written as a JSON line followed by a newline.

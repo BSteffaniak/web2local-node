@@ -1,5 +1,5 @@
 /**
- * @web2local/state
+ * `@web2local/state`
  *
  * State management with write-ahead logging for web2local resume functionality.
  */

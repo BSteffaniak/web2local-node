@@ -1,5 +1,5 @@
 /**
- * @web2local/state - StateManager
+ * `@web2local/state` - StateManager
  *
  * Main API for state management with write-ahead logging.
  * Provides crash-safe persistence and resume functionality.

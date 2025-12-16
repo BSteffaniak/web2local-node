@@ -1,5 +1,5 @@
 /**
- * @module @web2local/manifest
+ * `@web2local/manifest`
  *
  * Manifest generation utilities for web2local project reconstruction.
  *
@@ -23,6 +23,8 @@
  * // Generate tsconfig.json based on project configuration
  * const tsconfig = generateTsConfig(aliasMappings, projectConfig);
  * ```
+ *
+ * @packageDocumentation
  */
 
 export * from './server-manifest.js';
