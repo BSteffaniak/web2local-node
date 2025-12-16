@@ -14,28 +14,54 @@ import { validateMappings } from '../mappings.js';
 // RAW SOURCE MAP TYPES (before validation)
 // ============================================================================
 
+/**
+ * Represents a raw source map object before validation.
+ * All fields are typed as unknown to allow validation of any input.
+ */
 export interface RawSourceMap {
+    /** Source map version (should be 3). */
     version?: unknown;
+    /** Name of the generated file. */
     file?: unknown;
+    /** Root path to prepend to source paths. */
     sourceRoot?: unknown;
+    /** Array of original source file paths. */
     sources?: unknown;
+    /** Array of original source file contents. */
     sourcesContent?: unknown;
+    /** Array of symbol names used in mappings. */
     names?: unknown;
+    /** VLQ-encoded mapping string. */
     mappings?: unknown;
+    /** Array of indices into sources that should be ignored. */
     ignoreList?: unknown;
+    /** Array of sections for index maps. */
     sections?: unknown;
+    /** Allow additional properties for extensibility. */
     [key: string]: unknown;
 }
 
+/**
+ * Represents a raw index map section before validation.
+ */
 export interface RawIndexMapSection {
+    /** Offset where this section begins in the generated code. */
     offset?: unknown;
+    /** The source map for this section. */
     map?: unknown;
+    /** Allow additional properties for extensibility. */
     [key: string]: unknown;
 }
 
+/**
+ * Represents a raw index map offset before validation.
+ */
 export interface RawIndexMapOffset {
+    /** Zero-based line number in the generated code. */
     line?: unknown;
+    /** Zero-based column number in the generated code. */
     column?: unknown;
+    /** Allow additional properties for extensibility. */
     [key: string]: unknown;
 }
 
@@ -45,6 +71,9 @@ export interface RawIndexMapOffset {
 
 /**
  * Validates the version field (required, must be 3).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateVersion(
     obj: RawSourceMap,
@@ -71,6 +100,9 @@ export function validateVersion(
 
 /**
  * Validates the sources field (required, must be array of strings or null).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateSources(
     obj: RawSourceMap,
@@ -105,6 +137,9 @@ export function validateSources(
 
 /**
  * Validates the mappings field (required, must be string).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateMappingsField(
     obj: RawSourceMap,
@@ -131,6 +166,10 @@ export function validateMappingsField(
 
 /**
  * Validates the sourcesContent field (optional, must be array of strings or null).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
+ * @param warnings - Array to push validation warnings into
  */
 export function validateSourcesContent(
     obj: RawSourceMap,
@@ -174,6 +213,9 @@ export function validateSourcesContent(
 
 /**
  * Validates the names field (optional, must be array of strings).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateNames(
     obj: RawSourceMap,
@@ -202,6 +244,11 @@ export function validateNames(
 
 /**
  * Validates an optional string field (sourceRoot, file).
+ *
+ * @param obj - The raw source map object to validate
+ * @param field - The name of the field to validate
+ * @param errorCode - The error code to use if validation fails
+ * @param errors - Array to push validation errors into
  */
 export function validateOptionalStringField(
     obj: RawSourceMap,
@@ -222,6 +269,9 @@ export function validateOptionalStringField(
 
 /**
  * Validates the ignoreList field (optional, must be array of valid indices).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateIgnoreList(
     obj: RawSourceMap,
@@ -276,6 +326,9 @@ export function validateIgnoreList(
 
 /**
  * Validates VLQ mappings content (only if structural prerequisites are met).
+ *
+ * @param obj - The raw source map object to validate
+ * @param errors - Array to push validation errors into
  */
 export function validateVlqMappings(
     obj: RawSourceMap,
