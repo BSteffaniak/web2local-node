@@ -37,7 +37,19 @@ export {
  * @param sourceMapUrl - URL of the source map
  * @param bundleUrl - URL of the bundle (for result metadata)
  * @param onFile - Optional callback for each extracted source (streaming)
- * @returns Extraction result with sources and metadata
+ * @returns Extraction result with sources and metadata. Errors during fetch or parse
+ *          are returned in the `errors` array rather than thrown.
+ *
+ * @example
+ * ```typescript
+ * const result = await extractSourcesFromMap(
+ *     'https://example.com/main.js.map',
+ *     'https://example.com/main.js'
+ * );
+ * for (const source of result.sources) {
+ *     console.log(`Extracted: ${source.path}`);
+ * }
+ * ```
  */
 export async function extractSourcesFromMap(
     sourceMapUrl: string,

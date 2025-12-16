@@ -69,7 +69,14 @@ export interface ExtractBundleUrlsResult {
  *
  * @param pageUrl - The URL of the web page to scrape
  * @returns The extracted bundles, final URL after redirects, and redirect info
- * @throws \{Error\} When the HTTP request fails with a non-OK status
+ * @throws When the HTTP request fails with a non-OK status (throws Error)
+ *
+ * @example
+ * ```typescript
+ * const result = await extractBundleUrls('https://example.com');
+ * console.log(result.bundles); // Array of BundleInfo objects
+ * console.log(result.finalUrl); // URL after any redirects
+ * ```
  */
 export async function extractBundleUrls(
     pageUrl: string,
@@ -508,6 +515,16 @@ export interface FindAllSourceMapsOptions {
  * @param bundles - The bundles to process
  * @param options - Processing options including concurrency, progress callback, and pre-fetched content
  * @returns Categorized results with bundles that have maps, vendor bundles, and bundles without maps
+ *
+ * @example
+ * ```typescript
+ * const { bundles } = await extractBundleUrls('https://example.com');
+ * const result = await findAllSourceMaps(bundles, {
+ *     concurrency: 3,
+ *     onProgress: (done, total) => console.log(`${done}/${total}`)
+ * });
+ * console.log(`Found ${result.bundlesWithMaps.length} bundles with source maps`);
+ * ```
  */
 export async function findAllSourceMaps(
     bundles: BundleInfo[],
