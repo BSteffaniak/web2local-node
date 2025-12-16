@@ -78,7 +78,7 @@ const result = await quickCapture('https://example.com', './output');
 | `crawlMaxPages`       | `number`   | `100`                | Maximum pages to visit              |
 | `concurrency`         | `number`   | `5`                  | Parallel page workers               |
 | `pageTimeout`         | `number`   | `30000`              | Per-page navigation timeout (ms)    |
-| `pageRetries`         | `number`   | `2`                  | Retries for failed navigations      |
+| `pageRetries`         | `number`   | `3`                  | Retries for failed navigations      |
 | `rateLimitDelay`      | `number`   | `0`                  | Delay between requests (ms)         |
 | `networkIdleTimeout`  | `number`   | `5000`               | Network idle wait timeout (ms)      |
 | `networkIdleTime`     | `number`   | `1000`               | Idle time threshold (ms)            |
