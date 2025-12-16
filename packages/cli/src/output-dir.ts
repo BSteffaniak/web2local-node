@@ -1,5 +1,8 @@
 /**
  * Output directory resolution and validation utilities.
+ *
+ * Handles determining the output directory path, checking for existing content,
+ * and prompting the user for overwrite/resume decisions.
  */
 
 import { existsSync } from 'fs';
@@ -16,6 +19,10 @@ import {
 
 /**
  * Result of checking the output directory.
+ *
+ * - `'fresh'`: Start with a clean directory
+ * - `'resume'`: Resume from existing checkpoint
+ * - `'cancel'`: User cancelled the operation
  */
 export type OutputDirectoryAction = 'fresh' | 'resume' | 'cancel';
 
