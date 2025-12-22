@@ -78,7 +78,7 @@ console.log(config.aliases); // [{ alias: '@/*', path: './src/*' }]
 - `detectEntryPoints(dir)` - Find main entry files
 - `detectEnvVariables(dir)` - Find referenced environment variables
 - `generateViteConfig(options)` - Generate Vite config content
-- `generateHtml(entryPoints)` - Generate index.html content
+- `generateHtml(options)` - Generate index.html content
 - `enhancePackageJson(options)` - Add build dependencies
 - `runBuild(options)` - Execute the build process
 - `injectGlobalCss(options)` - Inject captured CSS into entry points
