@@ -16,8 +16,48 @@ await runServer({
 
 ## CLI Usage
 
+### serve
+
+Start the mock server:
+
 ```bash
 web2local serve ./captured-site --port 3000
+```
+
+Options:
+
+- `-p, --port <number>` - Port to listen on (default: 3000)
+- `-h, --host <string>` - Host to bind to (default: localhost)
+- `-d, --delay <ms>` - Add fixed delay to all responses
+- `--no-cors` - Disable CORS headers
+- `--static-only` - Only serve static files
+- `--api-only` - Only serve API fixtures
+- `-v, --verbose` - Enable verbose logging
+- `--use-rebuilt` - Serve from rebuilt source instead of captured files
+
+### info
+
+Show information about a captured site:
+
+```bash
+web2local serve info ./captured-site
+```
+
+### list
+
+List captured fixtures:
+
+```bash
+web2local serve list ./captured-site
+web2local serve list ./captured-site --json
+```
+
+### sites
+
+List captured sites in an output directory:
+
+```bash
+web2local serve sites ./output
 ```
 
 ## API

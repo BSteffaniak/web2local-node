@@ -130,7 +130,7 @@ Manages parallel page crawling with depth and page limits.
 ```typescript
 import { CrawlQueue, CrawlWorker } from '@web2local/capture';
 
-const queue = new CrawlQueue({ maxPages: 100, maxDepth: 5 });
+const queue = new CrawlQueue({ maxRetries: 2, maxPages: 100, maxDepth: 5 });
 queue.add('https://example.com', 0);
 
 // Workers pull URLs from the queue and process them in parallel
