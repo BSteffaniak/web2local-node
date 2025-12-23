@@ -87,6 +87,7 @@ export interface MatchResultCache {
     similarity: number;
     /** Confidence level (null if no match found) */
     confidence: 'exact' | 'high' | 'medium' | 'low' | null;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -102,6 +103,7 @@ export interface SourceMapCache {
     content: string;
     /** Hash of the content */
     contentHash: string;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -129,6 +131,7 @@ export interface ExtractionResultCache {
     files: ExtractedFile[];
     /** Any errors during extraction */
     errors: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -162,8 +165,10 @@ export interface PageScrapingCache {
         from: string;
         /** Final URL after redirect (full URL) */
         to: string;
+        /** HTTP status code of the redirect (e.g., 301, 302) */
         status: number;
     };
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -177,6 +182,7 @@ export interface SourceMapDiscoveryCache {
     urlHash: string;
     /** Discovered source map URL (null if none found) */
     sourceMapUrl: string | null;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -194,6 +200,7 @@ export interface DependencyAnalysisCache {
     dependencies: Array<[string, DependencyInfo]>;
     /** Local imports */
     localImports: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -229,6 +236,7 @@ export interface DependencyManifestCache {
     packageJson: object;
     /** Statistics */
     stats: VersionStats;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -236,10 +244,13 @@ export interface DependencyManifestCache {
  * Cache for package file structure (list of files from unpkg ?meta)
  */
 export interface PackageFileListCache {
+    /** Package name (e.g., "react" or `@scope/package`) */
     packageName: string;
+    /** Semver version string */
     version: string;
     /** List of file paths (relative to package root) */
     files: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -248,9 +259,11 @@ export interface PackageFileListCache {
  * Used to determine if a package is public (on npm) or internal/private
  */
 export interface NpmPackageExistenceCache {
+    /** Package name to check */
     packageName: string;
     /** true = package exists on npm (public), false = not found (internal/private) */
     exists: boolean;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -259,10 +272,13 @@ export interface NpmPackageExistenceCache {
  * Used to verify if a specific version of a package exists on npm
  */
 export interface NpmVersionValidationCache {
+    /** Package name to check */
     packageName: string;
+    /** Version string to validate */
     version: string;
     /** true = this version exists on npm, false = version not found */
     valid: boolean;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
