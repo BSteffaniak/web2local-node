@@ -1,3 +1,26 @@
+/**
+ * Export extraction utilities using SWC AST parsing.
+ *
+ * This module provides robust, AST-based export extraction from JavaScript and
+ * TypeScript source code. It correctly identifies all export patterns including
+ * named exports, default exports, type exports, and re-exports.
+ *
+ * @example
+ * ```typescript
+ * import { extractExportsFromSource } from '@web2local/ast';
+ *
+ * const exports = extractExportsFromSource(`
+ *   export const foo = 1;
+ *   export type Bar = string;
+ *   export default function main() {}
+ * `, 'module.ts');
+ *
+ * console.log(exports.named);      // ['foo']
+ * console.log(exports.types);      // ['Bar']
+ * console.log(exports.hasDefault); // true
+ * ```
+ */
+
 import { parseSync } from '@swc/core';
 import type {
     ModuleItem,
