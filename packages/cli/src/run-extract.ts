@@ -832,7 +832,17 @@ async function extractWithCrawl(
 // ============================================================================
 
 /**
- * Main entry point for the extract command
+ * Main entry point for the extract command.
+ *
+ * Handles three extraction modes:
+ * - Direct source map URL: Extracts sources directly from a `.map` file
+ * - Page URL with crawl: Uses browser to discover bundles across multiple pages
+ * - Page URL without crawl: Fetches page HTML to find bundle references
+ *
+ * Supports resumable operations via state management. If interrupted, the
+ * extraction can be resumed from where it left off.
+ *
+ * @param options - Extract command options
  */
 export async function runExtract(options: ExtractOptions): Promise<void> {
     // Initialize spinner registry for synchronized logging

@@ -211,6 +211,16 @@ export interface SourceMapCheckResult {
  *
  * @param bundleUrl - The URL of the JavaScript or CSS bundle
  * @returns The source map URL if found, plus bundle content for fallback handling
+ *
+ * @example
+ * ```typescript
+ * const result = await findSourceMapUrl('https://example.com/main.js');
+ * if (result.sourceMapUrl) {
+ *     console.log(`Source map found: ${result.sourceMapUrl}`);
+ * } else if (result.bundleContent) {
+ *     console.log('No source map, but bundle content available for fallback');
+ * }
+ * ```
  */
 export async function findSourceMapUrl(
     bundleUrl: string,
@@ -305,10 +315,12 @@ export async function findSourceMapUrl(
 }
 
 /**
- * Represents a bundle without a source map (for --save-bundles fallback)
+ * Represents a bundle without a source map (for --save-bundles fallback).
  */
 export interface BundleWithContent {
+    /** The bundle metadata including URL and type. */
     bundle: BundleInfo;
+    /** The raw content of the bundle file. */
     content: string;
 }
 
@@ -420,11 +432,23 @@ function looksLikeVendorBundle(filename: string, content: string): boolean {
 
 /**
  * Checks if a bundle has an associated source map using pre-fetched content.
+ *
  * This avoids re-fetching bundles that have already been captured during crawling.
+ * Use this when bundle content is already available to avoid redundant network requests.
  *
  * @param bundleUrl - The URL of the bundle
  * @param content - The pre-fetched content of the bundle
  * @returns The source map URL result
+ *
+ * @example
+ * ```typescript
+ * // Use with pre-fetched content from a crawler
+ * const bundleContent = await fetchBundleContent(bundleUrl);
+ * const result = await findSourceMapUrlWithContent(bundleUrl, bundleContent);
+ * if (result.sourceMapUrl) {
+ *     console.log(`Source map: ${result.sourceMapUrl}`);
+ * }
+ * ```
  */
 export async function findSourceMapUrlWithContent(
     bundleUrl: string,

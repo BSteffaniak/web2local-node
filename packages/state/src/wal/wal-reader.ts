@@ -33,7 +33,7 @@ export interface WALReadResult {
  *
  * @param walPath - Path to the WAL file
  * @returns Parsed events and corruption info
- * @throws StateIOError if file cannot be read
+ * @throws \{StateIOError\} When the file cannot be read
  */
 export async function readWAL(walPath: string): Promise<WALReadResult> {
     // If file doesn't exist, return empty result

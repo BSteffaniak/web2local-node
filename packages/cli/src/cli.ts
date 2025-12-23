@@ -300,7 +300,19 @@ function serverCliOptions(program: Command): Command {
  * This function sets up the main command and subcommands (serve, extract),
  * parses process.argv, and executes the appropriate action handler.
  *
+ * Note: Subcommands (serve, extract) are handled internally and will execute
+ * their own action handlers. The return value is only relevant for the main
+ * command.
+ *
  * @returns The parsed CLI options for the main command
+ *
+ * @example
+ * ```typescript
+ * // In the main entry point:
+ * const options = parseArgs();
+ * // Options are now available for the main command
+ * // Subcommands have already executed their action handlers
+ * ```
  */
 export function parseArgs(): CliOptions {
     const program = new Command();

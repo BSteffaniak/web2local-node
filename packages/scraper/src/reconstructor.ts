@@ -238,6 +238,14 @@ export function sanitizePath(path: string): string | null {
  * @param outputDir - The directory where the manifest will be written
  * @param sourceUrl - The original URL that was scraped
  * @param bundles - Information about each processed bundle
+ * @returns Resolves when the manifest file has been written
+ *
+ * @example
+ * ```typescript
+ * await writeManifest('./output/example.com', 'https://example.com', [
+ *     { bundleUrl: 'https://example.com/main.js', sourceMapUrl: '...', filesExtracted: 10, files: [...] }
+ * ]);
+ * ```
  */
 export async function writeManifest(
     outputDir: string,

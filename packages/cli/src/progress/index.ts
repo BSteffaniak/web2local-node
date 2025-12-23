@@ -1,5 +1,25 @@
 /**
- * Progress display module exports
+ * Progress display module for CLI.
+ *
+ * Provides a rich terminal user interface (TUI) for displaying capture progress,
+ * including worker status, stats, and log output. This module coordinates the
+ * multi-line progress display used during web page capture operations.
+ *
+ * @example
+ * ```typescript
+ * import { ProgressDisplay, createCaptureProgressHandler } from './progress';
+ *
+ * const progress = new ProgressDisplay({
+ *     workerCount: 5,
+ *     maxPages: 100,
+ *     maxDepth: 5,
+ *     baseOrigin: 'https://example.com'
+ * });
+ *
+ * progress.start();
+ * // ... capture operations with progress.updateWorker(), progress.log(), etc.
+ * progress.stop();
+ * ```
  */
 
 export {

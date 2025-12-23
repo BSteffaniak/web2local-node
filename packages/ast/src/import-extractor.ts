@@ -1,3 +1,26 @@
+/**
+ * Import extraction utilities using SWC AST parsing.
+ *
+ * This module provides robust, AST-based import extraction from JavaScript and
+ * TypeScript source code. Unlike regex-based approaches, AST parsing correctly
+ * handles edge cases like imports inside strings or comments.
+ *
+ * @example
+ * ```typescript
+ * import { extractImportsFromSource, categorizeImport, isNodeBuiltin } from '@web2local/ast';
+ *
+ * const imports = extractImportsFromSource(`
+ *   import React from 'react';
+ *   import { readFile } from 'fs';
+ * `, 'file.tsx');
+ *
+ * for (const imp of imports) {
+ *   const category = categorizeImport(imp.source);
+ *   console.log(imp.source, category.isExternal ? 'external' : 'relative');
+ * }
+ * ```
+ */
+
 import { parseSync } from '@swc/core';
 import type { ModuleItem, ImportDeclaration, CallExpression } from '@swc/types';
 
