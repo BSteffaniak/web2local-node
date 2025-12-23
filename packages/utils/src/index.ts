@@ -40,6 +40,9 @@ export function toPosixPath(filePath: string): string {
  * @param onItemComplete - Optional callback fired when each item completes,
  *   receives the result, index, completed count, and total count
  * @returns Array of results in the same order as input items
+ * @throws Rethrows any error thrown by the `fn` callback. When an error occurs,
+ *   remaining items may not be processed depending on where in the queue the
+ *   failure happened.
  *
  * @example
  * ```ts
