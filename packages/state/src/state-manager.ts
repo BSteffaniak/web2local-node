@@ -114,8 +114,8 @@ export class StateManager {
      *
      * @param outputDir - Directory to check
      * @returns Resume info if state exists and is compatible, null otherwise
-     * @throws CorruptedStateError if WAL is corrupted
-     * @throws IncompatibleStateVersionError if version doesn't match
+     * @throws \{CorruptedStateError\} When WAL is corrupted
+     * @throws \{IncompatibleStateVersionError\} When version doesn't match
      */
     static async canResume(outputDir: string): Promise<ResumeInfo | null> {
         const statePath = join(outputDir, STATE_FILE);
