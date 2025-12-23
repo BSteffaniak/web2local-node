@@ -1951,6 +1951,14 @@ async function syncDynamicBundles(
 
 /**
  * CLI entry point that parses command line arguments and executes the appropriate command.
+ *
+ * This function is called from the executable script (`run.ts`) and handles:
+ * - Main command: Full extraction pipeline via `runMain()`
+ * - `serve` subcommand: Start the mock API server
+ * - `extract` subcommand: Extract-only mode without capture/rebuild
+ *
+ * The function never returns normally - it either completes successfully
+ * or exits the process with an error code.
  */
 export async function main() {
     parseArgs();

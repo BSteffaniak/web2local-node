@@ -409,7 +409,12 @@ export class ProgressDisplay {
     }
 
     /**
-     * Stop the progress display
+     * Stop the progress display and clean up resources.
+     *
+     * Clears the TUI area, restores the cursor, dumps the full log buffer,
+     * and prints a completion message.
+     *
+     * @param finalMessage - Optional message to display after stopping (defaults to "Capture completed")
      */
     stop(finalMessage?: string): void {
         if (!this.isInteractive()) {
@@ -464,21 +469,30 @@ export class ProgressDisplay {
     }
 
     /**
-     * Get current aggregate stats
+     * Get current aggregate stats.
+     *
+     * @returns A readonly copy of the current aggregate stats
      */
     getStats(): Readonly<AggregateStats> {
         return { ...this.stats };
     }
 
     /**
-     * Get a worker's current state
+     * Get a worker's current state.
+     *
+     * @param workerId - Zero-based worker index
+     * @returns The worker's state, or undefined if the ID is out of range
      */
     getWorkerState(workerId: number): WorkerState | undefined {
         return this.workers[workerId];
     }
 
     /**
-     * Update aggregate stats
+     * Update aggregate stats.
+     *
+     * Updates are batched and rendered on the next render interval.
+     *
+     * @param stats - Partial stats object with values to update
      */
     updateStats(stats: Partial<AggregateStats>): void {
         Object.assign(this.stats, stats);
@@ -487,8 +501,11 @@ export class ProgressDisplay {
 
     /**
      * Update the base origin for URL formatting.
+     *
      * This should be called when a redirect is detected to ensure
      * URLs are properly truncated relative to the final destination.
+     *
+     * @param newOrigin - The new base origin URL
      */
     updateBaseOrigin(newOrigin: string): void {
         try {
@@ -499,7 +516,13 @@ export class ProgressDisplay {
     }
 
     /**
-     * Update a worker's state
+     * Update a worker's state.
+     *
+     * Automatically sets `phaseStartTime` when the phase changes, and resets
+     * the start time when transitioning to idle state.
+     *
+     * @param workerId - Zero-based worker index
+     * @param state - Partial state object with values to update
      */
     updateWorker(workerId: number, state: Partial<WorkerState>): void {
         if (workerId >= 0 && workerId < this.workers.length) {
@@ -616,7 +639,13 @@ export class ProgressDisplay {
     }
 
     /**
-     * Log a message - adds to both recent logs display and full buffer
+     * Log a message to the progress display.
+     *
+     * Messages are added to both the recent logs display (visible in the TUI)
+     * and the full log buffer (dumped on exit). In non-interactive mode,
+     * messages are printed directly to console.
+     *
+     * @param message - The message to log (will be prefixed with a timestamp)
      */
     log(message: string): void {
         const formattedMessage = this.formatLogMessage(message);
@@ -1317,9 +1346,15 @@ export class ProgressDisplay {
 }
 
 /**
- * Format a URL for log display
- * - Same-origin URLs show path only
- * - Cross-origin URLs show full URL (possibly truncated)
+ * Format a URL for log display.
+ *
+ * Same-origin URLs are shown as path only for brevity, while cross-origin
+ * URLs show the full URL. Optionally truncates to a maximum length.
+ *
+ * @param url - The URL to format
+ * @param baseOrigin - The base origin for same-origin detection
+ * @param maxLen - Optional maximum length (truncates with ellipsis if exceeded)
+ * @returns The formatted URL string
  */
 export function formatUrlForLog(
     url: string,
