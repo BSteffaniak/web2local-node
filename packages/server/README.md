@@ -17,7 +17,17 @@ await runServer({
 ## CLI Usage
 
 ```bash
+# Start the mock server
 web2local serve ./captured-site --port 3000
+
+# Show site information
+web2local info ./captured-site
+
+# List captured fixtures
+web2local list ./captured-site
+
+# List available sites in output directory
+web2local sites ./output
 ```
 
 ## API

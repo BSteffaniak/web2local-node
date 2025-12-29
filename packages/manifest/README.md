@@ -18,7 +18,8 @@ import {
     generateServerManifest, // Create manifest.json for mock server
     buildFixtureIndex, // Create fixture index
     generatePackageJson, // Create package.json
-    writeTsConfig, // Create tsconfig.json
+    generateTsConfig, // Create tsconfig.json object
+    writeTsConfig, // Write tsconfig.json to disk
 } from '@web2local/manifest';
 ```
 
