@@ -622,6 +622,17 @@ export class StaticCapturer {
      * Create a new static asset capturer.
      *
      * @param options - Configuration options for asset capture behavior
+     *
+     * @example
+     * ```typescript
+     * const capturer = new StaticCapturer({
+     *     outputDir: './captured/static',
+     *     maxFileSize: 50 * 1024 * 1024,
+     *     verbose: true,
+     *     onCapture: (event) => console.log(`Captured: ${event.url}`),
+     * });
+     * await capturer.attach(page, 'https://example.com');
+     * ```
      */
     constructor(options: Partial<StaticCaptureOptions> = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -641,7 +652,9 @@ export class StaticCapturer {
     }
 
     /**
-     * Get the current page URL
+     * Get the current page URL.
+     *
+     * @returns The URL of the page being crawled, or null if not set
      */
     getCurrentPageUrl(): string | null {
         return this.currentPageUrl;

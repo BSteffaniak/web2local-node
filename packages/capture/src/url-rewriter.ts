@@ -74,11 +74,26 @@ const URL_META_PROPERTIES = [
 ];
 
 /**
- * Build a URL mapping from captured assets
+ * Build a URL mapping from captured assets.
+ *
+ * Creates a map that can be used to rewrite URLs in HTML and CSS content.
+ * Maps both full URLs and pathname-only versions for same-origin assets.
  *
  * @param assets - Array of captured asset mappings
  * @param baseUrl - The base URL of the captured site
  * @returns Map from original URL to local path (with leading /)
+ *
+ * @example
+ * ```typescript
+ * const assets = [
+ *     { url: 'https://example.com/style.css', localPath: 'style.css' },
+ *     { url: 'https://example.com/app.js', localPath: 'app.js' },
+ * ];
+ * const urlMap = buildUrlMap(assets, 'https://example.com');
+ * // urlMap contains:
+ * // 'https://example.com/style.css' => '/style.css'
+ * // '/style.css' => '/style.css'
+ * ```
  */
 export function buildUrlMap(
     assets: AssetMapping[],
@@ -223,15 +238,24 @@ function findAttributeValuePosition(
 }
 
 /**
- * Rewrite URLs in HTML content
+ * Rewrite URLs in HTML content.
  *
  * Uses node-html-parser to find URL-containing attributes and rewrites them
  * using position-based string replacement to preserve the original structure.
+ * Handles src, href, srcset, style attributes, and meta tags with URL content.
  *
  * @param html - The HTML content to rewrite
  * @param urlMap - Map from original URLs to local paths
  * @param baseUrl - The base URL for resolving relative URLs
  * @returns The HTML with URLs rewritten
+ *
+ * @example
+ * ```typescript
+ * const urlMap = new Map([['https://example.com/style.css', '/style.css']]);
+ * const html = '<link href="https://example.com/style.css">';
+ * const result = rewriteHtml(html, urlMap, 'https://example.com');
+ * // result: '<link href="/style.css">'
+ * ```
  */
 export function rewriteHtml(
     html: string,
@@ -459,7 +483,7 @@ function rewriteSrcset(
 }
 
 /**
- * Rewrite URLs in CSS content
+ * Rewrite URLs in CSS content.
  *
  * Finds all url() references and rewrites them to local paths.
  *
@@ -467,6 +491,14 @@ function rewriteSrcset(
  * @param urlMap - Map from original URLs to local paths
  * @param baseUrl - Base URL for resolving relative URLs (usually the CSS file URL)
  * @returns The CSS with URLs rewritten
+ *
+ * @example
+ * ```typescript
+ * const urlMap = new Map([['https://example.com/bg.png', '/images/bg.png']]);
+ * const css = '.hero { background: url("https://example.com/bg.png"); }';
+ * const result = rewriteCss(css, urlMap, 'https://example.com/style.css');
+ * // result: '.hero { background: url("/images/bg.png"); }'
+ * ```
  */
 export function rewriteCss(
     css: string,
@@ -554,12 +586,23 @@ export function rewriteCssImports(
 }
 
 /**
- * Rewrite all URLs in CSS content (both `url()` and `\@import`)
+ * Rewrite all URLs in CSS content (both `url()` and `\@import`).
+ *
+ * This is the preferred function for rewriting CSS as it handles both
+ * url() references and \@import statements in a single pass.
  *
  * @param css - The CSS content to rewrite
  * @param urlMap - Map from original URLs to local paths
  * @param cssUrl - URL of the CSS file (for resolving relative URLs)
  * @returns The CSS with all URLs rewritten
+ *
+ * @example
+ * ```typescript
+ * const urlMap = buildUrlMap(assets, 'https://example.com');
+ * const css = await readFile('captured/style.css', 'utf-8');
+ * const rewritten = rewriteAllCssUrls(css, urlMap, 'https://example.com/style.css');
+ * await writeFile('captured/style.css', rewritten);
+ * ```
  */
 export function rewriteAllCssUrls(
     css: string,

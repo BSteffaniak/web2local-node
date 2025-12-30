@@ -53,7 +53,14 @@ export class BrowserManager {
      *
      * If the browser is already launched, this method returns immediately.
      *
-     * @throws Error if the browser fails to launch
+     * @throws Error when Playwright fails to launch Chromium
+     *
+     * @example
+     * ```typescript
+     * const browser = new BrowserManager({ headless: true });
+     * await browser.launch();
+     * const page = await browser.newPage();
+     * ```
      */
     async launch(): Promise<void> {
         if (this.browser) {
@@ -84,7 +91,14 @@ export class BrowserManager {
      * Automatically launches the browser if not already running.
      *
      * @returns A new Playwright page instance
-     * @throws Error if page creation fails
+     * @throws Error when page creation fails or browser context is unavailable
+     *
+     * @example
+     * ```typescript
+     * const browser = new BrowserManager();
+     * const page = await browser.newPage();
+     * await page.goto('https://example.com');
+     * ```
      */
     async newPage(): Promise<Page> {
         if (!this.context) {

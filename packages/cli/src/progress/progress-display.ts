@@ -59,7 +59,10 @@ export type WorkerPhase =
     | 'backing-off';
 
 /**
- * Worker status types (simplified for display)
+ * Worker status types (simplified for display).
+ *
+ * These are higher-level status categories derived from the more detailed
+ * WorkerPhase values for simpler display logic.
  */
 export type WorkerStatus =
     | 'idle'
@@ -72,12 +75,16 @@ export type WorkerStatus =
     | 'downloading';
 
 /**
- * State of a single worker
+ * State of a single worker in the progress display.
  */
 export interface WorkerState {
+    /** Current display status of the worker. */
     status: WorkerStatus;
+    /** URL the worker is currently processing. */
     url?: string;
+    /** Detailed phase of page processing. */
     phase?: WorkerPhase;
+    /** Timestamp when the current phase started. */
     phaseStartTime?: number;
     /** Number of in-flight requests */
     activeRequests?: number;
@@ -97,21 +104,29 @@ export interface WorkerState {
 }
 
 /**
- * Aggregate statistics for the capture
+ * Aggregate statistics for the capture operation.
  */
 export interface AggregateStats {
+    /** Number of pages that have completed processing. */
     pagesCompleted: number;
+    /** Maximum pages limit from options. */
     maxPages: number;
+    /** Number of pages currently in the queue. */
     queued: number;
+    /** Current crawl depth. */
     currentDepth: number;
+    /** Maximum crawl depth from options. */
     maxDepth: number;
+    /** Number of API endpoints captured. */
     apisCaptured: number;
+    /** Number of static assets captured. */
     assetsCaptured: number;
+    /** Number of duplicate requests that were skipped. */
     duplicatesSkipped: number;
 }
 
 /**
- * Options for the progress display
+ * Configuration options for the progress display.
  */
 export interface ProgressDisplayOptions {
     /** Number of workers to display */
@@ -127,7 +142,26 @@ export interface ProgressDisplayOptions {
 }
 
 /**
- * Multi-line progress display for parallel capture operations
+ * Multi-line progress display for parallel capture operations.
+ *
+ * Creates a TUI that renders worker status, aggregate statistics, and
+ * a scrolling log area. Handles terminal resize, signal cleanup, and
+ * provides methods to update worker state and log messages.
+ *
+ * @example
+ * ```typescript
+ * const progress = new ProgressDisplay({
+ *     workerCount: 5,
+ *     maxPages: 100,
+ *     maxDepth: 5,
+ *     baseOrigin: 'https://example.com',
+ * });
+ *
+ * progress.start();
+ * progress.updateWorker(0, { status: 'navigating', url: '/page' });
+ * progress.log('Processing page...');
+ * progress.stop();
+ * ```
  */
 export class ProgressDisplay {
     private options: ProgressDisplayOptions;

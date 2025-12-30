@@ -192,11 +192,15 @@ function resolveUrl(url: string, baseUrl: URL): string {
 }
 
 /**
- * Result of checking a bundle for source maps
+ * Result of checking a bundle for source maps.
+ *
+ * Contains the discovered source map URL (if any) and optionally the bundle
+ * content for fallback processing when no source map is available.
  */
 export interface SourceMapCheckResult {
+    /** The URL of the discovered source map, or null if none found. */
     sourceMapUrl: string | null;
-    /** The bundle content (only populated if no source map found and bundle looks like vendor) */
+    /** The bundle content, populated when no source map is found for vendor/fallback handling. */
     bundleContent?: string;
 }
 
@@ -420,11 +424,23 @@ function looksLikeVendorBundle(filename: string, content: string): boolean {
 
 /**
  * Checks if a bundle has an associated source map using pre-fetched content.
- * This avoids re-fetching bundles that have already been captured during crawling.
  *
- * @param bundleUrl - The URL of the bundle
- * @param content - The pre-fetched content of the bundle
- * @returns The source map URL result
+ * This optimized version avoids re-fetching bundles that have already been
+ * captured during crawling. It searches for sourceMappingURL comments in the
+ * provided content and falls back to checking for a `.map` file at the bundle URL.
+ *
+ * @param bundleUrl - The URL of the bundle (used for resolving relative map URLs)
+ * @param content - The pre-fetched content of the bundle to search for source map references
+ * @returns The source map URL if found, plus the bundle content for fallback handling
+ *
+ * @example
+ * ```typescript
+ * const content = await fetchBundleContent(bundleUrl);
+ * const result = await findSourceMapUrlWithContent(bundleUrl, content);
+ * if (result.sourceMapUrl) {
+ *     console.log(`Found source map: ${result.sourceMapUrl}`);
+ * }
+ * ```
  */
 export async function findSourceMapUrlWithContent(
     bundleUrl: string,
@@ -493,14 +509,21 @@ export async function findSourceMapUrlWithContent(
 }
 
 /**
- * Options for findAllSourceMaps
+ * Options for configuring the source map discovery process.
  */
 export interface FindAllSourceMapsOptions {
-    /** Concurrency limit for fetching bundles (default: 5) */
+    /**
+     * Maximum number of bundles to check concurrently.
+     * @defaultValue 5
+     */
     concurrency?: number;
-    /** Progress callback */
+    /**
+     * Callback invoked after each bundle is processed.
+     * @param completed - Number of bundles processed so far
+     * @param total - Total number of bundles to process
+     */
     onProgress?: (completed: number, total: number) => void;
-    /** Pre-fetched bundle content to avoid re-fetching */
+    /** Pre-fetched bundle content to avoid re-fetching during discovery. */
     preFetchedBundles?: PreFetchedBundle[];
 }
 

@@ -63,7 +63,12 @@ interface ExtractManifest {
 // ============================================================================
 
 /**
- * Detects if a URL is a direct source map URL
+ * Detects if a URL is a direct source map URL.
+ *
+ * Checks if the URL ends with `.map` or is a data URL containing source map data.
+ *
+ * @param url - The URL to check
+ * @returns True if the URL appears to be a source map
  */
 function isSourceMapUrl(url: string): boolean {
     const urlWithoutQuery = url.split('?')[0];
@@ -74,7 +79,10 @@ function isSourceMapUrl(url: string): boolean {
 }
 
 /**
- * Extracts hostname from URL for output directory
+ * Extracts hostname from URL for use in output directory naming.
+ *
+ * @param url - The URL to extract hostname from
+ * @returns The hostname, or 'extracted' if URL parsing fails
  */
 function getHostname(url: string): string {
     try {
@@ -85,7 +93,10 @@ function getHostname(url: string): string {
 }
 
 /**
- * Writes a simple extraction manifest
+ * Writes an extraction manifest to the output directory.
+ *
+ * @param outputDir - The directory to write the manifest to
+ * @param manifest - The manifest data to write
  */
 async function writeExtractManifest(
     outputDir: string,
@@ -100,7 +111,16 @@ async function writeExtractManifest(
 // ============================================================================
 
 /**
- * Extract sources directly from a source map URL
+ * Extracts sources directly from a source map URL.
+ *
+ * This handles the case where the user provides a direct link to a .map file
+ * rather than an HTML page. The sources are extracted and written to the output
+ * directory without any bundle subdirectory structure.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for logging
+ * @param outputDir - Output directory path
+ * @param state - State manager for resume support
  */
 async function extractFromSourceMapUrl(
     options: ExtractOptions,
@@ -227,7 +247,16 @@ async function extractFromSourceMapUrl(
 // ============================================================================
 
 /**
- * Extract sources from all bundles found on a page
+ * Extracts sources from all bundles found on an HTML page.
+ *
+ * This is the main extraction flow for when the user provides a web page URL.
+ * It fetches the page, discovers JavaScript/CSS bundles, finds source maps,
+ * and extracts the original source files.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for logging
+ * @param outputDir - Output directory path
+ * @param state - State manager for resume support
  */
 async function extractFromPageUrl(
     options: ExtractOptions,
@@ -482,8 +511,16 @@ async function extractFromPageUrl(
 // ============================================================================
 
 /**
- * Extract sources by crawling the site with a browser.
- * This discovers bundles as they're loaded during navigation.
+ * Extracts sources by crawling the site with a headless browser.
+ *
+ * This discovers bundles as they are dynamically loaded during navigation,
+ * making it more effective for single-page applications that load bundles
+ * on-demand. Uses the capture module's crawling functionality.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for logging
+ * @param outputDir - Output directory path
+ * @param state - State manager for resume support
  */
 async function extractWithCrawl(
     options: ExtractOptions,
@@ -832,7 +869,14 @@ async function extractWithCrawl(
 // ============================================================================
 
 /**
- * Main entry point for the extract command
+ * Main entry point for the extract command.
+ *
+ * Orchestrates the source extraction process based on the input URL type:
+ * - Direct source map URLs are handled directly
+ * - Page URLs with crawl enabled use browser-based discovery
+ * - Page URLs without crawl use simple HTTP fetching
+ *
+ * @param options - Extract command options from CLI
  */
 export async function runExtract(options: ExtractOptions): Promise<void> {
     // Initialize spinner registry for synchronized logging
