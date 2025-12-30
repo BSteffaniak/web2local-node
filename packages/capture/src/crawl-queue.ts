@@ -72,6 +72,17 @@ export class CrawlQueue {
      * Create a new crawl queue.
      *
      * @param options - Configuration options for queue behavior
+     *
+     * @example
+     * ```typescript
+     * const queue = new CrawlQueue({
+     *     maxRetries: 3,
+     *     maxPages: 100,
+     *     maxDepth: 5,
+     * });
+     * queue.add('https://example.com', 0);
+     * const item = queue.take();
+     * ```
      */
     constructor(private options: CrawlQueueOptions) {}
 

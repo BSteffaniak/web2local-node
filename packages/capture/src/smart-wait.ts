@@ -209,6 +209,16 @@ export async function smartWaitForPage(
  *
  * @param page - Playwright page instance to wait on
  * @param options - Wait configuration options including networkIdleTimeout (default: 3000) and networkIdleTime (additional idle buffer in ms, default: 500)
+ * @returns A promise that resolves when the page is ready
+ *
+ * @example
+ * ```typescript
+ * // Quick wait with defaults
+ * await quickWaitForPage(page);
+ *
+ * // Custom timeout
+ * await quickWaitForPage(page, { networkIdleTimeout: 5000 });
+ * ```
  */
 export async function quickWaitForPage(
     page: Page,
