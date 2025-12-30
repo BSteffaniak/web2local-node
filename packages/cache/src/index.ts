@@ -87,6 +87,7 @@ export interface MatchResultCache {
     similarity: number;
     /** Confidence level (null if no match found) */
     confidence: 'exact' | 'high' | 'medium' | 'low' | null;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
