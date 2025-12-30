@@ -24,28 +24,47 @@ import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
  * CLI options for server-related commands.
  */
 interface ServerCliOptions {
+    /** Server port number. */
     port?: number;
+    /** Server host address. */
     host?: string;
+    /** Response delay in milliseconds. */
     delay?: number;
+    /** Whether CORS is enabled. */
     cors?: boolean;
+    /** Serve only static files, not API fixtures. */
     staticOnly?: boolean;
+    /** Serve only API fixtures, not static files. */
     apiOnly?: boolean;
+    /** Enable verbose logging. */
     verbose?: boolean;
+    /** Serve from rebuilt source instead of captured files. */
     useRebuilt?: boolean;
 }
 
 /**
- * Generated package.json structure with custom fields
+ * Generated package.json structure with custom fields.
+ *
+ * Extends the standard package.json structure with internal metadata
+ * used during the extraction and rebuild process.
  */
 interface GeneratedPackageJson {
+    /** Standard npm dependencies. */
     dependencies?: Record<string, string>;
+    /** Standard npm dev dependencies. */
     devDependencies?: Record<string, string>;
+    /** Internal/workspace dependencies that are not published to npm. */
     _internalDependencies?: Record<string, string>;
+    /** Import aliases from tsconfig paths. */
     _importAliases?: Record<string, string>;
 }
 
 /**
- * Extract server options from parsed CLI options
+ * Extracts server options from parsed CLI options.
+ *
+ * @param cliOptions - The raw CLI options containing server configuration
+ * @param outputDir - The output directory path for the captured site
+ * @returns Server options object ready to pass to the server package
  */
 function getServerOptions(cliOptions: ServerCliOptions, outputDir: string) {
     return {
@@ -1575,8 +1594,13 @@ export async function runMain(options: CliOptions) {
         state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED;
 
     /**
-     * Check if a line from package manager or build output is a warning or error.
-     * Uses patterns specific to npm, pnpm, yarn, and common build tools.
+     * Checks if a line from package manager or build output is a warning or error.
+     *
+     * Uses patterns specific to npm, pnpm, yarn, and common build tools
+     * to identify important messages that should be shown to the user.
+     *
+     * @param line - A single line of output from a package manager or build tool
+     * @returns True if the line appears to be a warning or error message
      */
     function isWarningOrError(line: string): boolean {
         // Package manager specific prefixes
@@ -1951,7 +1975,11 @@ async function syncDynamicBundles(
 
 /**
  * CLI entry point that parses command line arguments and executes the appropriate command.
+ *
+ * This is the main entry point called by the `run.ts` script. It parses
+ * command line arguments using commander.js and dispatches to the appropriate
+ * command handler.
  */
-export async function main() {
+export async function main(): Promise<void> {
     parseArgs();
 }

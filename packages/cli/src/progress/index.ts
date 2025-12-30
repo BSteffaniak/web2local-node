@@ -1,5 +1,10 @@
 /**
- * Progress display module exports
+ * Progress display module for CLI capture operations.
+ *
+ * Provides a multi-line TUI for displaying parallel worker progress,
+ * aggregate statistics, and recent log messages during website capture.
+ *
+ * @packageDocumentation
  */
 
 export {

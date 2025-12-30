@@ -16,7 +16,7 @@ import {
 } from './index.js';
 
 /**
- * Options for creating a capture event handler
+ * Options for creating a capture event handler.
  */
 export interface CaptureEventHandlerOptions {
     /** The progress display instance */
@@ -30,7 +30,7 @@ export interface CaptureEventHandlerOptions {
 }
 
 /**
- * Phase to worker status mapping
+ * Maps detailed capture phases to simplified worker display statuses.
  */
 export const PHASE_STATUS_MAP: Record<string, WorkerStatus> = {
     navigating: 'navigating',
@@ -46,7 +46,14 @@ export const PHASE_STATUS_MAP: Record<string, WorkerStatus> = {
 };
 
 /**
- * Handle page-progress events
+ * Handles page-progress events from the capture module.
+ *
+ * Updates worker state and aggregate stats based on page processing progress,
+ * and logs significant events like completion, errors, and retries.
+ *
+ * @param progress - The progress display to update
+ * @param event - The page-progress event
+ * @param baseUrl - Base URL for formatting relative URLs
  */
 function handlePageProgress(
     progress: ProgressDisplay,
@@ -112,7 +119,13 @@ function handlePageProgress(
 }
 
 /**
- * Handle request-activity events
+ * Handles request-activity events from the capture module.
+ *
+ * Updates worker state to reflect current network activity, including
+ * transitioning between idle and downloading states.
+ *
+ * @param progress - The progress display to update
+ * @param event - The request-activity event
  */
 function handleRequestActivity(
     progress: ProgressDisplay,
