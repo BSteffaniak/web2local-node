@@ -21,7 +21,8 @@ import {
 } from '@web2local/analyzer';
 
 /**
- * Represents a workspace package detected in the project
+ * Represents a workspace package detected in the project.
+ * @internal
  */
 interface WorkspacePackage {
     /** Package name (e.g., "shared-ui") */
