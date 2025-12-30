@@ -1,8 +1,19 @@
+/**
+ * Import extraction utilities for JavaScript/TypeScript source code.
+ *
+ * This module provides AST-based import analysis using SWC, offering robust
+ * extraction of static imports, dynamic imports, and CommonJS require() calls.
+ * Unlike regex-based approaches, this handles edge cases correctly such as
+ * imports inside comments or strings.
+ *
+ * @packageDocumentation
+ */
+
 import { parseSync } from '@swc/core';
 import type { ModuleItem, ImportDeclaration, CallExpression } from '@swc/types';
 
 /**
- * Information about a named import specifier
+ * Information about a named import specifier.
  */
 export interface NamedImportInfo {
     /** The local name (what it's called in this file) */

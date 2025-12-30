@@ -1,12 +1,15 @@
 /**
- * AST Utilities for robust code analysis using SWC
+ * AST utilities for robust code analysis using SWC.
  *
  * This module provides AST-based alternatives to regex patterns for analyzing
  * JavaScript/TypeScript source code. Using AST parsing ensures:
+ *
  * - Code inside strings is not matched
  * - Code inside comments is not matched
  * - Complex multi-line constructs are handled correctly
  * - Edge cases are handled properly
+ *
+ * @packageDocumentation
  */
 
 import { parseSync } from '@swc/core';

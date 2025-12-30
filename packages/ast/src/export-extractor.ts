@@ -1,3 +1,14 @@
+/**
+ * Export extraction utilities for JavaScript/TypeScript source code.
+ *
+ * This module provides AST-based export analysis using SWC, offering robust
+ * extraction of named exports, default exports, type exports, and re-exports.
+ * Unlike regex-based approaches, this handles complex patterns correctly such
+ * as destructured exports and namespace exports.
+ *
+ * @packageDocumentation
+ */
+
 import { parseSync } from '@swc/core';
 import type {
     ModuleItem,
@@ -8,7 +19,7 @@ import type {
 } from '@swc/types';
 
 /**
- * Export information extracted from a source file
+ * Export information extracted from a source file.
  */
 export interface FileExports {
     /** Named exports (export const X, export \{ X \}) */
