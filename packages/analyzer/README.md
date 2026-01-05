@@ -7,7 +7,7 @@ Dependency analysis and version detection for extracted source code.
 Analyzes reconstructed source files to:
 
 - Detect npm package dependencies from imports
-- Infer package versions from banners, lockfile paths, and source fingerprinting
+- Infer package versions from lockfile paths and source fingerprinting
 - Identify import aliases (e.g., `@/components` -> `./src/components`)
 - Reconstruct missing index files for internal modules
 - Resolve dynamic imports and CSS URLs from bundles
@@ -89,7 +89,6 @@ const result = await resolveMissingDynamicImports({
 Versions are detected from multiple sources (in priority order):
 
 1. **Lockfile paths** - `node_modules/react@18.2.0/...`
-2. **Banner comments** - `/*! React v18.2.0 */`
-3. **Source fingerprinting** - Hash matching against npm package contents
-4. **Peer dependencies** - Inferred from related packages
-5. **npm latest** - Fallback to latest version
+2. **Source fingerprinting** - Hash matching against npm package contents
+3. **Peer dependencies** - Inferred from related packages
+4. **npm latest** - Fallback to latest version
