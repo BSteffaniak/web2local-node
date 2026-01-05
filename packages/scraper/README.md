@@ -37,7 +37,7 @@ for (const bundle of bundlesWithMaps) {
 
 ## API
 
-### extractBundleUrls(url, options?)
+### extractBundleUrls(url)
 
 Fetches a webpage and extracts all JS/CSS bundle URLs.
 
