@@ -1,0 +1,1 @@
+{"root":["./src/asset-stub-resolver.ts","./src/dependency-analyzer.ts","./src/dynamic-import-resolver.ts","./src/export-resolver.ts","./src/import-usage-analyzer.ts","./src/index-reconstructor.ts","./src/index.ts","./src/peer-dependencies.ts","./src/source-fingerprint.ts","./src/version-detector.ts"],"errors":true,"version":"5.9.3"}
