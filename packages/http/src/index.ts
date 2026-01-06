@@ -381,7 +381,7 @@ export interface RobustFetchOptions extends RequestInit {
  * @param url - The URL to fetch
  * @param options - Fetch options plus optional retry count
  * @returns The fetch Response (may be error response if retries exhausted)
- * @throws \{FetchError\} When a non-transient error occurs or retries are exhausted
+ * @throws {@link FetchError} When a non-transient error occurs or retries are exhausted
  *
  * @example
  * ```typescript
