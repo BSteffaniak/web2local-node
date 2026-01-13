@@ -63,7 +63,12 @@ interface ExtractManifest {
 // ============================================================================
 
 /**
- * Detects if a URL is a direct source map URL
+ * Detects if a URL is a direct source map URL.
+ *
+ * Checks for `.map` extension or `data:application/json` data URLs.
+ *
+ * @param url - The URL to check
+ * @returns True if the URL points directly to a source map
  */
 function isSourceMapUrl(url: string): boolean {
     const urlWithoutQuery = url.split('?')[0];
@@ -74,7 +79,10 @@ function isSourceMapUrl(url: string): boolean {
 }
 
 /**
- * Extracts hostname from URL for output directory
+ * Extracts hostname from URL for output directory naming.
+ *
+ * @param url - The URL to extract hostname from
+ * @returns The hostname, or 'extracted' if URL parsing fails
  */
 function getHostname(url: string): string {
     try {
@@ -85,7 +93,10 @@ function getHostname(url: string): string {
 }
 
 /**
- * Writes a simple extraction manifest
+ * Writes an extraction manifest to the output directory.
+ *
+ * @param outputDir - The directory to write the manifest to
+ * @param manifest - The manifest data to write
  */
 async function writeExtractManifest(
     outputDir: string,
@@ -100,7 +111,15 @@ async function writeExtractManifest(
 // ============================================================================
 
 /**
- * Extract sources directly from a source map URL
+ * Extracts source files directly from a source map URL.
+ *
+ * This is used when the user provides a direct URL to a `.map` file
+ * rather than a web page URL.
+ *
+ * @param options - CLI options including the source map URL
+ * @param registry - Spinner registry for progress display
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractFromSourceMapUrl(
     options: ExtractOptions,
@@ -227,7 +246,15 @@ async function extractFromSourceMapUrl(
 // ============================================================================
 
 /**
- * Extract sources from all bundles found on a page
+ * Extracts source files from all bundles found on a web page.
+ *
+ * Fetches the page, discovers JavaScript/CSS bundles, finds source maps
+ * for each bundle, and extracts the original source files.
+ *
+ * @param options - CLI options including the page URL
+ * @param registry - Spinner registry for progress display
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractFromPageUrl(
     options: ExtractOptions,
@@ -482,8 +509,16 @@ async function extractFromPageUrl(
 // ============================================================================
 
 /**
- * Extract sources by crawling the site with a browser.
- * This discovers bundles as they're loaded during navigation.
+ * Extracts source files by crawling the site with a headless browser.
+ *
+ * Uses browser automation to navigate the site and discover bundles
+ * as they're loaded during navigation, including dynamically loaded chunks.
+ * This is more thorough than page-based extraction but slower.
+ *
+ * @param options - CLI options including crawl settings
+ * @param registry - Spinner registry for progress display
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractWithCrawl(
     options: ExtractOptions,
@@ -832,7 +867,14 @@ async function extractWithCrawl(
 // ============================================================================
 
 /**
- * Main entry point for the extract command
+ * Main entry point for the `web2local extract` command.
+ *
+ * Orchestrates source extraction based on the URL type:
+ * - Direct source map URLs: Extracts from a single `.map` file
+ * - Page URLs with crawl: Uses browser automation to discover bundles
+ * - Page URLs without crawl: Fetches page HTML to find bundle references
+ *
+ * @param options - CLI options parsed from command line arguments
  */
 export async function runExtract(options: ExtractOptions): Promise<void> {
     // Initialize spinner registry for synchronized logging
