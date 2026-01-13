@@ -1,7 +1,34 @@
 #!/usr/bin/env node
 
 /**
- * CLI for web2local serve
+ * Command-line interface for the web2local mock server.
+ *
+ * This module provides CLI commands for serving captured API fixtures and static
+ * assets, inspecting captured site metadata, and listing available fixtures.
+ *
+ * ## Commands
+ *
+ * - `serve <dir>` - Start the mock server
+ * - `info <dir>` - Show site manifest information
+ * - `list <dir>` - List captured fixtures
+ * - `sites [dir]` - List captured sites in an output directory
+ *
+ * @example
+ * ```bash
+ * # Start server for a captured site
+ * web2local serve ./output/example.com --port 3000
+ *
+ * # Show site information
+ * web2local info ./output/example.com
+ *
+ * # List all captured fixtures
+ * web2local list ./output/example.com
+ *
+ * # List available sites in output directory
+ * web2local sites ./output
+ * ```
+ *
+ * @packageDocumentation
  */
 
 import { Command } from 'commander';

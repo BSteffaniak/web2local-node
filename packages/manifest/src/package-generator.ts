@@ -223,7 +223,7 @@ export function generatePackageJson(
  *
  * @param outputPath - Absolute path where the package.json should be written
  * @param packageJson - The package.json object to serialize
- * @throws \{Error\} When the file cannot be written (permissions, disk full, etc.)
+ * @throws When the file cannot be written (permissions, disk full, etc.)
  *
  * @example
  * ```typescript

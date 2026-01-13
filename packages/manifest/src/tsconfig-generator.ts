@@ -278,7 +278,7 @@ export function generateTsConfig(
  *
  * @param outputPath - Absolute path where the tsconfig.json should be written
  * @param tsconfig - The tsconfig object to serialize
- * @throws \{Error\} When the file cannot be written (permissions, disk full, etc.)
+ * @throws When the file cannot be written (permissions, disk full, etc.)
  *
  * @example
  * ```typescript

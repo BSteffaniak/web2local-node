@@ -24,38 +24,43 @@ export interface BundleInfo {
 }
 
 /**
- * Represents a vendor bundle (minified JS) without a source map
- * These typically contain third-party libraries bundled into a single file
+ * Represents a vendor bundle (minified JS) without a source map.
+ *
+ * These typically contain third-party libraries bundled into a single file.
+ * Vendor bundles are identified by filename patterns and content heuristics.
  */
 export interface VendorBundle {
+    /** The absolute URL of the vendor bundle. */
     url: string;
+    /** The filename extracted from the URL path. */
     filename: string;
+    /** The raw content of the bundle. */
     content: string;
-    /** Inferred package name from filename (e.g., "lodash" from "lodash-Dhg5Ny8x.js") */
+    /** Inferred package name from filename (e.g., "lodash" from "lodash-Dhg5Ny8x.js"). */
     inferredPackage?: string;
 }
 
 /**
- * Represents a redirect detected during page scraping
+ * Represents a redirect detected during page scraping.
  */
 export interface ScrapedRedirect {
-    /** Original requested URL (full URL) */
+    /** Original requested URL (full URL). */
     from: string;
-    /** Final URL after redirect (full URL) */
+    /** Final URL after redirect (full URL). */
     to: string;
-    /** HTTP status code (inferred as 301 for fetch redirects) */
+    /** HTTP status code (inferred as 301 for fetch redirects). */
     status: number;
 }
 
 /**
- * Result of extracting bundle URLs from a page
+ * Result of extracting bundle URLs from a page.
  */
 export interface ExtractBundleUrlsResult {
-    /** Extracted bundle URLs */
+    /** Extracted bundle URLs. */
     bundles: BundleInfo[];
-    /** The final URL after any redirects (may differ from requested URL) */
+    /** The final URL after any redirects (may differ from requested URL). */
     finalUrl: string;
-    /** Redirect detected during fetch (if any) */
+    /** Redirect detected during fetch (if any). */
     redirect?: ScrapedRedirect;
 }
 
@@ -192,11 +197,12 @@ function resolveUrl(url: string, baseUrl: URL): string {
 }
 
 /**
- * Result of checking a bundle for source maps
+ * Result of checking a bundle for source maps.
  */
 export interface SourceMapCheckResult {
+    /** The discovered source map URL, or null if none found. */
     sourceMapUrl: string | null;
-    /** The bundle content (only populated if no source map found and bundle looks like vendor) */
+    /** The bundle content (only populated if no source map found and bundle looks like vendor). */
     bundleContent?: string;
 }
 
@@ -305,35 +311,38 @@ export async function findSourceMapUrl(
 }
 
 /**
- * Represents a bundle without a source map (for --save-bundles fallback)
+ * Represents a bundle without a source map (for --save-bundles fallback).
  */
 export interface BundleWithContent {
+    /** The bundle metadata. */
     bundle: BundleInfo;
+    /** The raw content of the bundle. */
     content: string;
 }
 
 /**
  * Pre-fetched bundle content for use with findAllSourceMaps.
+ *
  * When provided, the bundle content won't be re-fetched.
  */
 export interface PreFetchedBundle {
-    /** The URL of the bundle */
+    /** The URL of the bundle. */
     url: string;
-    /** The raw content of the bundle */
+    /** The raw content of the bundle. */
     content: Buffer | string;
-    /** The Content-Type header value */
+    /** The Content-Type header value. */
     contentType: string;
 }
 
 /**
- * Result from processing all bundles for source maps
+ * Result from processing all bundles for source maps.
  */
 export interface SourceMapSearchResult {
-    /** Bundles that have associated source maps */
+    /** Bundles that have associated source maps. */
     bundlesWithMaps: BundleInfo[];
-    /** Vendor bundles without source maps (for fingerprinting) */
+    /** Vendor bundles without source maps (for fingerprinting). */
     vendorBundles: VendorBundle[];
-    /** All bundles without source maps (for --save-bundles fallback) */
+    /** All bundles without source maps (for --save-bundles fallback). */
     bundlesWithoutMaps: BundleWithContent[];
 }
 
@@ -493,14 +502,17 @@ export async function findSourceMapUrlWithContent(
 }
 
 /**
- * Options for findAllSourceMaps
+ * Options for findAllSourceMaps.
  */
 export interface FindAllSourceMapsOptions {
-    /** Concurrency limit for fetching bundles (default: 5) */
+    /**
+     * Concurrency limit for fetching bundles.
+     * @defaultValue 5
+     */
     concurrency?: number;
-    /** Progress callback */
+    /** Progress callback invoked as each bundle is processed. */
     onProgress?: (completed: number, total: number) => void;
-    /** Pre-fetched bundle content to avoid re-fetching */
+    /** Pre-fetched bundle content to avoid re-fetching. */
     preFetchedBundles?: PreFetchedBundle[];
 }
 

@@ -127,7 +127,34 @@ export interface ProgressDisplayOptions {
 }
 
 /**
- * Multi-line progress display for parallel capture operations
+ * Multi-line progress display for parallel capture operations.
+ *
+ * Provides a terminal-based UI (TUI) that displays:
+ * - Aggregate statistics (pages, APIs, assets captured)
+ * - Per-worker status with progress bars
+ * - Recent log entries with full buffer dump on exit
+ * - Flush progress during asset finalization
+ *
+ * The display automatically handles terminal resize and cleanup on interrupt.
+ *
+ * @example
+ * ```typescript
+ * const progress = new ProgressDisplay({
+ *   workerCount: 5,
+ *   maxPages: 100,
+ *   maxDepth: 5,
+ *   baseOrigin: 'https://example.com'
+ * });
+ *
+ * progress.start();
+ *
+ * // Update worker states during capture
+ * progress.updateWorker(0, { status: 'navigating', url: '/page1' });
+ * progress.updateStats({ pagesCompleted: 1 });
+ * progress.log('Captured API endpoint');
+ *
+ * progress.stop();
+ * ```
  */
 export class ProgressDisplay {
     private options: ProgressDisplayOptions;
@@ -210,14 +237,19 @@ export class ProgressDisplay {
     }
 
     /**
-     * Check if the display is in interactive mode
+     * Checks if the display is running in an interactive terminal.
+     *
+     * @returns True if stdout is a TTY, false otherwise
      */
     isInteractive(): boolean {
         return terminal.isInteractive();
     }
 
     /**
-     * Start the progress display
+     * Starts the progress display.
+     *
+     * Hides the cursor, sets up signal handlers, and begins the render loop.
+     * Has no effect if stdout is not a TTY.
      */
     start(): void {
         if (!this.isInteractive()) {
@@ -409,7 +441,11 @@ export class ProgressDisplay {
     }
 
     /**
-     * Stop the progress display
+     * Stops the progress display and cleans up.
+     *
+     * Clears the TUI area, dumps the full log buffer, and shows the cursor.
+     *
+     * @param finalMessage - Optional message to display after cleanup
      */
     stop(finalMessage?: string): void {
         if (!this.isInteractive()) {
@@ -464,21 +500,28 @@ export class ProgressDisplay {
     }
 
     /**
-     * Get current aggregate stats
+     * Gets the current aggregate statistics.
+     *
+     * @returns A readonly copy of the current stats
      */
     getStats(): Readonly<AggregateStats> {
         return { ...this.stats };
     }
 
     /**
-     * Get a worker's current state
+     * Gets a worker's current state.
+     *
+     * @param workerId - Zero-based worker ID
+     * @returns The worker's state, or undefined if ID is out of range
      */
     getWorkerState(workerId: number): WorkerState | undefined {
         return this.workers[workerId];
     }
 
     /**
-     * Update aggregate stats
+     * Updates the aggregate statistics.
+     *
+     * @param stats - Partial stats object with values to update
      */
     updateStats(stats: Partial<AggregateStats>): void {
         Object.assign(this.stats, stats);
@@ -486,9 +529,12 @@ export class ProgressDisplay {
     }
 
     /**
-     * Update the base origin for URL formatting.
-     * This should be called when a redirect is detected to ensure
-     * URLs are properly truncated relative to the final destination.
+     * Updates the base origin for URL formatting.
+     *
+     * Call this when a redirect is detected to ensure URLs are properly
+     * truncated relative to the final destination.
+     *
+     * @param newOrigin - The new base origin URL
      */
     updateBaseOrigin(newOrigin: string): void {
         try {
@@ -499,7 +545,12 @@ export class ProgressDisplay {
     }
 
     /**
-     * Update a worker's state
+     * Updates a worker's state.
+     *
+     * Automatically sets `phaseStartTime` when the phase changes.
+     *
+     * @param workerId - Zero-based worker ID
+     * @param state - Partial state object with values to update
      */
     updateWorker(workerId: number, state: Partial<WorkerState>): void {
         if (workerId >= 0 && workerId < this.workers.length) {
@@ -616,7 +667,12 @@ export class ProgressDisplay {
     }
 
     /**
-     * Log a message - adds to both recent logs display and full buffer
+     * Logs a message to both the recent logs display and the full buffer.
+     *
+     * Messages in the recent logs are shown in the TUI. The full buffer
+     * is dumped to the terminal when the display stops.
+     *
+     * @param message - The message to log
      */
     log(message: string): void {
         const formattedMessage = this.formatLogMessage(message);
@@ -1317,9 +1373,15 @@ export class ProgressDisplay {
 }
 
 /**
- * Format a URL for log display
- * - Same-origin URLs show path only
- * - Cross-origin URLs show full URL (possibly truncated)
+ * Formats a URL for log display.
+ *
+ * Same-origin URLs show only the path for brevity, while cross-origin
+ * URLs show the full URL (possibly truncated to fit).
+ *
+ * @param url - The URL to format
+ * @param baseOrigin - Base origin for same-origin detection
+ * @param maxLen - Optional maximum length for truncation
+ * @returns The formatted URL string
  */
 export function formatUrlForLog(
     url: string,

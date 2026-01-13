@@ -1,3 +1,11 @@
+/**
+ * Import extraction utilities using SWC
+ *
+ * This module provides AST-based import extraction from JavaScript/TypeScript
+ * source code. It handles static imports, dynamic imports, require() calls,
+ * type-only imports, and provides utilities for categorizing import sources.
+ */
+
 import { parseSync } from '@swc/core';
 import type { ModuleItem, ImportDeclaration, CallExpression } from '@swc/types';
 

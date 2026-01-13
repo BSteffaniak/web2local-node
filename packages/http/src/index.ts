@@ -53,7 +53,18 @@ export function createSignalWithTimeout(
 // ============================================================================
 
 /**
- * Common browser-like headers to avoid bot detection when fetching from websites
+ * Common browser-like headers to avoid bot detection when fetching from websites.
+ *
+ * Includes User-Agent, Accept, Accept-Language, and other headers that mimic
+ * a standard Chrome browser request. Use these when fetching from websites
+ * that may block requests without browser-like headers.
+ *
+ * @example
+ * ```typescript
+ * const response = await fetch(url, {
+ *     headers: BROWSER_HEADERS,
+ * });
+ * ```
  */
 export const BROWSER_HEADERS = {
     'User-Agent':

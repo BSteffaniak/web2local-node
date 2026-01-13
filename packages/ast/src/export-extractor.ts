@@ -1,3 +1,11 @@
+/**
+ * Export extraction utilities using SWC
+ *
+ * This module provides AST-based export extraction from JavaScript/TypeScript
+ * source code. It handles all export patterns including named exports, default
+ * exports, type exports, destructured exports, and re-exports.
+ */
+
 import { parseSync } from '@swc/core';
 import type {
     ModuleItem,
