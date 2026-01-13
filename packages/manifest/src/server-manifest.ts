@@ -95,7 +95,7 @@ const DEFAULT_OPTIONS: Partial<ManifestGeneratorOptions> = {
  * @param assets - Array of captured static assets (used for manifest metadata)
  * @param options - Configuration options for manifest generation
  * @returns Object containing the manifest path, fixture count, and any errors
- * @throws \{Error\} When directory creation fails
+ * @throws When directory creation fails
  *
  * @example
  * ```typescript
