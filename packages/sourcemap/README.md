@@ -131,7 +131,7 @@ try {
 
 This package implements the [ECMA-426 Source Map](https://tc39.es/ecma426/) specification:
 
-- 100% of the official [tc39/source-map-tests](https://github.com/tc39/source-map-tests) test suite passes (99 tests)
+- 100% of the official [tc39/source-map-tests](https://github.com/tc39/source-map-tests) test suite passes
 - Validates both regular source maps and index maps (concatenated source maps)
 - Full VLQ mapping validation including:
     - Base64 character validation
