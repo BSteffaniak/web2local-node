@@ -20,12 +20,14 @@ import type { SourceMapV3, ExtractedSource, SourceMapExtractionResult, Dependenc
 
 ## Type Categories
 
-| Category     | Types                                                                              |
-| ------------ | ---------------------------------------------------------------------------------- |
-| Source Maps  | `SourceMapV3`, `ExtractedSource`, `SourceMapMetadata`, `SourceMapExtractionResult` |
-| Discovery    | `SourceMapDiscoveryResult`, `SourceMapLocationType`                                |
-| Options      | `ExtractSourceMapOptions`, `DiscoverSourceMapOptions`                              |
-| Validation   | `SourceMapValidationResult`, `SourceMapValidationError`                            |
-| Dependencies | `DependencyInfo`, `AnalysisResult`, `AliasMap`, `InferredAlias`                    |
-| Capture      | `ApiFixture`, `CapturedRequest`, `CapturedResponse`, `CapturedAsset`               |
-| Server       | `ServerManifest`, `FixtureIndex`, `FixtureIndexEntry`                              |
+| Category     | Types                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------- |
+| Result       | `Result`, `Ok`, `Err`                                                                                         |
+| Error Codes  | `SourceMapErrorCode`                                                                                          |
+| Source Maps  | `SourceMapV3`, `IndexMapV3`, `SourceMap`, `ExtractedSource`, `SourceMapMetadata`, `SourceMapExtractionResult` |
+| Discovery    | `SourceMapDiscoveryResult`, `SourceMapLocationType`                                                           |
+| Options      | `ExtractSourceMapOptions`, `DiscoverSourceMapOptions`                                                         |
+| Validation   | `SourceMapValidationResult`, `SourceMapValidationError`                                                       |
+| Dependencies | `DependencyInfo`, `AnalysisResult`, `AliasMap`, `InferredAlias`, `DetectedProjectConfig`                      |
+| Capture      | `ApiFixture`, `CapturedRequest`, `CapturedResponse`, `CapturedAsset`, `HttpMethod`                            |
+| Server       | `ServerManifest`, `FixtureIndex`, `FixtureIndexEntry`, `CapturedRedirect`                                     |
