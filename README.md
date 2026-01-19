@@ -51,6 +51,7 @@ Runs the full pipeline: extract sources, analyze dependencies, capture API calls
 | ----------------------- | --------------------- | ------------------------------------------------------------------------ |
 | `-o, --output <dir>`    | `./output/<hostname>` | Output directory (explicit path used exactly, default includes hostname) |
 | `--overwrite`           | `false`               | Overwrite output directory without prompting                             |
+| `--resume`              | `false`               | Resume from checkpoint if available                                      |
 | `-v, --verbose`         | `false`               | Enable verbose logging                                                   |
 | `--no-capture`          | —                     | Skip API/asset capture                                                   |
 | `--no-rebuild`          | —                     | Skip build step                                                          |
@@ -75,11 +76,10 @@ web2local serve <dir> [--port 3000]
 
 #### Extraction
 
-| Option                       | Default | Description                  |
-| ---------------------------- | ------- | ---------------------------- |
-| `-c, --concurrency <n>`      | `5`     | Concurrent downloads         |
-| `-n, --include-node-modules` | `false` | Include node_modules sources |
-| `--no-cache`                 | —       | Disable caching              |
+| Option                  | Default | Description          |
+| ----------------------- | ------- | -------------------- |
+| `-c, --concurrency <n>` | `5`     | Concurrent downloads |
+| `--no-cache`            | —       | Disable caching      |
 
 #### Dependency Analysis
 
@@ -122,6 +122,7 @@ web2local serve <dir> [--port 3000]
 | `-d, --delay <ms>`  | —           | Response delay          |
 | `--static-only`     | `false`     | Serve only static files |
 | `--api-only`        | `false`     | Serve only API fixtures |
+| `--use-rebuilt`     | `false`     | Serve rebuilt source    |
 
 </details>
 
