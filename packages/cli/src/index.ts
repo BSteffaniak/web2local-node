@@ -22,30 +22,49 @@ import { resolveOutputDir, checkOutputDirectory } from './output-dir.js';
 
 /**
  * CLI options for server-related commands.
+ * @internal
  */
 interface ServerCliOptions {
+    /** Mock server port number. */
     port?: number;
+    /** Mock server host address. */
     host?: string;
+    /** Response delay in milliseconds. */
     delay?: number;
+    /** Whether CORS is enabled. */
     cors?: boolean;
+    /** Serve only static files (no API fixtures). */
     staticOnly?: boolean;
+    /** Serve only API fixtures (no static files). */
     apiOnly?: boolean;
+    /** Enable verbose logging. */
     verbose?: boolean;
+    /** Serve from rebuilt source instead of captured files. */
     useRebuilt?: boolean;
 }
 
 /**
- * Generated package.json structure with custom fields
+ * Generated package.json structure with custom fields.
+ * @internal
  */
 interface GeneratedPackageJson {
+    /** Standard npm dependencies. */
     dependencies?: Record<string, string>;
+    /** Standard npm devDependencies. */
     devDependencies?: Record<string, string>;
+    /** Internal/workspace dependencies not published to npm. */
     _internalDependencies?: Record<string, string>;
+    /** Import aliases mapping, such as 'alias' to 'scope/real-package'. */
     _importAliases?: Record<string, string>;
 }
 
 /**
- * Extract server options from parsed CLI options
+ * Extracts and transforms server options from parsed CLI options.
+ *
+ * @param cliOptions - Raw CLI options containing server-related settings
+ * @param outputDir - The resolved output directory path to serve
+ * @returns Server options object compatible with the server package
+ * @internal
  */
 function getServerOptions(cliOptions: ServerCliOptions, outputDir: string) {
     return {
@@ -1575,8 +1594,13 @@ export async function runMain(options: CliOptions) {
         state.getPhaseStatus(PHASES.REBUILD) === PHASE_STATUS.COMPLETED;
 
     /**
-     * Check if a line from package manager or build output is a warning or error.
-     * Uses patterns specific to npm, pnpm, yarn, and common build tools.
+     * Checks if a line from package manager or build output is a warning or error.
+     *
+     * Uses patterns specific to npm, pnpm, yarn, and common build tools to detect
+     * warning and error messages that should be surfaced to the user.
+     *
+     * @param line - A single line of output from the build process
+     * @returns True if the line contains a warning or error pattern
      */
     function isWarningOrError(line: string): boolean {
         // Package manager specific prefixes

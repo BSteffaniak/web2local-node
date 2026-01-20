@@ -87,6 +87,7 @@ export interface MatchResultCache {
     similarity: number;
     /** Confidence level (null if no match found) */
     confidence: 'exact' | 'high' | 'medium' | 'low' | null;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -102,6 +103,7 @@ export interface SourceMapCache {
     content: string;
     /** Hash of the content */
     contentHash: string;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -129,6 +131,7 @@ export interface ExtractionResultCache {
     files: ExtractedFile[];
     /** Any errors during extraction */
     errors: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -162,8 +165,10 @@ export interface PageScrapingCache {
         from: string;
         /** Final URL after redirect (full URL) */
         to: string;
+        /** HTTP status code of the redirect (e.g., 301, 302) */
         status: number;
     };
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -177,6 +182,7 @@ export interface SourceMapDiscoveryCache {
     urlHash: string;
     /** Discovered source map URL (null if none found) */
     sourceMapUrl: string | null;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -190,10 +196,11 @@ export type { DependencyInfo } from '@web2local/types';
 export interface DependencyAnalysisCache {
     /** Hash of extracted files (paths + content hashes) */
     extractionHash: string;
-    /** Discovered dependencies */
+    /** Discovered dependencies as [packageName, info] tuples */
     dependencies: Array<[string, DependencyInfo]>;
-    /** Local imports */
+    /** Local/relative import paths (not external dependencies) */
     localImports: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -223,46 +230,57 @@ export interface DependencyManifestCache {
     urlHash: string;
     /** Hash of extraction result */
     extractionHash: string;
-    /** Hash of options */
+    /** Hash of manifest generation options */
     optionsHash: string;
     /** Generated package.json content */
     packageJson: object;
-    /** Statistics */
+    /** Version detection statistics */
     stats: VersionStats;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
 /**
- * Cache for package file structure (list of files from unpkg ?meta)
+ * Cache for package file structure (list of files from unpkg ?meta).
  */
 export interface PackageFileListCache {
+    /** Package name (e.g., "react" or `@scope/package`) */
     packageName: string;
+    /** Semver version string */
     version: string;
     /** List of file paths (relative to package root) */
     files: string[];
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
 /**
- * Cache for npm package existence checks
- * Used to determine if a package is public (on npm) or internal/private
+ * Cache for npm package existence checks.
+ *
+ * Used to determine if a package is public (on npm) or internal/private.
  */
 export interface NpmPackageExistenceCache {
+    /** Package name to check */
     packageName: string;
     /** true = package exists on npm (public), false = not found (internal/private) */
     exists: boolean;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
 /**
- * Cache for npm version validation checks
- * Used to verify if a specific version of a package exists on npm
+ * Cache for npm version validation checks.
+ *
+ * Used to verify if a specific version of a package exists on npm.
  */
 export interface NpmVersionValidationCache {
+    /** Package name to validate */
     packageName: string;
+    /** Version string to validate */
     version: string;
     /** true = this version exists on npm, false = version not found */
     valid: boolean;
+    /** Unix timestamp when this cache entry was fetched */
     fetchedAt: number;
 }
 
@@ -1616,6 +1634,12 @@ let globalCache: FingerprintCache | null = null;
  * {@link initCache} instead.
  *
  * @returns The global FingerprintCache instance
+ *
+ * @example
+ * ```typescript
+ * const cache = getCache();
+ * const metadata = await cache.getMetadata('react');
+ * ```
  */
 export function getCache(): FingerprintCache {
     if (!globalCache) {
@@ -1632,6 +1656,18 @@ export function getCache(): FingerprintCache {
  *
  * @param options - Optional cache configuration
  * @returns The initialized FingerprintCache instance
+ *
+ * @example
+ * ```typescript
+ * // Initialize with custom TTL (1 day)
+ * const cache = await initCache({ ttl: 86400000 });
+ *
+ * // Initialize with custom cache directory
+ * const cache = await initCache({ cacheDir: '/tmp/my-cache' });
+ *
+ * // Disable caching (useful for testing)
+ * const cache = await initCache({ disabled: true });
+ * ```
  */
 export async function initCache(
     options?: CacheOptions,
