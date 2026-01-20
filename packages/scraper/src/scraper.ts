@@ -24,14 +24,17 @@ export interface BundleInfo {
 }
 
 /**
- * Represents a vendor bundle (minified JS) without a source map
- * These typically contain third-party libraries bundled into a single file
+ * Represents a vendor bundle (minified JS) without a source map.
+ * These typically contain third-party libraries bundled into a single file.
  */
 export interface VendorBundle {
+    /** The absolute URL of the vendor bundle file. */
     url: string;
+    /** The filename portion of the URL (e.g., "lodash-Dhg5Ny8x.js"). */
     filename: string;
+    /** The raw minified content of the bundle. */
     content: string;
-    /** Inferred package name from filename (e.g., "lodash" from "lodash-Dhg5Ny8x.js") */
+    /** Inferred package name from filename (e.g., "lodash" from "lodash-Dhg5Ny8x.js"). */
     inferredPackage?: string;
 }
 
@@ -192,11 +195,12 @@ function resolveUrl(url: string, baseUrl: URL): string {
 }
 
 /**
- * Result of checking a bundle for source maps
+ * Result of checking a bundle for source maps.
  */
 export interface SourceMapCheckResult {
+    /** The discovered source map URL, or null if not found. */
     sourceMapUrl: string | null;
-    /** The bundle content (only populated if no source map found and bundle looks like vendor) */
+    /** The bundle content, populated when no source map is found for fallback handling. */
     bundleContent?: string;
 }
 
@@ -420,11 +424,14 @@ function looksLikeVendorBundle(filename: string, content: string): boolean {
 
 /**
  * Checks if a bundle has an associated source map using pre-fetched content.
+ *
  * This avoids re-fetching bundles that have already been captured during crawling.
+ * Searches for sourceMappingURL comments in the provided content and falls back
+ * to checking for a `.map` file at the bundle URL.
  *
  * @param bundleUrl - The URL of the bundle
  * @param content - The pre-fetched content of the bundle
- * @returns The source map URL result
+ * @returns The source map URL if found, plus the bundle content for fallback handling
  */
 export async function findSourceMapUrlWithContent(
     bundleUrl: string,
