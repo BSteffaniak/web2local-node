@@ -641,7 +641,9 @@ export class StaticCapturer {
     }
 
     /**
-     * Get the current page URL
+     * Get the current page URL being crawled.
+     *
+     * @returns The current page URL, or null if not set
      */
     getCurrentPageUrl(): string | null {
         return this.currentPageUrl;
@@ -649,7 +651,10 @@ export class StaticCapturer {
 
     /**
      * Reset per-worker tracking when starting a new page.
-     * This clears the duplicate count and active requests so each page starts fresh.
+     *
+     * Clears the duplicate count and active requests so each page starts fresh.
+     *
+     * @param workerId - The worker ID to reset tracking for
      */
     resetWorkerTracking(workerId: number): void {
         this.duplicateRequestsByWorker.set(workerId, 0);
@@ -839,14 +844,18 @@ export class StaticCapturer {
     }
 
     /**
-     * Get the current base origin used for path resolution
+     * Get the current base origin used for path resolution.
+     *
+     * @returns The base origin string, or null if not yet set
      */
     getBaseOrigin(): string | null {
         return this.baseOrigin;
     }
 
     /**
-     * Get redirects detected during capture
+     * Get redirects detected during capture.
+     *
+     * @returns Array of redirect entries with from path, to path, and HTTP status code
      */
     getRedirects(): Array<{ from: string; to: string; status: number }> {
         return [...this.redirects];
@@ -1506,6 +1515,8 @@ export class StaticCapturer {
 
     /**
      * Get the number of pending asset captures.
+     *
+     * @returns Total count of pending captures and responsive URLs to fetch
      */
     getPendingCount(): number {
         return this.pendingCaptures.size + this.pendingResponsiveUrls.size;
@@ -1745,21 +1756,27 @@ export class StaticCapturer {
     }
 
     /**
-     * Get all captured assets
+     * Get all captured assets.
+     *
+     * @returns Array of all captured assets with their metadata
      */
     getAssets(): CapturedAsset[] {
         return this.assets;
     }
 
     /**
-     * Get the entrypoint asset (main HTML)
+     * Get the entrypoint asset (main HTML document).
+     *
+     * @returns The entrypoint asset if found, undefined otherwise
      */
     getEntrypoint(): CapturedAsset | undefined {
         return this.assets.find((a) => a.isEntrypoint);
     }
 
     /**
-     * Get capture statistics
+     * Get capture statistics including asset counts and truncation info.
+     *
+     * @returns Statistics object with totals, per-type breakdowns, and error counts
      */
     getStats(): {
         totalAssets: number;
@@ -1791,7 +1808,9 @@ export class StaticCapturer {
     }
 
     /**
-     * Get list of truncated files that couldn't be fully recovered
+     * Get list of truncated files that couldn't be fully recovered.
+     *
+     * @returns Array of objects containing URL, expected size, and actual size for each truncated file
      */
     getTruncatedFiles(): Array<{
         url: string;
@@ -1802,14 +1821,18 @@ export class StaticCapturer {
     }
 
     /**
-     * Get list of files that were recovered via direct fetch
+     * Get list of files that were recovered via direct fetch after truncation.
+     *
+     * @returns Array of URLs that were successfully recovered
      */
     getRecoveredFiles(): string[] {
         return this.recoveredFiles;
     }
 
     /**
-     * Clear captured assets
+     * Clear all captured assets and reset internal state.
+     *
+     * Resets all tracking sets, pending captures, and URL mappings.
      */
     clear(): void {
         this.assets = [];
@@ -2070,7 +2093,13 @@ export class StaticCapturer {
 }
 
 /**
- * Rewrite URLs in HTML content to point to local files
+ * Rewrite URLs in HTML content to point to local files.
+ *
+ * @deprecated Use {@link rewriteHtml} from url-rewriter.ts instead for more complete URL rewriting
+ * @param html - The HTML content to rewrite
+ * @param assets - Array of captured assets with their URL mappings
+ * @param baseUrl - Base URL for resolving relative URLs
+ * @returns The HTML content with URLs rewritten to local paths
  */
 export function rewriteHtmlUrls(
     html: string,
