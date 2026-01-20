@@ -63,7 +63,10 @@ interface ExtractManifest {
 // ============================================================================
 
 /**
- * Detects if a URL is a direct source map URL
+ * Detects if a URL is a direct source map URL.
+ *
+ * @param url - The URL to check
+ * @returns True if the URL points to a source map file or data URL
  */
 function isSourceMapUrl(url: string): boolean {
     const urlWithoutQuery = url.split('?')[0];
@@ -74,7 +77,10 @@ function isSourceMapUrl(url: string): boolean {
 }
 
 /**
- * Extracts hostname from URL for output directory
+ * Extracts the hostname from a URL for use in output directory naming.
+ *
+ * @param url - The URL to extract hostname from
+ * @returns The hostname, or 'extracted' if URL parsing fails
  */
 function getHostname(url: string): string {
     try {
@@ -85,7 +91,10 @@ function getHostname(url: string): string {
 }
 
 /**
- * Writes a simple extraction manifest
+ * Writes the extraction manifest to the output directory.
+ *
+ * @param outputDir - Directory to write the manifest to
+ * @param manifest - The manifest object to serialize
  */
 async function writeExtractManifest(
     outputDir: string,
@@ -100,7 +109,15 @@ async function writeExtractManifest(
 // ============================================================================
 
 /**
- * Extract sources directly from a source map URL
+ * Extracts sources directly from a source map URL.
+ *
+ * Used when the user provides a direct URL to a .map file or data URL
+ * rather than an HTML page.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for progress output
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractFromSourceMapUrl(
     options: ExtractOptions,
@@ -227,7 +244,15 @@ async function extractFromSourceMapUrl(
 // ============================================================================
 
 /**
- * Extract sources from all bundles found on a page
+ * Extracts sources from all bundles found on a page.
+ *
+ * Fetches the HTML page, discovers JavaScript/CSS bundles, finds their
+ * source maps, and extracts the original source files.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for progress output
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractFromPageUrl(
     options: ExtractOptions,
@@ -482,8 +507,16 @@ async function extractFromPageUrl(
 // ============================================================================
 
 /**
- * Extract sources by crawling the site with a browser.
- * This discovers bundles as they're loaded during navigation.
+ * Extracts sources by crawling the site with a headless browser.
+ *
+ * Uses Playwright to navigate through the site, discovering bundles as they're
+ * dynamically loaded during navigation. This is more thorough than static HTML
+ * parsing but requires more resources.
+ *
+ * @param options - Extract command options
+ * @param registry - Spinner registry for progress output
+ * @param outputDir - Directory to write extracted files to
+ * @param state - State manager for resume support
  */
 async function extractWithCrawl(
     options: ExtractOptions,
@@ -832,7 +865,12 @@ async function extractWithCrawl(
 // ============================================================================
 
 /**
- * Main entry point for the extract command
+ * Main entry point for the extract command.
+ *
+ * Handles source extraction from either a direct source map URL, an HTML page,
+ * or via browser crawling. Supports resuming interrupted extractions.
+ *
+ * @param options - Extract command options parsed from CLI arguments
  */
 export async function runExtract(options: ExtractOptions): Promise<void> {
     // Initialize spinner registry for synchronized logging

@@ -30,21 +30,31 @@ export interface BoxContent {
 const ANSI_REGEX = /\x1b\[[0-9;]*m/g;
 
 /**
- * Strip ANSI escape codes from a string to get visible length
+ * Strips ANSI escape codes from a string to get visible text.
+ *
+ * @param str - The string potentially containing ANSI escape codes
+ * @returns The string with all ANSI codes removed
  */
 export function stripAnsi(str: string): string {
     return str.replace(ANSI_REGEX, '');
 }
 
 /**
- * Get the visible length of a string (excluding ANSI codes)
+ * Gets the visible length of a string, excluding ANSI escape codes.
+ *
+ * @param str - The string to measure
+ * @returns The visible character count
  */
 export function visibleLength(str: string): number {
     return stripAnsi(str).length;
 }
 
 /**
- * Truncate a string to a maximum visible length, adding ellipsis if needed
+ * Truncates a string to a maximum visible length, adding ellipsis if needed.
+ *
+ * @param str - The string to truncate
+ * @param maxLen - Maximum visible length
+ * @returns The truncated string with '...' suffix if it was shortened
  */
 export function truncate(str: string, maxLen: number): string {
     const visible = stripAnsi(str);
@@ -60,7 +70,13 @@ export function truncate(str: string, maxLen: number): string {
 }
 
 /**
- * Pad a string to a fixed visible length (right-padded with spaces)
+ * Pads a string to a fixed visible length with spaces on the right.
+ *
+ * If the string is longer than the target length, it will be truncated.
+ *
+ * @param str - The string to pad
+ * @param len - Target visible length
+ * @returns The padded or truncated string
  */
 export function padRight(str: string, len: number): string {
     const visible = visibleLength(str);

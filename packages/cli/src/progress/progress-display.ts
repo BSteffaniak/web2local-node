@@ -1317,9 +1317,15 @@ export class ProgressDisplay {
 }
 
 /**
- * Format a URL for log display
+ * Formats a URL for log display.
+ *
  * - Same-origin URLs show path only
  * - Cross-origin URLs show full URL (possibly truncated)
+ *
+ * @param url - The URL to format
+ * @param baseOrigin - The base origin for same-origin comparison
+ * @param maxLen - Optional maximum length, truncates with ellipsis if exceeded
+ * @returns The formatted URL string
  */
 export function formatUrlForLog(
     url: string,
